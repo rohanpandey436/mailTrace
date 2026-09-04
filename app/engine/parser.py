@@ -12,6 +12,14 @@ Approach
   images) becomes a ``RawAttachment`` whose bytes go to ``attachments.py``.
 * ``ParsedEmail`` only carries structure (no analysis) plus integrity hashes of
   the exact bytes received, so the chain of custody can reference them.
+* Two *locality-sensitive* digests of the body are computed here as well
+  (``FuzzyDigest``): a pure-Python Charikar SimHash and, when the optional
+  ``py-tlsh`` extension is installed, a TLSH digest.  Unlike the SHA-256 of the
+  raw bytes they survive small edits, which is what lets ``campaigns.py``
+  cluster a campaign that rewrites a few words per victim.
+* ``parse_ms`` records the wall-clock cost of everything this module does to
+  one message, digests included, so the Stage 1-2 latency claim is measured
+  rather than asserted.
 
 ``parse_email`` never raises: an empty or binary blob yields an empty
 ``ParsedEmail`` with a ``charset_issues`` note.
@@ -23,6 +31,8 @@ import hashlib
 import logging
 import mimetypes
 import re
+import time
+from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from email import policy
@@ -32,7 +42,7 @@ from email.utils import collapse_rfc2231_value, getaddresses, parseaddr, parseda
 from html.parser import HTMLParser
 from typing import Iterator, Optional
 
-from ..schemas import AddressInfo, AttachmentMeta, HeaderField, ParsedEmail
+from ..schemas import AddressInfo, AttachmentMeta, FuzzyDigest, HeaderField, ParsedEmail
 
 log = logging.getLogger("mailtrace.parser")
 
@@ -357,10 +367,179 @@ def _basic_meta(att: RawAttachment) -> AttachmentMeta:
 
 
 # --------------------------------------------------------------------------- #
+# Fuzzy hashing (Stage 5A)
+# --------------------------------------------------------------------------- #
+# SHA-256 answers "is this the same file?".  Campaign correlation needs "is this
+# the same message with a few words swapped?", which needs a digest whose output
+# moves a little when the input moves a little.  Two are produced:
+#
+# * SimHash (Charikar): implemented below in pure Python, always available, and
+#   compared with ``hamming_distance``.  64 bits, so distances run 0-64.
+# * TLSH: a stronger digest from Trend Micro, but a C extension (``py-tlsh``).
+#   It is deliberately NOT listed in requirements.txt - the engine must install
+#   from a pure-Python dependency set on any platform, including ones with no
+#   wheel and no compiler.  ``tlsh_digest`` therefore imports it lazily and
+#   returns "" when it is missing, and ``tlsh_diff`` reports "infinitely far"
+#   rather than failing.  TLSH sharpens clustering for operators who run
+#   ``pip install py-tlsh``; SimHash is the baseline everyone gets.
+_WORD_RE = re.compile(r"\w+", re.UNICODE)
+_SHINGLE_SIZE = 3
+# TLSH needs a reasonable amount of input (~50 bytes) before its bucket
+# statistics mean anything; below that it declines to produce a digest.
+_TLSH_MIN_BYTES = 50
+# Larger than any sane threshold, so an uncomparable pair never clusters.
+_TLSH_UNCOMPARABLE = 1_000_000
+
+
+def _shingles(text: str, size: int = _SHINGLE_SIZE) -> Counter[str]:
+    """Word n-shingles of the normalised body, with their repeat counts.
+
+    Normalisation is deliberately shallow - lower-case, Unicode word tokens,
+    punctuation and layout dropped - so that HTML reflow, changed indentation
+    or a different signature separator do not move the digest, while the actual
+    wording still does.
+    """
+    words = _WORD_RE.findall((text or "").lower())
+    if not words:
+        return Counter()
+    if len(words) < size:
+        # Too short to shingle; fall back to the bare words so a tiny body
+        # still yields a stable (if weak) digest instead of zero.
+        return Counter(words)
+    return Counter(" ".join(words[index:index + size]) for index in range(len(words) - size + 1))
+
+
+def simhash(text: str, bits: int = 64) -> int:
+    """Charikar SimHash of ``text`` as a ``bits``-wide integer.
+
+    Each shingle is hashed with blake2b (digest_size = bits/8), then every bit
+    position of that hash votes +1 or -1 weighted by how often the shingle
+    occurs; the sign of each column becomes the corresponding output bit.  Two
+    texts that share most of their shingles therefore agree on most bits, and
+    ``hamming_distance`` measures how far apart they are.
+
+    An empty (or token-free) text hashes to 0, which callers treat as "no
+    digest" rather than as a body that matches every other empty body.
+    """
+    if bits <= 0 or bits % 8 or bits > 512:
+        raise ValueError("bits must be a multiple of 8 between 8 and 512 (blake2b's maximum)")
+    counts = _shingles(text)
+    if not counts:
+        return 0
+    digest_size = bits // 8
+    columns = [0] * bits
+    for shingle, weight in counts.items():
+        value = int.from_bytes(hashlib.blake2b(shingle.encode("utf-8"), digest_size=digest_size).digest(), "big")
+        for position in range(bits):
+            columns[position] += weight if value & 1 else -weight
+            value >>= 1
+    result = 0
+    for position, column in enumerate(columns):
+        if column > 0:
+            result |= 1 << position
+    return result
+
+
+def simhash_hex(text: str, bits: int = 64) -> str:
+    """``simhash`` rendered as a fixed-width lower-case hex string."""
+    return format(simhash(text, bits), f"0{max(1, bits // 4)}x")
+
+
+def hamming_distance(a_hex: str, b_hex: str) -> int:
+    """Number of differing bits between two hex digests of the same width.
+
+    Missing, malformed or differently sized digests are reported as maximally
+    distant (the full bit width) instead of raising, so a caller comparing
+    against a threshold can never be tricked into a match by bad data.
+    """
+    a_hex = (a_hex or "").strip().lower()
+    b_hex = (b_hex or "").strip().lower()
+    width = 4 * max(len(a_hex), len(b_hex), 16)
+    if not a_hex or not b_hex or len(a_hex) != len(b_hex):
+        return width
+    try:
+        return (int(a_hex, 16) ^ int(b_hex, 16)).bit_count()
+    except ValueError:
+        return width
+
+
+def tlsh_digest(data: bytes) -> str:
+    """TLSH digest of ``data``, or "" when one cannot be produced.
+
+    Returns "" - never raises - when the optional ``py-tlsh`` package is not
+    installed, when the input is shorter than ``_TLSH_MIN_BYTES``, or when the
+    library declines the input for lack of variation (it answers "TNULL").
+    ``py-tlsh`` is an optional C extension and is intentionally absent from
+    requirements.txt; see the section comment above.
+    """
+    if not data or len(data) < _TLSH_MIN_BYTES:
+        return ""
+    try:
+        import tlsh  # noqa: PLC0415 - optional dependency, imported lazily on purpose
+    except Exception:  # noqa: BLE001 - ImportError, or a broken/ABI-mismatched build
+        return ""
+    try:
+        digest = tlsh.hash(bytes(data))
+    except Exception:  # noqa: BLE001 - some builds raise instead of returning TNULL
+        log.debug("tlsh.hash declined a %d byte body", len(data), exc_info=True)
+        return ""
+    digest = str(digest or "").strip()
+    return "" if digest.upper() in {"", "TNULL", "NULL"} else digest
+
+
+def tlsh_diff(a_digest: str, b_digest: str) -> int:
+    """TLSH distance between two digests (0 = identical, higher = further).
+
+    Like ``hamming_distance`` this never raises: a missing digest, or a host
+    without ``py-tlsh`` reading digests another host stored, yields a very
+    large number so the comparison simply fails to match.
+    """
+    a_digest = (a_digest or "").strip()
+    b_digest = (b_digest or "").strip()
+    if not a_digest or not b_digest:
+        return _TLSH_UNCOMPARABLE
+    try:
+        import tlsh  # noqa: PLC0415 - optional dependency, imported lazily on purpose
+    except Exception:  # noqa: BLE001
+        return _TLSH_UNCOMPARABLE
+    try:
+        return int(tlsh.diff(a_digest, b_digest))
+    except Exception:  # noqa: BLE001 - malformed digest from an older engine version
+        log.debug("tlsh.diff rejected a stored digest", exc_info=True)
+        return _TLSH_UNCOMPARABLE
+
+
+# --------------------------------------------------------------------------- #
 # Entry point
 # --------------------------------------------------------------------------- #
+def _finalise(
+    parsed: ParsedEmail, attachments: list[RawAttachment], started: float
+) -> tuple[ParsedEmail, list[RawAttachment]]:
+    """Attach the body digests and stamp the elapsed parse time.
+
+    The digests are computed over the plain-text body, falling back to the
+    visible text of the HTML part when there is no text part, so the same
+    message sent as text and as HTML lands in the same campaign.  They are
+    inside the timed region on purpose: ``parse_ms`` is meant to be the honest
+    cost of Stage 1-2, not a figure that hides part of the work.
+    """
+    try:
+        body = parsed.text_body or html_to_text(parsed.html_body)
+        parsed.fuzzy = FuzzyDigest(
+            simhash=simhash_hex(body) if body else "",
+            tlsh=tlsh_digest(body.encode("utf-8", errors="replace")) if body else "",
+            body_length=len(body),
+        )
+    except Exception:  # noqa: BLE001 - parse_email must never raise
+        log.exception("fuzzy digest computation failed; continuing without one")
+        parsed.charset_issues.append("body digest could not be computed")
+    parsed.parse_ms = round((time.perf_counter() - started) * 1000, 3)
+    return parsed, attachments
+
+
 def parse_email(raw: bytes) -> tuple[ParsedEmail, list[RawAttachment]]:
     """Parse one message.  Returns the structural view plus attachment bytes."""
+    started = time.perf_counter()
     raw = bytes(raw or b"")
     parsed = ParsedEmail(
         raw_sha256=hashlib.sha256(raw).hexdigest(),
@@ -369,11 +548,11 @@ def parse_email(raw: bytes) -> tuple[ParsedEmail, list[RawAttachment]]:
     )
     if not raw.strip():
         parsed.charset_issues.append("empty message")
-        return parsed, []
+        return _finalise(parsed, [], started)
     msg = _parse_message(raw)
     if msg is None:
         parsed.charset_issues.append("message could not be parsed")
-        return parsed, []
+        return _finalise(parsed, [], started)
 
     # Headers ------------------------------------------------------------
     headers: list[HeaderField] = []
@@ -446,4 +625,4 @@ def parse_email(raw: bytes) -> tuple[ParsedEmail, list[RawAttachment]]:
         # Non-MIME message whose Content-Type could not be interpreted.
         parsed.text_body = _decode_text(msg, issues, "body")
     parsed.attachments = [_basic_meta(att) for att in raw_attachments]
-    return parsed, raw_attachments
+    return _finalise(parsed, raw_attachments, started)

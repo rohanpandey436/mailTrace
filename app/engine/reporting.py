@@ -3,8 +3,8 @@ Forensic report generation.
 
 Turns one persisted AnalysisResult plus its chain-of-custody ledger into a
 ForensicReport (the JSON artefact served by the API) and renders that report
-as a single, self-contained, printable HTML document intended for hand-over
-to legal teams and law enforcement.
+either as a self-contained printable HTML document or as a paginated PDF,
+both intended for hand-over to legal teams and law enforcement.
 
 Approach
 --------
@@ -14,10 +14,22 @@ Approach
 * The executive summary is composed one sentence per topic (message, verdict,
   claimed identity, origin, authentication, lures, attribution, campaign) so a
   non-technical reader can follow the case without reading the tables.
+* Every report carries a Section 65B(4) certificate (Indian Evidence Act 1872;
+  Section 63(4) of the Bharatiya Sakshya Adhiniyam 2023).  Its four clauses are
+  written from the facts of this analysis alone - filenames, Message-ID, the
+  ingestion and analysis timestamps, the engine version, the runtime, and the
+  span and event count of the custody ledger.  The tool states nothing it
+  cannot attest to: the signatory's name and position stay blank so a
+  responsible official can complete and sign them.
 * HTML rendering is plain string assembly: inline CSS, no scripts, no external
   assets, A4 print rules with page breaks between major sections, and every
   dynamic value passes through html.escape.  Hashes and URLs are monospace with
   word-break so nothing is truncated or hidden.
+* PDF rendering uses reportlab's platypus on A4 with the same sections and the
+  same numbering.  Every dynamic value goes through ``_pdf_escape`` (platypus
+  parses a mini-HTML, so a raw '&' or '<' from a hostile message would break
+  the build) and every cell is a Paragraph, so 64-character hashes and long
+  URLs wrap inside their column instead of running off the page.
 * Optional values (dates, geolocation, coordinates, ages, delays) render as an
   em dash rather than "None".
 """
@@ -26,8 +38,11 @@ from __future__ import annotations
 import html
 import json
 import logging
+import platform
+import sys
 from datetime import datetime, timezone
 from enum import Enum
+from io import BytesIO
 from typing import Any, Optional
 
 from ..schemas import (
@@ -35,15 +50,42 @@ from ..schemas import (
     AddressInfo,
     AnalysisResult,
     CustodyChain,
+    CustodyEvent,
     ForensicReport,
     GeoInfo,
+    Section65BCertificate,
     Severity,
 )
+
+try:  # PDF output is the only feature that needs reportlab; keep the app importable without it.
+    from reportlab.lib import colors
+    from reportlab.lib.enums import TA_JUSTIFY
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.pdfgen.canvas import Canvas
+    from reportlab.platypus import (
+        HRFlowable,
+        PageBreak,
+        Paragraph,
+        SimpleDocTemplate,
+        Spacer,
+        Table,
+        TableStyle,
+    )
+
+    _REPORTLAB_ERROR: Optional[BaseException] = None
+except ImportError as exc:  # pragma: no cover - only reachable without the dependency
+    _REPORTLAB_ERROR = exc
 
 log = logging.getLogger("mailtrace.reporting")
 
 _DASH = "&mdash;"
+_EM_DASH = "—"
 _MEDIUM = SEVERITY_ORDER[Severity.MEDIUM.value]
+
+
+class PdfUnavailable(RuntimeError):
+    """Raised by :func:`render_pdf` when the optional reportlab dependency is missing."""
 
 _SOURCE_LABELS: dict[str, str] = {
     "spoofed_domain": "spoofed sender domain: the visible From address was forged without control of that domain",
@@ -65,6 +107,16 @@ _DKIM_TEXT: dict[str, str] = {
     "fail": "the DKIM signature failed verification",
     "none": "no DKIM signature was present",
 }
+
+# Stage 4 scoring pillars, in RiskBreakdown field order, with the label and the
+# one-line explanation shown in the report.
+_PILLARS: tuple[tuple[str, str, str], ...] = (
+    ("ai", "AI core", "NLP intent, BEC patterns, attachment entropy, link lures"),
+    ("authentication", "Authentication", "SPF, DKIM, DMARC, alignment, forged header fields"),
+    ("geoip_route", "GeoIP / route", "origin infrastructure, VPN or Tor, hop timing anomalies"),
+    ("domain", "Domain", "registration age, look-alikes, DNS and MX posture"),
+    ("threat_intel", "Threat intel", "blocklists, reputation feeds, prior-incident overlap"),
+)
 
 _CSS = """
 *{box-sizing:border-box}
@@ -108,6 +160,19 @@ pre{font-family:Consolas,"Courier New",monospace;font-size:8pt;line-height:1.35;
 .verdict-box .fill{background:#fff}
 .verdict-box .meter-label{color:#fff}
 .footer{margin-top:20pt;padding-top:6pt;border-top:1px solid #cbd3dc;font-size:8pt;color:#5b6674}
+.cert{border:1.5pt solid #1c2430;padding:9pt 11pt}
+.cert-head{text-align:center;margin:0 0 9pt}
+.cert-head .t{font-size:12pt;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
+.cert-head .s{font-size:8.5pt;color:#5b6674}
+.clause{margin:0 0 9pt}
+.clause h4{font-size:9.5pt;margin:0 0 3pt;color:#1c2430}
+.clause p{margin:0;text-align:justify}
+.declaration{background:#f4f6f9;border-left:3pt solid #1c2430;padding:6pt 8pt;margin:0 0 10pt;text-align:justify}
+table.sig{margin-top:6pt}
+table.sig th{width:38%;background:#f4f6f9;font-weight:600;vertical-align:bottom}
+table.sig td{height:26pt;vertical-align:bottom}
+table.sig td.rule{border-bottom:1pt solid #1c2430}
+.tofill{font-size:8pt;color:#5b6674;font-style:italic}
 @page{size:A4;margin:14mm 12mm}
 @media print{
 body{background:#fff}
@@ -562,6 +627,195 @@ def _legal_notes(result: AnalysisResult, custody: CustodyChain, masked: bool) ->
     ]
 
 
+# --------------------------------------------------------------------------- #
+# Section 65B(4) certificate
+# --------------------------------------------------------------------------- #
+# The four statutory particulars, in the order the section states them.  The
+# third element is the ForensicReport field that carries the prose.
+_CERT_CLAUSES: tuple[tuple[str, str, str], ...] = (
+    ("a", "Identification of the electronic record and how it was produced", "statement_of_record"),
+    ("b", "The computer that produced the record and its regular use", "computer_description"),
+    ("c", "Period of regular operation of the computer", "operation_period"),
+    ("d", "Derivation of the contents and their preservation unaltered", "integrity_statement"),
+)
+
+# Signature block. A field name means "print the value if the caller supplied
+# one, otherwise leave a ruled line"; an empty name is always a ruled line.
+_SIGNATURE_FIELDS: tuple[tuple[str, str], ...] = (
+    ("Name of signatory", "signatory_name"),
+    ("Position held (person responsible for the operation of the computer)", "signatory_position"),
+    ("Organisation having lawful control of the computer", ""),
+    ("Place", ""),
+    ("Date", ""),
+    ("Signature", ""),
+)
+
+
+def _fmt_duration(start: datetime, end: datetime) -> str:
+    seconds = max(0.0, (end - start).total_seconds())
+    if seconds < 1:
+        return "under a second"
+    if seconds < 90:
+        return f"{seconds:.0f} seconds"
+    if seconds < 5400:
+        return f"{seconds / 60:.0f} minutes"
+    if seconds < 172800:
+        return f"{seconds / 3600:.1f} hours"
+    return f"{seconds / 86400:.1f} days"
+
+
+def _custody_span(custody: CustodyChain) -> tuple[Optional[datetime], Optional[datetime]]:
+    stamps = [event.timestamp for event in custody.events if event.timestamp is not None]
+    return (min(stamps), max(stamps)) if stamps else (None, None)
+
+
+def _first_event(custody: CustodyChain, action: str) -> Optional[CustodyEvent]:
+    return next((event for event in custody.events if event.action == action), None)
+
+
+def _runtime_description() -> str:
+    """The host and interpreter that produced this output, as reported by itself."""
+    implementation = sys.implementation.name or "python"
+    return f"{platform.platform()} running {implementation} {platform.python_version()}"
+
+
+def _cert_statement_of_record(result: AnalysisResult, report_id: str, ingested_at: Optional[datetime],
+                              generated_at: datetime) -> str:
+    email = result.email
+    message_id = _clean(email.message_id)
+    identity = f"bearing Message-ID {message_id}" if message_id else "which carried no Message-ID header"
+    subject = _clean(email.subject) or "(no subject)"
+    taken = (
+        f"was taken into the MailTrace evidence store on {_fmt_dt(ingested_at)}"
+        if ingested_at is not None
+        else "was submitted to MailTrace for examination"
+    )
+    return (
+        f'The electronic record to which this certificate relates is the e-mail message "{subject}", '
+        f"received as the file {_clean(result.filename)} and {identity}, together with the computer output "
+        f"reproduced in MailTrace forensic report {report_id}, which was produced from that message. "
+        f"The message {taken}, was analysed on {_fmt_dt(result.analyzed_at)} and this report was produced "
+        f"on {_fmt_dt(generated_at)}. Both the analysis and this report are computer output produced by "
+        f"the computer described in clause (b), during the period over which that computer was used "
+        f"regularly for the activity of receiving, storing and examining electronic mail submitted for "
+        f"forensic analysis. Nothing in the record was transcribed, retyped or reconstructed by hand."
+    )
+
+
+def _cert_computer_description(result: AnalysisResult) -> str:
+    processing = (
+        f"The message was processed in {result.processing_ms} ms of machine time as part of that activity. "
+        if result.processing_ms
+        else ""
+    )
+    return (
+        f"The record was produced by MailTrace, an automated electronic-mail forensic system, engine version "
+        f"{result.engine_version}, operating on {_runtime_description()}. The computer was used regularly, "
+        f"over the period covered by this certificate, to receive electronic mail submitted for examination, "
+        f"to compute cryptographic digests of it, to store the original bytes unmodified and to derive from "
+        f"them the analysis reproduced in this report; that is the ordinary activity for which the system is "
+        f"used. {processing}The identification of the particular deployment and device, its location and the "
+        f"person having lawful control of it are matters for the signatory below to state; this system can "
+        f"attest only to the software, version and runtime named above."
+    )
+
+
+def _cert_operation_period(custody: CustodyChain) -> str:
+    count = len(custody.events)
+    first, last = _custody_span(custody)
+    if first is not None and last is not None:
+        window = (
+            f"The chain-of-custody ledger for this exhibit records {_plural(count, 'event')}, the earliest at "
+            f"{_fmt_dt(first)} and the most recent at {_fmt_dt(last)}, a period of {_fmt_duration(first, last)}. "
+        )
+    else:
+        window = (
+            "The chain-of-custody ledger for this exhibit records no events, so no period of operation can be "
+            "established from it. "
+        )
+    if custody.valid:
+        integrity = (
+            f"Verification of that hash-linked ledger at the time this report was generated returned VALID: "
+            f"every entry reproduces the digest of the entry before it, up to head hash "
+            f"{custody.head_hash or 'n/a'}. "
+        )
+        state = (
+            "Throughout that period the computer was in operation and processed the message and each "
+            "subsequent request without recording any error, interruption or loss of data affecting the "
+            "contents of this record."
+        )
+    else:
+        integrity = (
+            "Verification of that hash-linked ledger at the time this report was generated returned INVALID: "
+            "the recorded entries no longer reproduce one another's digests. "
+        )
+        state = (
+            "The period of proper operation therefore cannot be certified from the ledger, and the "
+            "discrepancy must be investigated before this record is relied upon."
+        )
+    return (
+        window + integrity + state + " Any lapse in the operation of the computer that is not visible in the "
+        "ledger is to be disclosed by the signatory."
+    )
+
+
+def _cert_integrity_statement(result: AnalysisResult, custody: CustodyChain, masked: bool) -> str:
+    email = result.email
+    masking = (
+        " This copy has been passed through PII masking: personal identifiers are redacted in the narrative "
+        "and in the structured data, while domains, IP addresses, URLs, hashes and timestamps are preserved. "
+        "The digests above describe the unmasked original held in the evidence store, from which an unmasked "
+        "copy can be produced; that access would itself be recorded in the ledger."
+        if masked
+        else ""
+    )
+    return (
+        f"The information in this electronic record was derived from the message exactly as received. Its "
+        f"{email.raw_size:,} bytes were written once to the evidence store and were never modified; digests "
+        f"were computed over those bytes at ingestion, giving SHA-256 {email.raw_sha256 or 'n/a'} and MD5 "
+        f"{email.raw_md5 or 'n/a'}. Every figure, table and conclusion in this report is a read-only "
+        f"projection of those preserved bytes computed by MailTrace engine {result.engine_version}; no part "
+        f"of the original message was edited, re-encoded or reconstructed, and recomputing the digests over "
+        f"the preserved file reproduces the values above if, and only if, the exhibit is unaltered. Each "
+        f"access to and operation on the exhibit is appended to the hash-linked custody ledger, which stood "
+        f"at {_plural(len(custody.events), 'event')} and head hash {custody.head_hash or 'n/a'} when this "
+        f"report was generated, so that removing or altering any record would break every later hash."
+        + masking
+    )
+
+
+def build_section_65b(
+    result: AnalysisResult,
+    custody: CustodyChain,
+    report_id: str,
+    generated_at: datetime,
+    masked: bool,
+) -> Section65BCertificate:
+    """Statement of the Section 65B(4) particulars for one analysed message.
+
+    Only facts the tool observed are stated: the file and Message-ID, the
+    ingestion and analysis timestamps, the engine version and runtime, the
+    digests taken at ingestion and the span, size and validity of the custody
+    ledger.  ``signatory_name`` and ``signatory_position`` are deliberately
+    left empty - the certificate is executed by a person, not by this program.
+    """
+    ingested = _first_event(custody, "ingested")
+    ingested_at = ingested.timestamp if ingested is not None else None
+    return Section65BCertificate(
+        statement_of_record=_clean(_cert_statement_of_record(result, report_id, ingested_at, generated_at)),
+        computer_description=_clean(_cert_computer_description(result)),
+        operation_period=_clean(_cert_operation_period(custody)),
+        integrity_statement=_clean(_cert_integrity_statement(result, custody, masked)),
+        evidence_sha256=result.email.raw_sha256,
+        evidence_md5=result.email.raw_md5,
+        custody_head_hash=custody.head_hash,
+        custody_chain_valid=custody.valid,
+        custody_event_count=len(custody.events),
+        tool_version=result.engine_version,
+        generated_at=generated_at,
+    )
+
+
 def build_report(
     result: AnalysisResult,
     custody: CustodyChain,
@@ -575,11 +829,13 @@ def build_report(
     """
     now = datetime.now(timezone.utc)
     is_masked = masked or result.masked
+    report_id = f"RPT-{result.id}-{now:%Y%m%d%H%M}"
     report = ForensicReport(
-        report_id=f"RPT-{result.id}-{now:%Y%m%d%H%M}",
+        report_id=report_id,
         generated_at=now,
         generated_by=generated_by,
         masked=is_masked,
+        section_65b=build_section_65b(result, custody, report_id, now, is_masked),
         executive_summary=render_text_summary(result),
         key_indicators=_key_indicators(result),
         evidence_integrity=_evidence_integrity(result, custody),
@@ -821,24 +1077,18 @@ def _verdict_section(result: AnalysisResult) -> str:
         ]
     )
     rows: list[list[str]] = []
-    components = (
-        ("authentication", breakdown.authentication),
-        ("content", breakdown.content),
-        ("links", breakdown.links),
-        ("infrastructure", breakdown.infrastructure),
-        ("anomaly", breakdown.anomaly),
-    )
-    for name, score in components:
+    for index, (name, label, explanation) in enumerate(_PILLARS, 1):
+        score = float(getattr(breakdown, name, 0.0) or 0.0)
         weight = breakdown.weights.get(name)
         rows.append(
             [
-                _esc(name.capitalize()),
+                f'{_esc(f"{index}. {label}")}<br><span class="muted">{_esc(explanation)}</span>',
                 _bar(score, f"sev-{_sev_for_score(score)}", f"{score:.0f}"),
                 _cell(f"{weight:.2f}" if weight is not None else ""),
                 _cell(f"{score * weight:.1f}" if weight is not None else ""),
             ]
         )
-    table = _table(["Component", "Score (0-100)", "Weight", "Weighted contribution"], rows, "")
+    table = _table(["Pillar", "Score (0-100)", "Weight", "Weighted contribution"], rows, "")
     rationale = _list(verdict.rationale, empty="No rationale recorded.")
     return overview + "<h3>Risk breakdown</h3>" + table + "<h3>Rationale</h3>" + rationale
 
@@ -876,6 +1126,62 @@ def _evidence_section(result: AnalysisResult, custody: CustodyChain) -> str:
         "No custody events have been recorded for this exhibit.",
     )
     return integrity + "<h3>Chain of custody</h3>" + table
+
+
+def _signature_block(cert: Section65BCertificate) -> str:
+    rows: list[str] = []
+    for label, field in _SIGNATURE_FIELDS:
+        value = _clean(getattr(cert, field, "")) if field else ""
+        # An unfilled particular is a ruled line for the signatory, never an em dash.
+        cell = f"<td>{_esc(value)}</td>" if value else '<td class="rule"></td>'
+        rows.append(f"<tr><th>{_esc(label)}</th>{cell}</tr>")
+    body = "".join(rows)
+    return f'<table class="sig"><tbody>{body}</tbody></table>'
+
+
+def _certificate_section(report: ForensicReport) -> str:
+    """The 65B(4) particulars as a legal annexure: four labelled clauses and a signature block."""
+    cert = report.section_65b
+    if cert is None:
+        return '<p class="muted">No Section 65B certificate was generated for this report.</p>'
+    status = _badge("valid", "ok") if cert.custody_chain_valid else _badge("invalid", "bad")
+    particulars = _kv(
+        [
+            ("Certifying tool", f"{_esc(cert.tool_name)} {_esc(cert.tool_version)}"),
+            ("Report", _mono(report.report_id)),
+            ("Exhibit (source file)", _cell(report.analysis.filename)),
+            ("Certificate generated", _cell(_fmt_dt(cert.generated_at))),
+            ("SHA-256 of the original message", _mono(cert.evidence_sha256)),
+            ("MD5 of the original message", _mono(cert.evidence_md5)),
+            ("Custody ledger head hash", _mono(cert.custody_head_hash)),
+            (
+                "Custody ledger",
+                f"{status} {_esc(_plural(cert.custody_event_count, 'recorded event'))}",
+            ),
+        ]
+    )
+    clauses = "".join(
+        f'<div class="clause"><h4>({letter}) {_esc(title)}</h4>'
+        f"<p>{_esc(_clean(getattr(cert, field, '')))}</p></div>"
+        for letter, title, field in _CERT_CLAUSES
+    )
+    return (
+        '<div class="cert">'
+        '<div class="cert-head"><div class="t">Certificate under Section 65B(4)</div>'
+        '<div class="s">Indian Evidence Act, 1872 &mdash; read with Section 63(4) of the '
+        "Bharatiya Sakshya Adhiniyam, 2023</div></div>"
+        + particulars
+        + "<h3>Statutory particulars</h3>"
+        + clauses
+        + f'<p class="declaration">{_esc(_clean(cert.declaration))}</p>'
+        + '<h3>To be completed and signed by the responsible official</h3>'
+        + '<p class="tofill">MailTrace states the particulars above from the facts of the analysis. '
+        "Clauses (a) to (d) must be signed by a person occupying a responsible official position in "
+        "relation to the operation of the computer or the management of the relevant activities; that "
+        "person's name and position are deliberately left blank below.</p>"
+        + _signature_block(cert)
+        + "</div>"
+    )
 
 
 def _identity_section(result: AnalysisResult) -> str:
@@ -1383,6 +1689,7 @@ def render_html(report: ForensicReport) -> str:
         ("Executive summary", _summary_section(report), False),
         ("Verdict and dual validation", _verdict_section(result), True),
         ("Evidence integrity and chain of custody", _evidence_section(result, report.custody), False),
+        ("Certificate under Section 65B of the Indian Evidence Act", _certificate_section(report), True),
         ("Sender identity and authentication", _identity_section(result), True),
         ("Routing trace", _routing_section(result), False),
         ("Origin and infrastructure", _infra_section(result), True),
@@ -1422,3 +1729,1119 @@ def render_html(report: ForensicReport) -> str:
         "</body>\n"
         "</html>\n"
     )
+
+
+# --------------------------------------------------------------------------- #
+# PDF rendering (reportlab platypus)
+# --------------------------------------------------------------------------- #
+_PDF_MARGIN = 38.0        # points
+_PDF_FRAME_PAD = 6.0      # SimpleDocTemplate insets its frame by this much on each side
+_PDF_FOOTER_SPACE = 20.0  # extra bottom margin reserved for the page footer
+
+_INK = "#1c2430"
+_INK_MUTED = "#5b6674"
+_INK_RULE = "#cbd3dc"
+_INK_OK = "#2f855a"
+_INK_BAD = "#9b2c2c"
+_BG_HEAD = "#e8edf3"
+_BG_KV = "#f4f6f9"
+_SEV_INK: dict[str, str] = {
+    Severity.INFO.value: "#5b6674",
+    Severity.LOW.value: "#2f855a",
+    Severity.MEDIUM.value: "#b7791f",
+    Severity.HIGH.value: "#c05621",
+    Severity.CRITICAL.value: "#9b2c2c",
+}
+
+_PDF_STYLES: dict[str, Any] = {}
+
+
+def _pdf_escape(value: Any) -> str:
+    """Escape one dynamic value for platypus' mini-HTML parser.
+
+    Every dynamic value that reaches a Paragraph passes through here: platypus
+    parses its input as mark-up, so an unescaped '&' or '<' arriving from a
+    hostile subject line, header or URL would abort the build or silently eat
+    the rest of the cell.  Control characters have no glyph and are dropped.
+    """
+    if value is None:
+        return ""
+    if isinstance(value, Enum):
+        value = value.value
+    text = str(value).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    return "".join(char if char >= " " or char == "\t" else " " for char in text)
+
+
+def _styles() -> dict[str, Any]:
+    """Paragraph styles, built once on first use (they need reportlab imported)."""
+    if _PDF_STYLES:
+        return _PDF_STYLES
+    ink = colors.HexColor(_INK)
+    muted = colors.HexColor(_INK_MUTED)
+    body = ParagraphStyle("mt-body", fontName="Helvetica", fontSize=9, leading=12.5, textColor=ink, spaceAfter=5)
+    cell = ParagraphStyle("mt-cell", parent=body, fontSize=7.4, leading=9.3, spaceAfter=0)
+    _PDF_STYLES.update(
+        {
+            "body": body,
+            "just": ParagraphStyle("mt-just", parent=body, alignment=TA_JUSTIFY),
+            "muted": ParagraphStyle("mt-muted", parent=body, fontName="Helvetica-Oblique", fontSize=8.5, textColor=muted),
+            "brand": ParagraphStyle("mt-brand", parent=body, fontName="Helvetica-Bold", fontSize=8.5, textColor=muted, spaceAfter=3),
+            "classification": ParagraphStyle(
+                "mt-classification", parent=body, fontName="Helvetica-Bold", fontSize=7.5,
+                textColor=colors.HexColor(_INK_BAD), spaceAfter=0,
+            ),
+            "h1": ParagraphStyle("mt-h1", parent=body, fontName="Helvetica-Bold", fontSize=15.5, leading=18.5,
+                                 spaceBefore=8, spaceAfter=8, keepWithNext=1),
+            "h2": ParagraphStyle("mt-h2", parent=body, fontName="Helvetica-Bold", fontSize=12, leading=14.5,
+                                 spaceBefore=4, spaceAfter=1, keepWithNext=1),
+            "h3": ParagraphStyle("mt-h3", parent=body, fontName="Helvetica-Bold", fontSize=9.5, leading=12,
+                                 spaceBefore=9, spaceAfter=3, keepWithNext=1),
+            "h4": ParagraphStyle("mt-h4", parent=body, fontName="Helvetica-Bold", fontSize=9, leading=11.5,
+                                 spaceBefore=6, spaceAfter=2, keepWithNext=1),
+            "cell": cell,
+            "th": ParagraphStyle("mt-th", parent=cell, fontName="Helvetica-Bold"),
+            "mono": ParagraphStyle("mt-mono", parent=cell, fontName="Courier", fontSize=6.6, leading=8.2),
+            "pre": ParagraphStyle("mt-pre", parent=body, fontName="Courier", fontSize=7, leading=9, spaceAfter=1),
+            "bullet": ParagraphStyle("mt-bullet", parent=body, leftIndent=14, bulletIndent=3, spaceAfter=3),
+            "sig": ParagraphStyle("mt-sig", parent=body, fontSize=8.5, leading=11, spaceAfter=0),
+            "verdict": ParagraphStyle("mt-verdict", parent=body, fontName="Helvetica-Bold", fontSize=15, leading=18,
+                                      textColor=colors.white, spaceAfter=2),
+            "verdictmeta": ParagraphStyle("mt-verdictmeta", parent=body, fontSize=9, leading=12,
+                                          textColor=colors.white, spaceAfter=0),
+            "declaration": ParagraphStyle("mt-declaration", parent=body, fontSize=8.5, leading=11.5,
+                                          alignment=TA_JUSTIFY, spaceAfter=0),
+        }
+    )
+    return _PDF_STYLES
+
+
+# --------------------------------------------------------------------------- #
+# PDF flowable helpers
+# --------------------------------------------------------------------------- #
+def _markup(text: str, style: str = "cell") -> Any:
+    """Paragraph from mark-up that is already escaped (colour and bold wrappers)."""
+    return Paragraph(text or "&nbsp;", _styles()[style])
+
+
+def _para(value: Any, style: str = "body") -> Any:
+    return _markup(_pdf_escape(value), style)
+
+
+def _cellp(value: Any, style: str = "cell") -> Any:
+    """Table cell; an empty value renders as an em dash, never as 'None'."""
+    text = _pdf_escape(value).strip()
+    return _markup(text if text else _EM_DASH, style)
+
+
+def _monop(value: Any) -> Any:
+    """Monospace cell for hashes, IPs and URLs; long values wrap inside the column."""
+    text = _pdf_escape(value).strip()
+    return _markup(text, "mono") if text else _markup(_EM_DASH)
+
+
+def _linesp(values: list[Any], style: str = "cell") -> Any:
+    """Several values stacked in one cell, each on its own line."""
+    parts = [part for part in (_pdf_escape(value).strip() for value in values) if part]
+    return _markup("<br/>".join(parts) if parts else _EM_DASH, style)
+
+
+def _listp(items: list[Any], style: str = "cell") -> Any:
+    return _cellp(", ".join(_val(item) for item in items if _val(item)), style)
+
+
+def _colour(value: Any, ink: str, bold: bool = True) -> Any:
+    text = _pdf_escape(value)
+    inner = f"<b>{text}</b>" if bold else text
+    return _markup(f'<font color="{ink}">{inner}</font>')
+
+
+def _sevp(severity: Any) -> Any:
+    value = _val(severity) or Severity.INFO.value
+    return _colour(value.upper(), _SEV_INK.get(value, _INK_MUTED))
+
+
+def _flagp(hit: bool, yes: str = "flagged", no: str = "clear") -> Any:
+    return _colour(yes, _INK_BAD) if hit else _colour(no, _INK_OK)
+
+
+def _authp(outcome: str) -> Any:
+    text = outcome or "none"
+    if text == "pass":
+        return _colour(text, _INK_OK)
+    if text in ("fail", "softfail"):
+        return _colour(text, _INK_BAD)
+    return _colour(text, _INK_MUTED)
+
+
+def _cw(*fractions: float) -> list[float]:
+    """Column widths from relative fractions, normalised to the printable width.
+
+    The width is the frame's, not the page's: the document template insets its
+    frame by ``_PDF_FRAME_PAD`` on each side, so measuring from the page margin
+    would push every table that much past the right margin.
+    """
+    total = A4[0] - 2 * (_PDF_MARGIN + _PDF_FRAME_PAD)
+    scale = sum(fractions) or 1.0
+    return [total * fraction / scale for fraction in fractions]
+
+
+def _grid_style(header: bool = True, kv: bool = False) -> Any:
+    commands: list[tuple] = [
+        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor(_INK_RULE)),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 3.5),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 3.5),
+        ("TOPPADDING", (0, 0), (-1, -1), 2.5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2.5),
+    ]
+    if header:
+        commands.append(("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(_BG_HEAD)))
+    if kv:
+        commands.append(("BACKGROUND", (0, 0), (0, -1), colors.HexColor(_BG_KV)))
+    return TableStyle(commands)
+
+
+def _pdf_table(headers: list[str], rows: list[list[Any]], fractions: list[float], empty: str) -> list[Any]:
+    """Table of Paragraph cells; renders ``empty`` when there is nothing to show."""
+    if not rows:
+        return [_para(empty, "muted"), Spacer(1, 4)] if empty else []
+    data = [[_para(header, "th") for header in headers]] + rows
+    table = Table(data, colWidths=_cw(*fractions), repeatRows=1, hAlign="LEFT", splitByRow=1, splitInRow=1)
+    table.setStyle(_grid_style())
+    return [table, Spacer(1, 7)]
+
+
+def _pdf_kv(rows: list[tuple[str, Any]], label_fraction: float = 0.31) -> list[Any]:
+    if not rows:
+        return []
+    data = [
+        [_para(label, "th"), _cellp(value) if isinstance(value, (str, int, float)) else value]
+        for label, value in rows
+    ]
+    table = Table(
+        data, colWidths=_cw(label_fraction, 1.0 - label_fraction), hAlign="LEFT", splitByRow=1, splitInRow=1,
+    )
+    table.setStyle(_grid_style(header=False, kv=True))
+    return [table, Spacer(1, 7)]
+
+
+def _pdf_list(items: list[Any], ordered: bool = False, empty: str = "None recorded.") -> list[Any]:
+    if not items:
+        return [_para(empty, "muted"), Spacer(1, 4)]
+    style = _styles()["bullet"]
+    flowables: list[Any] = [
+        Paragraph(_pdf_escape(item), style, bulletText=(f"{index}." if ordered else "•"))
+        for index, item in enumerate(items, 1)
+    ]
+    flowables.append(Spacer(1, 3))
+    return flowables
+
+
+def _pdf_heading(number: int, title: str) -> list[Any]:
+    return [
+        _para(f"{number}. {title}", "h2"),
+        HRFlowable(width="100%", thickness=1.1, color=colors.HexColor(_INK), spaceBefore=1, spaceAfter=7),
+    ]
+
+
+def _addr_text(addr: AddressInfo) -> str:
+    name = _clean(addr.display_name)
+    address = _clean(addr.address)
+    if name and address:
+        return f"{name} <{address}>"
+    return address or name
+
+
+def _recipients_p(addrs: list[AddressInfo]) -> Any:
+    shown = [text for text in (_addr_text(addr) for addr in addrs[:5]) if text]
+    if not shown:
+        return _markup(_EM_DASH)
+    extra = len(addrs) - len(shown)
+    if extra > 0:
+        shown.append(f"and {extra} more")
+    return _linesp(shown)
+
+
+def _geo_lines(geo: Optional[GeoInfo]) -> list[str]:
+    """Location, provider, ASN and network tags for one IP, one string per line."""
+    if geo is None:
+        return []
+    if geo.is_private:
+        return ["private network"]
+    bits = [bit for bit in (_place(geo), geo.isp or geo.org, geo.asn) if bit]
+    tags: list[str] = []
+    if geo.is_tor_exit:
+        tags.append("tor exit")
+    if geo.is_proxy:
+        tags.append("proxy / vpn")
+    if geo.is_hosting:
+        tags.append("hosting")
+    if geo.is_mobile:
+        tags.append("mobile")
+    if geo.blacklists:
+        tags.append(f"dnsbl x{len(geo.blacklists)}")
+    if geo.abuse_confidence is not None and geo.abuse_confidence >= 50:
+        tags.append(f"abuse {geo.abuse_confidence}")
+    if tags:
+        bits.append(", ".join(tags))
+    return bits or [geo.source or "unavailable"]
+
+
+# --------------------------------------------------------------------------- #
+# PDF sections (one function per section, mirroring the HTML report)
+# --------------------------------------------------------------------------- #
+def _pdf_cover(report: ForensicReport, result: AnalysisResult) -> list[Any]:
+    verdict = result.verdict
+    severity = _val(verdict.severity) or Severity.INFO.value
+    classification = Table(
+        [[_para("Confidential · forensic evidence · authorised investigators only", "classification")]],
+        colWidths=_cw(1.0), hAlign="LEFT",
+    )
+    classification.setStyle(
+        TableStyle(
+            [
+                ("BOX", (0, 0), (-1, -1), 0.7, colors.HexColor(_INK_BAD)),
+                ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                ("TOPPADDING", (0, 0), (-1, -1), 3),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ]
+        )
+    )
+    box = Table(
+        [
+            [
+                [
+                    _para(verdict.category, "verdict"),
+                    _para(
+                        f"Risk score {verdict.risk_score}/100 · {severity} severity "
+                        f"· confidence {_pct(verdict.confidence)}",
+                        "verdictmeta",
+                    ),
+                ]
+            ]
+        ],
+        colWidths=_cw(1.0), hAlign="LEFT",
+    )
+    box.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor(_SEV_INK.get(severity, _INK_MUTED))),
+                ("LEFTPADDING", (0, 0), (-1, -1), 11),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 11),
+                ("TOPPADDING", (0, 0), (-1, -1), 9),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
+            ]
+        )
+    )
+    masking = (
+        "Applied — personal identifiers are redacted in this copy"
+        if report.masked
+        else "Not applied — this copy contains personal data"
+    )
+    meta = _pdf_kv(
+        [
+            ("Report ID", _monop(report.report_id)),
+            ("Generated", _cellp(_fmt_dt(report.generated_at))),
+            ("Generated by", _cellp(report.generated_by)),
+            ("Case / e-mail ID", _monop(result.id)),
+            ("Source file", _cellp(result.filename)),
+            ("Analysed", _cellp(f"{_fmt_dt(result.analyzed_at)} by MailTrace engine {result.engine_version}")),
+            ("PII masking", _cellp(masking)),
+        ]
+    )
+    return [
+        _para("MAILTRACE · forensic e-mail analysis report", "brand"),
+        classification,
+        _para(_clean(result.email.subject) or "(no subject)", "h1"),
+        box,
+        Spacer(1, 11),
+        *meta,
+    ]
+
+
+def _pdf_summary(report: ForensicReport) -> list[Any]:
+    lines = [line.strip() for line in report.executive_summary.split("\n") if line.strip()]
+    if not lines:
+        return [_para("No summary available.", "muted")]
+    return [_para(line, "just") for line in lines]
+
+
+def _pdf_verdict(result: AnalysisResult) -> list[Any]:
+    verdict = result.verdict
+    breakdown = verdict.breakdown
+    stance = "agree" if verdict.dual_validation_agreement else "disagree"
+    ink = _INK_OK if verdict.dual_validation_agreement else _INK_BAD
+    agreement = _markup(
+        f'<font color="{ink}"><b>{_pdf_escape(stance)}</b></font> '
+        f"{_pdf_escape(f'- the rule engine and the ML classifier {stance}')}"
+    )
+    overview = _pdf_kv(
+        [
+            ("Final category", _colour(verdict.category, _INK)),
+            ("Risk score", _cellp(f"{verdict.risk_score} / 100")),
+            ("Severity", _sevp(verdict.severity)),
+            ("Confidence", _cellp(_pct(verdict.confidence))),
+            ("Rule engine", _cellp(verdict.rule_category)),
+            ("ML classifier", _cellp(f"{_val(verdict.ml_category)} ({result.nlp.ml_model or 'unavailable'})")),
+            ("Dual validation", agreement),
+        ]
+    )
+    rows: list[list[Any]] = []
+    for index, (name, label, explanation) in enumerate(_PILLARS, 1):
+        score = float(getattr(breakdown, name, 0.0) or 0.0)
+        weight = breakdown.weights.get(name)
+        rows.append(
+            [
+                _markup(f"<b>{_pdf_escape(f'{index}. {label}')}</b><br/>{_pdf_escape(explanation)}"),
+                _cellp(f"{score:.0f}"),
+                _cellp(f"{weight:.2f}" if weight is not None else ""),
+                _cellp(f"{score * weight:.1f}" if weight is not None else ""),
+            ]
+        )
+    table = _pdf_table(
+        ["Pillar", "Score (0-100)", "Weight", "Weighted contribution"], rows, [0.46, 0.16, 0.14, 0.24], "",
+    )
+    return [
+        *overview,
+        _para("Risk breakdown by scoring pillar", "h3"),
+        *table,
+        _para("Rationale", "h3"),
+        *_pdf_list(verdict.rationale, empty="No rationale recorded."),
+    ]
+
+
+def _pdf_evidence(result: AnalysisResult, custody: CustodyChain) -> list[Any]:
+    email = result.email
+    status = _colour("valid", _INK_OK) if custody.valid else _colour("invalid", _INK_BAD)
+    integrity = _pdf_kv(
+        [
+            ("SHA-256 of original message", _monop(email.raw_sha256)),
+            ("MD5 of original message", _monop(email.raw_md5)),
+            ("Size", _cellp(f"{email.raw_size:,} bytes ({_fmt_size(email.raw_size)})")),
+            ("Analysed at", _cellp(_fmt_dt(result.analyzed_at))),
+            ("Engine version", _cellp(result.engine_version)),
+            ("Custody ledger", status),
+            ("Recorded events", _cellp(len(custody.events))),
+            ("Ledger head hash", _monop(custody.head_hash)),
+        ]
+    )
+    rows = [
+        [
+            _cellp(event.seq),
+            _cellp(_fmt_dt(event.timestamp)),
+            _cellp(event.actor),
+            _cellp(event.action),
+            _monop(json.dumps(event.detail, sort_keys=True, default=str) if event.detail else ""),
+            _monop(event.evidence_sha256),
+            _monop(event.prev_hash),
+            _monop(event.hash),
+        ]
+        for event in custody.events
+    ]
+    table = _pdf_table(
+        ["#", "Timestamp", "Actor", "Action", "Detail", "Evidence SHA-256", "Previous hash", "Entry hash"],
+        rows,
+        [0.042, 0.112, 0.070, 0.092, 0.150, 0.178, 0.178, 0.178],
+        "No custody events have been recorded for this exhibit.",
+    )
+    return [*integrity, _para("Chain of custody", "h3"), *table]
+
+
+def _pdf_signature_block(cert: Section65BCertificate) -> list[Any]:
+    rows: list[list[Any]] = []
+    ruled: list[int] = []
+    for index, (label, field) in enumerate(_SIGNATURE_FIELDS):
+        value = _clean(getattr(cert, field, "")) if field else ""
+        rows.append([_para(label, "sig"), _para(value, "sig")])
+        if not value:
+            ruled.append(index)
+    # Minimum (not fixed) heights: the rows must be tall enough to sign in, but a
+    # long label still gets the space it needs instead of being clipped.
+    table = Table(rows, colWidths=_cw(0.42, 0.58), minRowHeights=[25] * len(rows), hAlign="LEFT", splitByRow=1)
+    commands: list[tuple] = [
+        ("VALIGN", (0, 0), (-1, -1), "BOTTOM"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+    ]
+    # An unfilled particular gets a ruled line for the signatory, not an em dash.
+    commands.extend(("LINEBELOW", (1, index), (1, index), 0.8, colors.HexColor(_INK)) for index in ruled)
+    table.setStyle(TableStyle(commands))
+    return [table, Spacer(1, 6)]
+
+
+def _pdf_certificate(report: ForensicReport) -> list[Any]:
+    cert = report.section_65b
+    if cert is None:
+        return [_para("No Section 65B certificate was generated for this report.", "muted")]
+    heading = [
+        _para("Certificate under Section 65B(4)", "h3"),
+        _para(
+            "Indian Evidence Act, 1872 — read with Section 63(4) of the Bharatiya Sakshya Adhiniyam, 2023",
+            "muted",
+        ),
+    ]
+    status = _colour("valid", _INK_OK) if cert.custody_chain_valid else _colour("invalid", _INK_BAD)
+    particulars = _pdf_kv(
+        [
+            ("Certifying tool", _cellp(f"{cert.tool_name} {cert.tool_version}")),
+            ("Report", _monop(report.report_id)),
+            ("Exhibit (source file)", _cellp(report.analysis.filename)),
+            ("Certificate generated", _cellp(_fmt_dt(cert.generated_at))),
+            ("SHA-256 of the original message", _monop(cert.evidence_sha256)),
+            ("MD5 of the original message", _monop(cert.evidence_md5)),
+            ("Custody ledger head hash", _monop(cert.custody_head_hash)),
+            ("Custody ledger", status),
+            ("Recorded events", _cellp(cert.custody_event_count)),
+        ]
+    )
+    clauses: list[Any] = []
+    for letter, title, field in _CERT_CLAUSES:
+        clauses.append(_para(f"({letter}) {title}", "h4"))
+        clauses.append(_para(_clean(getattr(cert, field, "")), "just"))
+    declaration = Table([[_para(_clean(cert.declaration), "declaration")]], colWidths=_cw(1.0), hAlign="LEFT")
+    declaration.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor(_BG_KV)),
+                ("LINEBEFORE", (0, 0), (0, -1), 2.5, colors.HexColor(_INK)),
+                ("LEFTPADDING", (0, 0), (-1, -1), 8),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+                ("TOPPADDING", (0, 0), (-1, -1), 6),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ]
+        )
+    )
+    note = _para(
+        "MailTrace states the particulars above from the facts of the analysis. Clauses (a) to (d) must be "
+        "signed by a person occupying a responsible official position in relation to the operation of the "
+        "computer or the management of the relevant activities; that person's name and position are "
+        "deliberately left blank below.",
+        "muted",
+    )
+    return [
+        *heading,
+        *particulars,
+        _para("Statutory particulars", "h3"),
+        *clauses,
+        Spacer(1, 8),
+        declaration,
+        _para("To be completed and signed by the responsible official", "h3"),
+        note,
+        Spacer(1, 4),
+        *_pdf_signature_block(cert),
+    ]
+
+
+def _pdf_identity(result: AnalysisResult) -> list[Any]:
+    email = result.email
+    hdr = result.headers
+    auth = hdr.auth
+    identity = _pdf_kv(
+        [
+            ("From", _cellp(_addr_text(email.sender))),
+            ("Sender domain", _monop(email.sender.domain)),
+            ("Reply-To", _linesp([_addr_text(addr) for addr in email.reply_to])),
+            ("Return-Path (envelope sender)", _cellp(_addr_text(email.return_path))),
+            ("To", _recipients_p(email.to)),
+            ("Cc", _recipients_p(email.cc)),
+            ("Date header", _cellp(_fmt_dt(email.date))),
+            ("Message-ID", _monop(email.message_id)),
+            ("Mailer", _cellp(email.mailer)),
+        ]
+    )
+    checks = _pdf_table(
+        ["Check", "Status", "Detail"],
+        [
+            [
+                _cellp("Display-name impersonation"),
+                _flagp(hdr.display_name_spoof),
+                _cellp(f"imitates {hdr.display_name_brand}" if hdr.display_name_brand else ""),
+            ],
+            [
+                _cellp("Reply-To domain mismatch"),
+                _flagp(hdr.reply_to_mismatch),
+                _listp([addr.address for addr in email.reply_to if addr.address]),
+            ],
+            [
+                _cellp("Return-Path domain mismatch"),
+                _flagp(hdr.return_path_mismatch),
+                _cellp(email.return_path.address),
+            ],
+            [_cellp("Message-ID domain mismatch"), _flagp(hdr.message_id_mismatch), _cellp(hdr.message_id_domain)],
+            [
+                _cellp("Header anomalies"),
+                _flagp(bool(hdr.anomalies)),
+                _listp([_human(item) for item in hdr.anomalies]),
+            ],
+        ],
+        [0.34, 0.16, 0.50],
+        "",
+    )
+    dkim_detail = " ".join(
+        part for part in (f"d={auth.dkim_domain}" if auth.dkim_domain else "",
+                          f"s={auth.dkim_selector}" if auth.dkim_selector else "") if part
+    )
+    auth_table = _pdf_table(
+        ["Mechanism", "Result", "Domain / detail", "Alignment with From", "Source"],
+        [
+            [
+                _cellp("SPF"),
+                _authp(auth.spf),
+                _cellp(auth.spf_domain),
+                _cellp(_tri(auth.spf_aligned, "aligned", "not aligned")),
+                _cellp(auth.spf_source),
+            ],
+            [
+                _cellp("DKIM"),
+                _authp(auth.dkim),
+                _cellp(dkim_detail),
+                _cellp(_tri(auth.dkim_aligned, "aligned", "not aligned")),
+                _cellp(auth.dkim_source),
+            ],
+            [
+                _cellp("DMARC"),
+                _authp(auth.dmarc),
+                _cellp(f"policy: {auth.dmarc_policy}" if auth.dmarc_policy else ""),
+                _cellp(""),
+                _cellp(auth.dmarc_source),
+            ],
+        ],
+        [0.14, 0.13, 0.30, 0.24, 0.19],
+        "",
+    )
+    return [
+        *identity,
+        _para("Forged-field checks", "h3"),
+        *checks,
+        _para("Authentication (SPF / DKIM / DMARC)", "h3"),
+        *auth_table,
+        *_pdf_list(auth.notes, empty="No additional authentication notes."),
+    ]
+
+
+def _pdf_routing(result: AnalysisResult) -> list[Any]:
+    hdr = result.headers
+    rows: list[list[Any]] = []
+    for hop in sorted(hdr.hops, key=lambda item: item.index):
+        notes: list[str] = []
+        if hdr.originating_hop_index is not None and hop.index == hdr.originating_hop_index:
+            notes.append("origin")
+        if hop.is_private_ip:
+            notes.append("private ip")
+        if hop.is_internal:
+            notes.append("internal")
+        notes.extend(_human(anomaly) for anomaly in hop.anomalies)
+        by_bits = [hop.by_host]
+        if hop.hop_id:
+            by_bits.append(f"id {hop.hop_id}")
+        rows.append(
+            [
+                _cellp(hop.index),
+                _cellp(_fmt_dt(hop.timestamp)),
+                _linesp([hop.from_host, hop.from_ip]),
+                _linesp(by_bits),
+                _cellp(hop.protocol),
+                _cellp(_fmt_delay(hop.delay_seconds)),
+                _linesp(_geo_lines(hop.geo)),
+                _linesp(notes),
+            ]
+        )
+    table = _pdf_table(
+        ["#", "Timestamp", "From (host / IP)", "Received by", "Protocol", "Delay", "Location / provider", "Notes"],
+        rows,
+        [0.042, 0.112, 0.170, 0.150, 0.072, 0.082, 0.186, 0.186],
+        "No Received headers were present; the routing path cannot be reconstructed.",
+    )
+    origin = _pdf_kv(
+        [
+            ("Originating IP", _monop(hdr.originating_ip)),
+            ("Origin hop", _cellp(hdr.originating_hop_index)),
+            ("Origin confidence", _cellp(_pct(hdr.origin_confidence))),
+            ("Reasoning", _cellp(hdr.origin_reasoning)),
+            ("X-Originating-IP header", _monop(hdr.x_originating_ip)),
+            ("Routing anomaly score", _cellp(f"{hdr.score:.2f}")),
+        ]
+    )
+    return [*table, _para("Origin determination", "h3"), *origin]
+
+
+def _pdf_infra(result: AnalysisResult) -> list[Any]:
+    infra = result.infrastructure
+    geo = infra.origin_geo
+    if geo is None:
+        origin: list[Any] = [_para("No origin geolocation is available for this message.", "muted"), Spacer(1, 4)]
+    else:
+        country = f"{geo.country} ({geo.country_code})".strip() if geo.country_code else geo.country
+        coords = f"{geo.lat:.4f}, {geo.lon:.4f}" if geo.lat is not None and geo.lon is not None else ""
+        kinds: list[str] = []
+        if geo.is_private:
+            kinds.append("private address")
+        if geo.is_tor_exit:
+            kinds.append("Tor exit node")
+        if geo.is_proxy:
+            kinds.append("proxy / VPN")
+        if geo.is_hosting:
+            kinds.append("hosting / data centre")
+        if geo.is_mobile:
+            kinds.append("mobile network")
+        origin = _pdf_kv(
+            [
+                ("IP address", _monop(geo.ip)),
+                ("Country", _cellp(country)),
+                ("Region / city", _cellp(", ".join(part for part in (geo.region, geo.city) if part))),
+                ("Coordinates (lat, lon)", _cellp(coords)),
+                ("ISP", _cellp(geo.isp)),
+                ("Organisation", _cellp(geo.org)),
+                ("ASN", _cellp(geo.asn)),
+                ("Reverse DNS", _monop(geo.reverse_dns)),
+                ("Network classification", _listp(kinds) if kinds else _cellp("no special classification")),
+                ("DNSBL listings", _listp(geo.blacklists)),
+                (
+                    "AbuseIPDB confidence",
+                    _cellp(f"{geo.abuse_confidence}/100" if geo.abuse_confidence is not None else ""),
+                ),
+                ("Data source", _cellp(geo.source)),
+            ]
+        )
+    flags = _pdf_table(
+        ["Indicator", "Status"],
+        [
+            [_cellp("Tor exit node"), _flagp(infra.tor_exit)],
+            [_cellp("VPN / proxy"), _flagp(infra.vpn_or_proxy)],
+            [_cellp("Hosting / cloud provider"), _flagp(infra.hosting_provider)],
+            [_cellp("Blocklisted IP"), _flagp(infra.blacklisted)],
+            [_cellp("Open relay suspected"), _flagp(infra.open_relay_suspected)],
+            [
+                _cellp("Botnet indicators"),
+                _listp(infra.botnet_indicators) if infra.botnet_indicators else _colour("clear", _INK_OK),
+            ],
+            [_cellp("Infrastructure score"), _cellp(f"{infra.score:.2f}")],
+        ],
+        [0.42, 0.58],
+        "",
+    )
+    return [_para("Origin geolocation", "h3"), *origin, _para("Infrastructure indicators", "h3"), *flags]
+
+
+def _pdf_domains(result: AnalysisResult) -> list[Any]:
+    rows: list[list[Any]] = []
+    for intel in result.domains:
+        registration: list[str] = []
+        if intel.registrar:
+            registration.append(intel.registrar)
+        if intel.created is not None:
+            registration.append(f"created {_fmt_date(intel.created)}")
+        if intel.age_days is not None:
+            registration.append(f"age {_plural(intel.age_days, 'day')}")
+        if intel.expires is not None:
+            registration.append(f"expires {_fmt_date(intel.expires)}")
+        if intel.registrant_country:
+            registration.append(f"registrant country {intel.registrant_country}")
+        dns = [f"resolves: {_yes_no(intel.resolves)}", f"MX: {_yes_no(intel.has_mx)}"]
+        if intel.mx:
+            dns.append("MX hosts: " + _short_list(intel.mx, 2))
+        if intel.a_records:
+            dns.append("A: " + _short_list(intel.a_records, 3))
+        if intel.name_servers:
+            dns.append("NS: " + _short_list(intel.name_servers, 2))
+        dns.append(f"SPF record: {'present' if intel.spf_record else 'absent'}")
+        dns.append(f"DMARC record: {'present' if intel.dmarc_record else 'absent'}")
+        tags: list[str] = []
+        if intel.is_free_mail:
+            tags.append("free-mail")
+        if intel.is_disposable:
+            tags.append("disposable")
+        if intel.lookalike_of:
+            technique = f" ({_human(intel.lookalike_technique)})" if intel.lookalike_technique else ""
+            tags.append(f"look-alike of {intel.lookalike_of}{technique}")
+        rows.append(
+            [
+                _monop(intel.domain),
+                _cellp(_human(intel.role)),
+                _linesp(registration),
+                _linesp(dns),
+                _linesp(tags),
+                _listp(intel.reputation),
+                _cellp(intel.hosting_fingerprint),
+                _cellp(intel.source),
+            ]
+        )
+    return _pdf_table(
+        ["Domain", "Role", "Registration", "DNS", "Classification", "Reputation", "Hosting", "Source"],
+        rows,
+        [0.135, 0.075, 0.16, 0.225, 0.135, 0.10, 0.095, 0.075],
+        "No domains were available for intelligence lookup.",
+    )
+
+
+def _pdf_links(result: AnalysisResult) -> list[Any]:
+    analysis = result.urls
+    rows: list[list[Any]] = []
+    for index, url in enumerate(analysis.urls, 1):
+        tags: list[str] = []
+        if url.anchor_mismatch:
+            tags.append("anchor mismatch")
+        if url.is_ip_literal:
+            tags.append("ip literal")
+        if url.is_shortener:
+            tags.append("shortener")
+        if url.is_punycode:
+            tags.append("punycode")
+        if url.has_userinfo:
+            tags.append("userinfo trick")
+        if url.lookalike_of:
+            tags.append(f"look-alike of {url.lookalike_of}")
+        tags.extend(_human(item) for item in url.obfuscation)
+        if url.suspicious_keywords:
+            tags.append("keywords: " + ", ".join(url.suspicious_keywords))
+        host = [url.host]
+        if url.registrable_domain and url.registrable_domain != url.host:
+            host.append(url.registrable_domain)
+        rows.append(
+            [
+                _cellp(index),
+                _monop(url.url),
+                _linesp(host, "mono"),
+                _cellp(url.anchor_text),
+                _sevp(url.risk),
+                _linesp(tags),
+                _listp(url.reasons),
+            ]
+        )
+    summary = _pdf_kv(
+        [
+            ("Links found", _cellp(len(analysis.urls))),
+            ("Unique registrable domains", _listp(analysis.unique_domains)),
+            ("Link risk score", _cellp(f"{analysis.score:.2f}")),
+        ]
+    )
+    table = _pdf_table(
+        ["#", "URL", "Host", "Anchor text", "Risk", "Indicators", "Reasons"],
+        rows,
+        [0.042, 0.230, 0.147, 0.120, 0.076, 0.188, 0.197],
+        "The message contains no links.",
+    )
+    return [*summary, *table]
+
+
+def _pdf_attachments(result: AnalysisResult) -> list[Any]:
+    analysis = result.attachments
+    rows: list[list[Any]] = []
+    for index, item in enumerate(analysis.attachments, 1):
+        tags: list[str] = []
+        if item.mime_mismatch:
+            tags.append("type mismatch")
+        if item.double_extension:
+            tags.append("double extension")
+        if item.has_macros:
+            tags.append("macros")
+        if item.is_archive:
+            tags.append("archive")
+        if item.high_entropy:
+            tags.append(f"entropy {item.shannon_entropy:.2f}")
+        declared = [item.content_type]
+        if item.extension:
+            declared.append(f".{item.extension}")
+        rows.append(
+            [
+                _cellp(index),
+                _cellp(item.filename),
+                _linesp(declared),
+                _cellp(_fmt_size(item.size)),
+                _cellp(item.magic_type),
+                _linesp([f"SHA-256 {item.sha256}" if item.sha256 else "", f"MD5 {item.md5}" if item.md5 else ""],
+                        "mono"),
+                _linesp(tags),
+                _sevp(item.risk),
+                _listp(item.reasons),
+            ]
+        )
+    summary = _pdf_kv(
+        [
+            ("Attachments", _cellp(len(analysis.attachments))),
+            ("Attachment risk score", _cellp(f"{analysis.score:.2f}")),
+        ]
+    )
+    table = _pdf_table(
+        ["#", "File", "Declared type", "Size", "Magic", "Hashes", "Indicators", "Risk", "Reasons"],
+        rows,
+        [0.040, 0.128, 0.100, 0.062, 0.060, 0.216, 0.116, 0.070, 0.168],
+        "The message carries no attachments.",
+    )
+    return [*summary, *table]
+
+
+def _pdf_content(result: AnalysisResult) -> list[Any]:
+    nlp = result.nlp
+    overview = _pdf_kv(
+        [
+            ("Language", _cellp(nlp.language)),
+            ("Word count", _cellp(nlp.word_count)),
+            ("Urgency score", _cellp(f"{nlp.urgency_score:.2f}")),
+            ("Urgency phrases", _listp(nlp.urgency_phrases)),
+            ("Social-engineering cues", _listp([_human(cue) for cue in nlp.social_engineering_cues])),
+            ("Financial terms", _listp(nlp.financial_terms)),
+            ("Credential terms", _listp(nlp.credential_terms)),
+            ("Threat terms", _listp(nlp.threat_terms)),
+            ("Generic greeting", _cellp(_yes_no(nlp.generic_greeting))),
+            ("Asks to reply rather than click", _cellp(_yes_no(nlp.requests_reply_not_click))),
+            ("Content score", _cellp(f"{nlp.score:.2f}")),
+        ]
+    )
+    patterns = sorted(nlp.bec_patterns, key=lambda item: item.confidence, reverse=True)
+    bec = _pdf_table(
+        ["Pattern", "Confidence", "Evidence"],
+        [[_cellp(_human(item.pattern)), _cellp(_pct(item.confidence)), _listp(item.evidence)] for item in patterns],
+        [0.28, 0.14, 0.58],
+        "No business-e-mail-compromise patterns were detected.",
+    )
+    probabilities = sorted(nlp.ml_probabilities.items(), key=lambda item: item[1], reverse=True)
+    ml = _pdf_kv(
+        [
+            ("Model", _cellp(nlp.ml_model)),
+            ("Backend", _cellp(nlp.ml_backend)),
+            ("Predicted class", _cellp(nlp.ml_category)),
+            ("Most influential terms", _listp(nlp.ml_top_terms)),
+        ]
+    )
+    probs = _pdf_table(
+        ["Class", "Probability"],
+        [[_cellp(label), _cellp(_pct(value))] for label, value in probabilities],
+        [0.5, 0.5],
+        "No class probabilities are available (model unavailable).",
+    )
+    return [
+        *overview,
+        _para("BEC patterns", "h3"),
+        *bec,
+        _para("Machine-learning classification", "h3"),
+        *ml,
+        *probs,
+    ]
+
+
+def _pdf_intel(report: ForensicReport, result: AnalysisResult) -> list[Any]:
+    intel = result.intel
+    ioc_rows: list[list[Any]] = []
+    for item in report.key_indicators:
+        kind, sep, value = item.partition(": ")
+        ioc_rows.append([_cellp(_human(kind)) if sep else _cellp(""), _monop(value if sep else item)])
+    iocs = _pdf_table(["Type", "Value"], ioc_rows, [0.26, 0.74], "No indicators of compromise were extracted.")
+    overview = _pdf_kv(
+        [
+            ("Campaign", _monop(result.campaign_id or intel.campaign_id)),
+            ("Correlation indicators", _linesp(intel.indicators, "mono")),
+            (
+                "IP blocklist hits",
+                _linesp([f"{ip}: {', '.join(zones)}" for ip, zones in intel.ip_blacklists.items() if zones]),
+            ),
+            (
+                "Domain reputation hits",
+                _linesp([f"{domain}: {', '.join(feeds)}" for domain, feeds in intel.domain_reputation.items() if feeds]),
+            ),
+            ("Tor exit nodes", _listp(intel.tor_exits)),
+        ]
+    )
+    related = _pdf_table(
+        ["E-mail ID", "Subject", "Sender", "Category", "Risk", "Shared indicators"],
+        [
+            [
+                _monop(incident.email_id),
+                _cellp(incident.subject),
+                _cellp(incident.sender),
+                _cellp(incident.category),
+                _cellp(incident.risk_score),
+                _listp(incident.shared_indicators),
+            ]
+            for incident in intel.related_incidents
+        ],
+        [0.17, 0.21, 0.18, 0.12, 0.07, 0.25],
+        "No related incidents were found in the case database.",
+    )
+    return [
+        _para("Key indicators of compromise", "h3"),
+        *iocs,
+        _para("Correlation", "h3"),
+        *overview,
+        _para("Related incidents", "h3"),
+        *related,
+    ]
+
+
+def _pdf_attribution(result: AnalysisResult) -> list[Any]:
+    attribution = result.attribution
+    label = _SOURCE_LABELS.get(attribution.source_type, "")
+    source = _human(attribution.source_type)
+    if label:
+        source = f"{source} — {label}"
+    return _pdf_kv(
+        [
+            ("Assessed source type", _cellp(source)),
+            ("Confidence", _cellp(_pct(attribution.confidence))),
+            ("Reasoning", _linesp(attribution.reasoning)),
+            ("Actor infrastructure indicators", _linesp(attribution.indicators, "mono")),
+        ]
+    )
+
+
+def _pdf_graph(result: AnalysisResult) -> list[Any]:
+    graph = result.graph
+    degree: dict[str, int] = {}
+    for edge in graph.edges:
+        degree[edge.source] = degree.get(edge.source, 0) + 1
+        degree[edge.target] = degree.get(edge.target, 0) + 1
+    by_type: dict[str, int] = {}
+    for node in graph.nodes:
+        by_type[node.type] = by_type.get(node.type, 0) + 1
+    pivots = [node for node in graph.nodes if node.type not in ("email", "campaign")]
+    pivots.sort(key=lambda node: (-_sev_rank(node.risk), -degree.get(node.id, 0), node.id))
+    overview = _pdf_kv(
+        [
+            ("Nodes", _cellp(len(graph.nodes))),
+            ("Edges", _cellp(len(graph.edges))),
+            ("Nodes by type", _cellp(", ".join(f"{kind}: {count}" for kind, count in sorted(by_type.items())))),
+        ]
+    )
+    table = _pdf_table(
+        ["Node", "Type", "Label", "Risk", "Connections"],
+        [
+            [_monop(node.id), _cellp(node.type), _cellp(node.label), _sevp(node.risk), _cellp(degree.get(node.id, 0))]
+            for node in pivots[:8]
+        ],
+        [0.3, 0.12, 0.34, 0.12, 0.12],
+        "The relationship graph contains no entities beyond the message itself.",
+    )
+    return [*overview, _para("Top pivot entities", "h3"), *table]
+
+
+def _pdf_findings(result: AnalysisResult) -> list[Any]:
+    findings = sorted(result.findings, key=lambda item: -_sev_rank(item.severity))
+    return _pdf_table(
+        ["Severity", "Module", "Finding", "Detail"],
+        [
+            [_sevp(item.severity), _cellp(item.module), _cellp(item.title), _cellp(item.detail)]
+            for item in findings
+        ],
+        [0.09, 0.10, 0.26, 0.55],
+        "No findings were recorded.",
+    )
+
+
+def _pdf_appendix(result: AnalysisResult) -> list[Any]:
+    email = result.email
+    flowables: list[Any] = [_para("Full header block", "h3")]
+    if email.headers:
+        # One paragraph per header: a single huge flowable could not be split
+        # across pages, and every value wraps inside the printable width.
+        flowables.extend(
+            _markup(f"<b>{_pdf_escape(field.name)}</b>: {_pdf_escape(field.value)}", "pre")
+            for field in email.headers
+        )
+    else:
+        flowables.append(_para("No headers were recovered from the message.", "muted"))
+    flowables.append(_para("Decoding notes", "h3"))
+    flowables.extend(
+        _pdf_list(email.charset_issues, empty="No character-set problems were noted while decoding the message.")
+    )
+    return flowables
+
+
+def _pdf_sections(report: ForensicReport) -> list[tuple[str, list[Any], bool]]:
+    """(title, flowables, start-on-a-new-page) in the same order as the HTML report."""
+    result = report.analysis
+    return [
+        ("Executive summary", _pdf_summary(report), False),
+        ("Verdict and dual validation", _pdf_verdict(result), True),
+        ("Evidence integrity and chain of custody", _pdf_evidence(result, report.custody), False),
+        ("Certificate under Section 65B of the Indian Evidence Act", _pdf_certificate(report), True),
+        ("Sender identity and authentication", _pdf_identity(result), True),
+        ("Routing trace", _pdf_routing(result), False),
+        ("Origin and infrastructure", _pdf_infra(result), True),
+        ("Domain intelligence", _pdf_domains(result), False),
+        ("Links", _pdf_links(result), True),
+        ("Attachments", _pdf_attachments(result), False),
+        ("Content analysis", _pdf_content(result), True),
+        ("Threat intelligence and campaign correlation", _pdf_intel(report, result), True),
+        ("Attribution assessment", _pdf_attribution(result), False),
+        ("Relationship summary", _pdf_graph(result), False),
+        (
+            "Recommended actions",
+            _pdf_list(report.recommended_actions, ordered=True, empty="No specific actions recommended."),
+            True,
+        ),
+        ("Legal notes", _pdf_list(report.legal_notes, ordered=True), False),
+        ("All findings", _pdf_findings(result), True),
+        ("Appendix: full message headers", _pdf_appendix(result), True),
+    ]
+
+
+def _numbered_canvas(footer_text: str) -> Any:
+    """Canvas that stamps 'Page n of m' in the footer once the total is known."""
+
+    class _NumberedCanvas(Canvas):
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            super().__init__(*args, **kwargs)
+            self._page_states: list[dict[str, Any]] = []
+
+        def showPage(self) -> None:  # noqa: N802 - reportlab API
+            self._page_states.append(dict(self.__dict__))
+            self._startPage()
+
+        def save(self) -> None:
+            total = len(self._page_states)
+            for state in self._page_states:
+                self.__dict__.update(state)
+                self._stamp(total)
+                Canvas.showPage(self)
+            Canvas.save(self)
+
+        def _stamp(self, total: int) -> None:
+            # Aligned with the frame, so the rule sits exactly under the content.
+            left = _PDF_MARGIN + _PDF_FRAME_PAD
+            right = self._pagesize[0] - _PDF_MARGIN - _PDF_FRAME_PAD
+            self.saveState()
+            self.setStrokeColor(colors.HexColor(_INK_RULE))
+            self.setLineWidth(0.4)
+            self.line(left, _PDF_MARGIN + 13, right, _PDF_MARGIN + 13)
+            self.setFont("Helvetica", 7)
+            self.setFillColor(colors.HexColor(_INK_MUTED))
+            self.drawString(left, _PDF_MARGIN + 4, footer_text)
+            self.drawRightString(right, _PDF_MARGIN + 4, f"Page {self._pageNumber} of {total}")
+            self.restoreState()
+
+    return _NumberedCanvas
+
+
+def render_pdf(report: ForensicReport) -> bytes:
+    """Render the report as a paginated A4 PDF (same sections as the HTML)."""
+    if _REPORTLAB_ERROR is not None:  # pragma: no cover - only without the dependency
+        raise PdfUnavailable(
+            "PDF report generation requires the 'reportlab' package, which is not installed"
+        ) from _REPORTLAB_ERROR
+    result = report.analysis
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        leftMargin=_PDF_MARGIN,
+        rightMargin=_PDF_MARGIN,
+        topMargin=_PDF_MARGIN,
+        bottomMargin=_PDF_MARGIN + _PDF_FOOTER_SPACE,
+        title=f"{report.report_id} - MailTrace forensic report",
+        author=f"MailTrace engine {result.engine_version}",
+        subject=f"Forensic analysis of {result.filename}",
+        creator="MailTrace",
+    )
+    story: list[Any] = _pdf_cover(report, result)
+    for number, (title, content, page_break) in enumerate(_pdf_sections(report), 1):
+        if page_break:
+            story.append(PageBreak())
+        story.extend(_pdf_heading(number, title))
+        story.extend(content)
+    footer = f"MailTrace {report.report_id} · confidential · automated analysis"
+    doc.build(story, canvasmaker=_numbered_canvas(footer))
+    pdf = buffer.getvalue()
+    log.debug("rendered report %s as %d bytes of PDF", report.report_id, len(pdf))
+    return pdf

@@ -165,9 +165,23 @@ def get_email(
 
 
 @router.get("/emails/{email_id}/raw")
-def get_raw(email_id: str, store: Store = Depends(get_store)) -> Response:
+def get_raw(
+    email_id: str,
+    store: Store = Depends(get_store),
+    settings: Settings = Depends(get_settings),
+) -> Response:
     raw = store.get_raw(email_id)
     if raw is None:
+        if settings.zero_persistence:
+            # Say why, rather than implying the case never existed or handing back
+            # an empty download: in this mode the message was analysed and dropped.
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"the raw message for email {email_id} is not available: MailTrace is running in "
+                    "zero-persistence mode, so no copy of it was ever written to disk"
+                ),
+            )
         raise HTTPException(status_code=404, detail=f"email {email_id} not found")
     store.record_custody(
         email_id, DEFAULT_ACTOR, "exported", {"format": "eml", "size": len(raw)}, hashlib.sha256(raw).hexdigest()

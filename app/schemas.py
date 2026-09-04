@@ -109,8 +109,28 @@ class AttachmentMeta(BaseModel):
     is_archive: bool = False
     has_macros: bool = False
     double_extension: bool = False
+    shannon_entropy: float = Field(
+        default=0.0, ge=0.0, le=8.0,
+        description="Shannon entropy of the file bytes in bits/byte (8.0 = uniformly random)",
+    )
+    high_entropy: bool = Field(
+        default=False,
+        description="Entropy above Settings.entropy_threshold (default 7.0): packed, encrypted or obfuscated",
+    )
     risk: Severity = Severity.INFO
     reasons: list[str] = Field(default_factory=list)
+
+
+class FuzzyDigest(BaseModel):
+    """Locality-sensitive digests of the message body.
+
+    Unlike SHA-256, these stay close when the text is only slightly edited, so
+    a campaign that rewrites a few words per victim still clusters together.
+    """
+
+    simhash: str = Field(default="", description="64-bit Charikar SimHash over body shingles, hex")
+    tlsh: str = Field(default="", description="TLSH digest when the py-tlsh package is installed and the body is long enough")
+    body_length: int = 0
 
 
 class ParsedEmail(BaseModel):
@@ -134,6 +154,8 @@ class ParsedEmail(BaseModel):
     raw_size: int = 0
     mailer: str = Field(default="", description="X-Mailer / User-Agent if present")
     charset_issues: list[str] = Field(default_factory=list)
+    parse_ms: float = Field(default=0.0, description="Stage 1-2 wall-clock parse time in milliseconds")
+    fuzzy: FuzzyDigest = Field(default_factory=FuzzyDigest, description="SimHash / TLSH digests used for campaign clustering")
 
 
 # --------------------------------------------------------------------------- #
@@ -255,6 +277,19 @@ class BecPattern(BaseModel):
     evidence: list[str] = Field(default_factory=list)
 
 
+class ShapWeight(BaseModel):
+    """One token's signed contribution to the predicted class.
+
+    For the linear classifier these are exact SHAP values,
+    ``phi_i = coef_i * (x_i - E[x_i])``, where the expectation is the mean
+    feature value over the training corpus. Positive pushes toward the
+    predicted class, negative pushes away from it.
+    """
+
+    token: str
+    weight: float = Field(description="SHAP value in log-odds units; sign carries the direction")
+
+
 class NlpAnalysis(BaseModel):
     language: str = "en"
     word_count: int = 0
@@ -269,7 +304,11 @@ class NlpAnalysis(BaseModel):
     ml_category: ThreatCategory = ThreatCategory.LEGITIMATE
     ml_probabilities: dict[str, float] = Field(default_factory=dict)
     ml_top_terms: list[str] = Field(default_factory=list, description="Most influential tokens for ml_category")
-    ml_model: str = ""
+    shap_weights: list[ShapWeight] = Field(
+        default_factory=list, description="Token-level SHAP attributions for ml_category, strongest first",
+    )
+    ml_model: str = Field(default="", description="Backend that produced the verdict, e.g. 'distilroberta' or 'tfidf-logreg-1'")
+    ml_backend: str = Field(default="", description="transformer | linear | unavailable")
     bec_patterns: list[BecPattern] = Field(default_factory=list)
     score: float = Field(default=0.0, ge=0.0, le=1.0)
     findings: list[Finding] = Field(default_factory=list)
@@ -368,12 +407,14 @@ class AttributionGraph(BaseModel):
 # Verdict
 # --------------------------------------------------------------------------- #
 class RiskBreakdown(BaseModel):
-    authentication: float = Field(ge=0, le=100)
-    content: float = Field(ge=0, le=100)
-    links: float = Field(ge=0, le=100)
-    infrastructure: float = Field(ge=0, le=100)
-    anomaly: float = Field(ge=0, le=100)
-    weights: dict[str, float] = Field(default_factory=dict)
+    """The five scoring pillars of Stage 4, each 0-100 before weighting."""
+
+    ai: float = Field(ge=0, le=100, description="Pillar 1 - AI core: NLP intent, BEC patterns, attachment entropy, link lures")
+    authentication: float = Field(ge=0, le=100, description="Pillar 2 - Auth/protocols: SPF, DKIM, DMARC, alignment, forged header fields")
+    geoip_route: float = Field(ge=0, le=100, description="Pillar 3 - GeoIP/route: origin infrastructure, VPN/TOR, hop timing anomalies")
+    domain: float = Field(ge=0, le=100, description="Pillar 4 - Domain: registration age, lookalikes, DNS/MX posture")
+    threat_intel: float = Field(ge=0, le=100, description="Pillar 5 - Threat intel: blocklists, reputation feeds, prior-incident overlap")
+    weights: dict[str, float] = Field(default_factory=dict, description="Normalised weight applied to each pillar")
 
 
 class Verdict(BaseModel):
@@ -483,11 +524,48 @@ class CaseSummary(BaseModel):
     dmarc: str = "none"
 
 
+class Section65BCertificate(BaseModel):
+    """Statement of the particulars required by Section 65B(4) of the Indian
+    Evidence Act 1872 (carried forward as Section 63(4) of the Bharatiya Sakshya
+    Adhiniyam 2023) for electronic records produced by a computer.
+
+    The tool states the facts it can attest to. Clauses (a) to (d) still have to
+    be signed by a person occupying a responsible official position in relation
+    to the operation of the device; ``signatory_name`` and ``signatory_position``
+    are left for that person to complete.
+    """
+
+    statement_of_record: str = Field(description="65B(4)(a) - what the electronic record is and how it was produced")
+    computer_description: str = Field(description="65B(4)(b) - the computer that produced it and its regular use")
+    operation_period: str = Field(description="65B(4)(c) - the period of regular operation and any lapse")
+    integrity_statement: str = Field(description="65B(4)(d) - how the contents were derived and preserved unaltered")
+    evidence_sha256: str = Field(description="SHA-256 of the original message as received")
+    evidence_md5: str = ""
+    custody_head_hash: str = Field(default="", description="Head of the hash-linked custody ledger at generation time")
+    custody_chain_valid: bool = True
+    custody_event_count: int = 0
+    tool_name: str = "MailTrace"
+    tool_version: str = ENGINE_VERSION
+    generated_at: datetime
+    signatory_name: str = Field(default="", description="To be completed by the responsible official")
+    signatory_position: str = Field(default="", description="To be completed by the responsible official")
+    declaration: str = Field(
+        default=(
+            "The contents of this electronic record and the accompanying analysis were produced by the computer "
+            "described above during its regular use. The original message was hashed on receipt and has not been "
+            "altered; every subsequent action is recorded in the hash-linked custody ledger reproduced in this report."
+        ),
+    )
+
+
 class ForensicReport(BaseModel):
     report_id: str
     generated_at: datetime
     generated_by: str = "system"
     masked: bool = False
+    section_65b: Optional[Section65BCertificate] = Field(
+        default=None, description="Section 65B(4) / BSA 63(4) certificate particulars",
+    )
     executive_summary: str
     key_indicators: list[str] = Field(default_factory=list)
     evidence_integrity: dict[str, Any] = Field(default_factory=dict, description="raw hashes, custody head hash, chain validity")

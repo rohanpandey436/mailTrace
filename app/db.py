@@ -15,6 +15,15 @@ Design
   ``hash = sha256(prev_hash | seq | email_id | timestamp | actor | action |
   detail_json | evidence_sha256)`` with ``detail_json`` stored verbatim so the
   chain can be re-verified byte-for-byte later (``verify_chain``).
+
+Zero-persistence mode (Stage 5C)
+--------------------------------
+``Store(..., in_memory=True)`` backs the same schema with an anonymous SQLite
+database (``:memory:``) and stops writing evidence files.  No directory is
+created, no file is opened: every table below lives in this process and is
+gone when it exits.  Every public method behaves exactly as it does on disk,
+except ``get_raw`` which always returns ``None`` because the raw message was
+never stored.
 """
 from __future__ import annotations
 
@@ -147,21 +156,36 @@ def chain_hash(
 
 
 class Store:
-    """Thread-safe SQLite persistence for MailTrace."""
+    """Thread-safe SQLite persistence for MailTrace.
 
-    def __init__(self, db_path: Path, evidence_dir: Path) -> None:
+    ``in_memory=True`` (zero-persistence mode) keeps the identical schema in an
+    anonymous ``:memory:`` database and writes no evidence files, so nothing at
+    all reaches the filesystem.  It is keyword-only and defaults to False: every
+    existing caller keeps the previous on-disk behaviour unchanged.
+    """
+
+    def __init__(self, db_path: Path, evidence_dir: Path, *, in_memory: bool = False) -> None:
         self.db_path = Path(db_path)
         self.evidence_dir = Path(evidence_dir)
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self.evidence_dir.mkdir(parents=True, exist_ok=True)
+        self.in_memory = bool(in_memory)
+        if not self.in_memory:
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
+            self.evidence_dir.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
-        self._conn = sqlite3.connect(str(self.db_path), check_same_thread=False, isolation_level=None, timeout=30)
+        target = ":memory:" if self.in_memory else str(self.db_path)
+        self._conn = sqlite3.connect(target, check_same_thread=False, isolation_level=None, timeout=30)
         self._conn.row_factory = sqlite3.Row
         with self._lock:
-            self._conn.execute("PRAGMA journal_mode=WAL")
-            self._conn.execute("PRAGMA synchronous=NORMAL")
+            if not self.in_memory:
+                # WAL is meaningless for :memory: (its journal mode is always "memory"),
+                # and both pragmas exist only to make on-disk writes cheap and concurrent.
+                self._conn.execute("PRAGMA journal_mode=WAL")
+                self._conn.execute("PRAGMA synchronous=NORMAL")
             self._conn.executescript(_SCHEMA)
-        log.info("store opened at %s", self.db_path)
+        if self.in_memory:
+            log.info("store opened in memory (zero-persistence): nothing is written to %s", self.db_path.parent)
+        else:
+            log.info("store opened at %s", self.db_path)
 
     def close(self) -> None:
         with self._lock:
@@ -216,7 +240,9 @@ class Store:
         placeholders = ", ".join("?" for _ in columns)
         with self._tx() as conn:
             conn.execute(f"INSERT OR REPLACE INTO emails ({names}) VALUES ({placeholders})", list(columns.values()))
-        if raw is not None:
+        # Zero-persistence: the analysis lives in the in-memory database, but the
+        # message itself is never copied to the evidence directory.
+        if raw is not None and not self.in_memory:
             path = self.evidence_dir / f"{result.id}.eml"
             if not path.exists():
                 path.write_bytes(raw)
@@ -233,6 +259,10 @@ class Store:
             return None
 
     def get_raw(self, email_id: str) -> Optional[bytes]:
+        if self.in_memory:
+            # Nothing was ever written, and an evidence directory left behind by a
+            # previous on-disk run must not be read back in this mode.
+            return None
         path = self.evidence_dir / f"{email_id}.eml"
         try:
             return path.read_bytes()
@@ -357,6 +387,30 @@ class Store:
             rows = self._conn.execute(
                 f"SELECT email_id, indicator FROM indicators WHERE indicator IN ({placeholders}) AND email_id != ?",
                 [*keys, exclude_email_id or ""],
+            ).fetchall()
+        result: dict[str, list[str]] = {}
+        for row in rows:
+            result.setdefault(row["email_id"], []).append(row["indicator"])
+        return result
+
+    def find_indicators_by_prefix(self, prefix: str, exclude_email_id: str = "") -> dict[str, list[str]]:
+        """email_id -> that email's indicators beginning with ``prefix``.
+
+        The fuzzy campaign matcher (Stage 5A) cannot look a SimHash or TLSH
+        digest up by equality without discarding the tolerance that makes it
+        useful, so it pulls every stored digest and compares distances itself.
+        The half-open range keeps ``idx_indicators_indicator`` usable, which a
+        ``LIKE 'prefix%'`` on a BINARY-collated column would not.
+        """
+        prefix = prefix or ""
+        if not prefix:
+            return {}
+        upper_bound = prefix[:-1] + chr(ord(prefix[-1]) + 1)
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT email_id, indicator FROM indicators "
+                "WHERE indicator >= ? AND indicator < ? AND email_id != ?",
+                (prefix, upper_bound, exclude_email_id or ""),
             ).fetchall()
         result: dict[str, list[str]] = {}
         for row in rows:

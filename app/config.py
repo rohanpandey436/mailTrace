@@ -14,13 +14,16 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent  # .../mailtrace
 ENV_PREFIX = "MAILTRACE_"
 
+# Stage 4: the five scoring pillars. Weights are normalised at load time, so
+# these are relative importances rather than a set that must sum to 1 by hand.
 DEFAULT_WEIGHTS: dict[str, float] = {
-    "authentication": 0.20,
-    "content": 0.35,
-    "links": 0.25,
-    "infrastructure": 0.10,
-    "anomaly": 0.10,
+    "ai": 0.35,             # NLP intent, BEC patterns, attachment entropy, link lures
+    "authentication": 0.20,  # SPF / DKIM / DMARC / alignment / forged header fields
+    "geoip_route": 0.15,     # origin infrastructure, VPN / TOR, hop timing anomalies
+    "domain": 0.20,          # registration age, lookalikes, DNS and MX posture
+    "threat_intel": 0.10,    # blocklists, reputation feeds, prior-incident overlap
 }
+PILLARS: tuple[str, ...] = tuple(DEFAULT_WEIGHTS)
 
 
 def _load_dotenv(path: Path) -> None:
@@ -88,6 +91,26 @@ class Settings:
     max_geo_lookups: int = 8
     abuseipdb_key: str = ""
     urlhaus_key: str = ""
+    # Stage 3B: a local MaxMind GeoLite2-City database is used first when present;
+    # the ip-api.com service is the fallback so the tool works with no database.
+    maxmind_db: str = ""
+    # Stage 3A: set to a DistilRoBERTa (or other) sequence-classification model to
+    # use a transformer instead of the bundled TF-IDF classifier. Requires the
+    # optional `transformers` and `torch` packages; see requirements-ml.txt.
+    transformer_model: str = ""
+    entropy_threshold: float = 7.0
+    # Stage 5A: SimHash Hamming distance under which two bodies are one campaign.
+    # 6 is the classic 64-bit web-dedup threshold, but it assumes long documents.
+    # Measured on the bundled samples: a five-phrase rewrite of a 740-character
+    # body lands at distance 9, the same edit on a 1560-character body at 5, while
+    # genuinely unrelated bodies sit at 22 to 32. 10 therefore catches the rewrite
+    # with better than a 2x margin before the nearest false positive.
+    simhash_max_distance: int = 10
+    tlsh_max_distance: int = 60
+    # Stage 5B: outbound alert webhooks (comma separated), e.g. a SIEM or Slack URL.
+    webhook_urls: list[str] = field(default_factory=list)
+    # Stage 5C: analyse and return, storing nothing on disk.
+    zero_persistence: bool = False
     cache_ttl_seconds: int = 6 * 3600
     # Privacy / alerting
     pii_mask_default: bool = False
@@ -146,6 +169,14 @@ class Settings:
             max_geo_lookups=_env_int("MAX_GEO_LOOKUPS", 8),
             abuseipdb_key=_env("ABUSEIPDB_KEY", ""),
             urlhaus_key=_env("URLHAUS_KEY", ""),
+            maxmind_db=_env("MAXMIND_DB", ""),
+            transformer_model=_env("TRANSFORMER_MODEL", ""),
+            entropy_threshold=_env_float("ENTROPY_THRESHOLD", 7.0),
+            simhash_max_distance=_env_int("SIMHASH_MAX_DISTANCE", 6),
+            tlsh_max_distance=_env_int("TLSH_MAX_DISTANCE", 60),
+            # URLs keep their case, so _env_list (which lowercases) is not used here.
+            webhook_urls=[u.strip() for u in _env("WEBHOOK_URLS", "").split(",") if u.strip()],
+            zero_persistence=_env_bool("ZERO_PERSISTENCE", False),
             cache_ttl_seconds=_env_int("CACHE_TTL_SECONDS", 6 * 3600),
             pii_mask_default=_env_bool("PII_MASK_DEFAULT", False),
             alert_threshold=_env_int("ALERT_THRESHOLD", 70),

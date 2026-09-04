@@ -8,6 +8,11 @@ the alert broadcaster bound to the running event loop, and a background
 warm-up of the ML classifier that never blocks or fails startup.  ``app`` at
 module level is what ``run.py`` / uvicorn import; tests call
 ``create_app(Settings(...))`` with a temporary data directory.
+
+With ``MAILTRACE_ZERO_PERSISTENCE=true`` the lifespan builds an in-memory
+store instead and creates no directories at all, the mode is logged loudly at
+startup and reported by ``/api/health`` so nobody has to guess which mode a
+running instance is in.
 """
 from __future__ import annotations
 
@@ -73,17 +78,34 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        cfg.ensure_dirs()
-        app.state.store = Store(cfg.db_path, cfg.evidence_dir)
+        if cfg.zero_persistence:
+            # Stage 5C: no data directory, no evidence directory, no database file.
+            # ``ensure_dirs`` is deliberately not called - creating the directories
+            # would already be a write.
+            app.state.store = Store(cfg.db_path, cfg.evidence_dir, in_memory=True)
+        else:
+            cfg.ensure_dirs()
+            app.state.store = Store(cfg.db_path, cfg.evidence_dir)
         alerts.broadcaster.bind(asyncio.get_running_loop())
         _warm_model(cfg)
+        if cfg.zero_persistence:
+            log.warning(
+                "*** ZERO-PERSISTENCE MODE *** MailTrace %s is analysing in memory only: no database, "
+                "no evidence .eml, no email data written under %s. Every case, campaign, alert and "
+                "custody record is lost when this process stops. (The one file this mode may still "
+                "write there is the classifier cache %s, which is built from the bundled seed corpus "
+                "and holds no email data.)",
+                ENGINE_VERSION, cfg.data_dir, cfg.model_path.name,
+            )
         log.info(
-            "MailTrace %s ready: data=%s network=%s pii_mask_default=%s",
+            "MailTrace %s ready: data=%s network=%s pii_mask_default=%s zero_persistence=%s webhooks=%d",
             ENGINE_VERSION, cfg.data_dir, cfg.enable_network, cfg.pii_mask_default,
+            cfg.zero_persistence, len(cfg.webhook_urls),
         )
         try:
             yield
         finally:
+            alerts.shutdown_webhooks()
             app.state.store.close()
             log.info("MailTrace store closed")
 
@@ -110,6 +132,9 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
             "engine_version": ENGINE_VERSION,
             "network": cfg.enable_network,
             "pii_mask_default": cfg.pii_mask_default,
+            # Stage 5C: an auditor (and the UI) can see which mode is running.
+            "zero_persistence": cfg.zero_persistence,
+            "webhooks": len(cfg.webhook_urls),
         }
 
     @app.get("/", include_in_schema=False)

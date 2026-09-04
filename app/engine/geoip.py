@@ -3,14 +3,31 @@ IP geolocation and infrastructure intelligence.
 
 Approach
 --------
-MailTrace ships no local GeoIP database (nothing to license, download or keep
-current).  Every public IP in the Received chain is resolved through the free
-ip-api.com JSON endpoint and enriched with reverse DNS, the Tor bulk exit list,
-DNS blocklists (DNSBL) and, when a key is configured, AbuseIPDB.  Lookups are
+Every public IP in the Received chain is geolocated from a local MaxMind
+GeoLite2 database when one is configured and through the free ip-api.com JSON
+endpoint otherwise, then enriched with reverse DNS, the Tor bulk exit list, DNS
+blocklists (DNSBL) and, when a key is configured, AbuseIPDB.  Lookups are
 cached through the Store (``geo:<ip>``, ``rdns:<ip>``, ``dnsbl:<ip>``,
 ``abuse:<ip>``, ``tor:list``), bounded by ``cfg.lookup_timeout`` and never
 raise into the pipeline; with ``cfg.enable_network`` off every function still
 returns complete objects tagged ``source="offline"``.
+
+MaxMind GeoLite2 (optional, recommended)
+----------------------------------------
+1. Create a free MaxMind account (https://www.maxmind.com/en/geolite2/signup).
+2. Download the *GeoLite2 City* database in MMDB form: ``GeoLite2-City.mmdb``.
+3. Point MailTrace at the file, in the environment or in ``.env``::
+
+       MAILTRACE_MAXMIND_DB=C:/GeoIP/GeoLite2-City.mmdb
+
+Dropping ``GeoLite2-ASN.mmdb`` into the same directory additionally fills in the
+AS number and network owner; pointing the setting straight at an ASN database
+also works (only ``asn``/``org`` are then populated).  The file is opened once
+per process and memory-mapped, so a 60 MB database costs nothing per lookup.
+
+Without a database nothing breaks: every lookup falls back to ip-api.com, which
+needs no key but is rate limited (~45 requests/minute) and, unlike the local
+database, requires outbound network access.
 
 ``analyze_infrastructure`` enriches the originating IP fully (DNSBL and
 AbuseIPDB included) and the remaining public hops lightly, writes each GeoInfo
@@ -23,11 +40,13 @@ from __future__ import annotations
 import ipaddress
 import logging
 import math
+import os
 import re
 import socket
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
 import httpx
@@ -53,7 +72,7 @@ TOR_LIST_TTL_SECONDS = 3600
 TOR_RETRY_SECONDS = 300  # back-off before re-trying a failed exit-list download
 
 # GeoInfo.source values proving the lookup layer actually answered for the IP.
-_RESOLVED_SOURCES = {"ip-api", "cache"}
+_RESOLVED_SOURCES = {"ip-api", "maxmind", "cache"}
 
 # RFC 6598 shared address space (CGNAT) is not covered by ipaddress.is_private.
 _SHARED_ADDRESS_SPACE = ipaddress.ip_network("100.64.0.0/10")
@@ -113,6 +132,14 @@ _MAIL_SERVICE_EGRESS: tuple[tuple[str, tuple[str, ...]], ...] = (
 
 _TOR_LOCK = threading.Lock()
 _tor_memo: tuple[float, set[str]] = (0.0, set())  # (monotonic expiry, exit IPs)
+
+_MAXMIND_LOCK = threading.Lock()
+# Opened readers keyed by absolute path.  A None value records "tried and
+# failed" so an absent package, a missing file or a corrupt database is logged
+# once instead of on every IP; a database installed later needs a restart.
+_maxmind_readers: dict[str, Any] = {}
+# Configured database path -> sibling ASN database path ('' = none alongside).
+_maxmind_asn_siblings: dict[str, str] = {}
 
 
 # --------------------------------------------------------------------------- #
@@ -286,12 +313,177 @@ def _geo_from_ip_api(ip: str, payload: dict[str, Any]) -> GeoInfo:
     )
 
 
-def geolocate(ip: str, cfg: Settings, store: Optional["Store"]) -> GeoInfo:
-    """Geolocate one IP through ip-api.com (cached as ``geo:<ip>``).
+# --------------------------------------------------------------------------- #
+# MaxMind GeoLite2 (local database, preferred source)
+# --------------------------------------------------------------------------- #
+def _db_key(path: str) -> str:
+    """Cache key for a database path: absolute, case-folded on Windows."""
+    try:
+        return os.path.normcase(os.path.abspath(os.path.expanduser(path)))
+    except Exception:  # noqa: BLE001 - exotic path (null bytes, bad surrogate)
+        return path
 
+
+def _maxmind_reader(path: str) -> Any:
+    """The process-wide reader for one .mmdb file, opened at most once.
+
+    GeoLite2-City is ~60 MB, so re-opening it per IP is not an option: the
+    reader is memory-mapped once and shared (``Reader.get`` is thread safe).
+    None when the ``maxminddb`` package is absent or the file is missing or
+    corrupt - each of which is logged once and then remembered.
+    """
+    key = _db_key(path)
+    with _MAXMIND_LOCK:
+        if key in _maxmind_readers:
+            return _maxmind_readers[key]
+        reader: Any = None
+        try:
+            import maxminddb  # lazy: an absent package only disables this source
+        except Exception:  # noqa: BLE001 - ImportError, broken C extension, ...
+            log.warning("maxminddb is not installed; using ip-api.com (pip install maxminddb)")
+        else:
+            try:
+                reader = maxminddb.open_database(path)
+            except Exception as exc:  # noqa: BLE001 - missing file, InvalidDatabaseError, permissions
+                log.warning("MaxMind database %s is unusable (%s); using ip-api.com", path, exc)
+                reader = None
+            else:
+                try:
+                    kind = reader.metadata().database_type
+                except Exception:  # noqa: BLE001
+                    kind = "unknown"
+                log.info("opened MaxMind database %s (%s)", path, kind)
+        _maxmind_readers[key] = reader
+        return reader
+
+
+def _asn_sibling_path(path: str) -> str:
+    """An ASN database sitting next to the configured one; '' when there is none.
+
+    Pointing ``MAILTRACE_MAXMIND_DB`` at GeoLite2-City.mmdb therefore also picks
+    up a GeoLite2-ASN.mmdb downloaded into the same directory.  The directory is
+    scanned once per configured path.
+    """
+    key = _db_key(path)
+    with _MAXMIND_LOCK:  # released before opening anything: the lock is not reentrant
+        cached = _maxmind_asn_siblings.get(key)
+    if cached is not None:
+        return cached
+    sibling = ""
+    try:
+        for candidate in sorted(Path(os.path.expanduser(path)).parent.glob("*.mmdb")):
+            if "asn" in candidate.name.lower() and _db_key(str(candidate)) != key:
+                sibling = str(candidate)
+                break
+    except Exception:  # noqa: BLE001 - unreadable directory
+        sibling = ""
+    with _MAXMIND_LOCK:
+        _maxmind_asn_siblings[key] = sibling
+    return sibling
+
+
+def _maxmind_get(reader: Any, ip: str) -> dict[str, Any]:
+    """One record from an open reader; {} when absent or unreadable."""
+    if reader is None:
+        return {}
+    try:
+        record = reader.get(ip)
+    except Exception:  # noqa: BLE001 - unsupported address family, corrupt node, closed reader
+        log.debug("MaxMind lookup for %s failed", ip, exc_info=True)
+        return {}
+    return record if isinstance(record, dict) else {}
+
+
+def _mm_name(node: Any) -> str:
+    """English display name of a GeoLite2 node ({'names': {'en': 'London'}})."""
+    if not isinstance(node, dict):
+        return ""
+    names = node.get("names")
+    if not isinstance(names, dict):
+        return ""
+    return _text(names.get("en") or next((value for value in names.values() if value), ""))
+
+
+def _is_asn_record(record: dict[str, Any]) -> bool:
+    """True for a GeoLite2-ASN record, which carries no place information."""
+    return "autonomous_system_number" in record or "autonomous_system_organization" in record
+
+
+def _apply_asn_record(geo: GeoInfo, record: dict[str, Any]) -> None:
+    """AS number and network owner; 'AS15169' matches the ip-api spelling."""
+    number = record.get("autonomous_system_number")
+    if isinstance(number, int) and not isinstance(number, bool):
+        geo.asn = f"AS{number}"
+    org = _text(record.get("autonomous_system_organization"))
+    if org:
+        geo.org = org
+
+
+def _apply_city_record(geo: GeoInfo, record: dict[str, Any]) -> None:
+    """Place fields of a GeoLite2-City (or -Country) record."""
+    country = record.get("country") or record.get("registered_country")
+    if isinstance(country, dict):
+        geo.country = _mm_name(country)
+        geo.country_code = _text(country.get("iso_code")).upper()
+    subdivisions = record.get("subdivisions")
+    if isinstance(subdivisions, list) and subdivisions:
+        # Ordered broadest first; the first entry is ip-api's "regionName".
+        first = subdivisions[0]
+        geo.region = _mm_name(first) or (_text(first.get("iso_code")) if isinstance(first, dict) else "")
+    geo.city = _mm_name(record.get("city"))
+    location = record.get("location")
+    if isinstance(location, dict):
+        geo.lat = _number(location.get("latitude"))
+        geo.lon = _number(location.get("longitude"))
+    # GeoLite2 carries no anonymiser traits (those live in the paid GeoIP2
+    # Anonymous-IP / Enterprise feeds), so is_proxy/is_hosting/is_mobile stay
+    # False here and VPN, Tor and hosting detection keeps working off reverse
+    # DNS, the ISP/org regexes and the Tor bulk exit list.
+
+
+def maxmind_lookup(ip: str, cfg: Settings) -> Optional[GeoInfo]:
+    """Geolocate one IP from the local GeoLite2 database at ``cfg.maxmind_db``.
+
+    Needs no network access and never raises.  None - so the caller falls back
+    to ip-api.com - when no database is configured, the package or file is
+    unusable, the address is not in the database, or the record holds nothing
+    useful.  A City database is enriched from a sibling ASN database when one
+    sits beside it; an ASN database on its own fills in ``asn``/``org`` only.
+    """
+    path = _text(getattr(cfg, "maxmind_db", ""))
+    if not path:
+        return None
+    ip = _normalize_ip(ip)
+    if not ip or not is_public_ip(ip):
+        return None
+
+    record = _maxmind_get(_maxmind_reader(path), ip)
+    if not record:
+        return None
+    geo = GeoInfo(ip=ip, source="maxmind")
+    if _is_asn_record(record):
+        _apply_asn_record(geo, record)
+    else:
+        _apply_city_record(geo, record)
+        sibling = _asn_sibling_path(path)
+        if sibling:
+            asn_record = _maxmind_get(_maxmind_reader(sibling), ip)
+            if asn_record:
+                _apply_asn_record(geo, asn_record)
+    if not (geo.country_code or geo.country or geo.city or geo.asn or geo.org or geo.lat is not None):
+        return None  # an empty record must not mask the ip-api fallback
+    return geo
+
+
+def geolocate(ip: str, cfg: Settings, store: Optional["Store"]) -> GeoInfo:
+    """Geolocate one IP: the local MaxMind database first when ``cfg.maxmind_db``
+    points at one, else ip-api.com (cached as ``geo:<ip>``).
+
+    Order: private -> offline -> cache -> MaxMind -> ip-api -> unavailable.
     Private addresses yield ``source="private"``, offline mode ``"offline"``,
-    any failure (transport error, HTTP 429 rate limit, ``status != success``)
-    ``"unavailable"``; a cache hit is tagged ``"cache"``.
+    a database hit ``"maxmind"``, any failure (transport error, HTTP 429 rate
+    limit, ``status != success``) ``"unavailable"``; a cache hit is tagged
+    ``"cache"``.
     """
     normalized = _normalize_ip(ip)
     if not normalized:
@@ -312,6 +504,12 @@ def geolocate(ip: str, cfg: Settings, store: Optional["Store"]) -> GeoInfo:
         else:
             geo.source = "cache"
             return geo
+
+    # Local database beats the network service: no rate limit, no round trip.
+    # The answer is a memory-mapped read, so it earns no row in the Store cache.
+    geo = maxmind_lookup(ip, cfg)
+    if geo is not None:
+        return geo
 
     response = _http_get(IP_API_URL.format(ip=ip), cfg)
     if response is None:

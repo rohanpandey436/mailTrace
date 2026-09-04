@@ -95,8 +95,10 @@ def analyze_bytes(
         infra = InfraAnalysis()
 
     # 6. Threat-intel / prior-incident correlation ------------------------
+    # cfg is passed explicitly so the fuzzy-matching thresholds come from this
+    # analysis's settings rather than the module-level singleton.
     intel = campaigns.correlate(
-        email_id, parsed, header_analysis, url_analysis, att_analysis, domain_intel, infra, store
+        email_id, parsed, header_analysis, url_analysis, att_analysis, domain_intel, infra, store, cfg
     )
 
     # 7. Fusion -----------------------------------------------------------
@@ -136,7 +138,7 @@ def analyze_bytes(
             {"filename": filename, "size": len(raw), "sha256": parsed.raw_sha256, "md5": parsed.raw_md5},
             parsed.raw_sha256,
         )
-        campaign_id = campaigns.assign_campaign(result, store)
+        campaign_id = campaigns.assign_campaign(result, store, cfg)
         result.campaign_id = campaign_id
         result.intel.campaign_id = campaign_id
         result.processing_ms = int((time.perf_counter() - t0) * 1000)

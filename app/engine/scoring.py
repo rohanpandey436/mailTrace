@@ -3,9 +3,9 @@ Decision brain of MailTrace: fuses every analyzer's sub-report into one Verdict.
 
 Approach
 --------
-1. ``component_scores`` converts the five evidence families (authentication,
-   content, links/attachments, infrastructure, header anomalies) into 0-100
-   analyst-scale scores using fixed, documented increments.
+1. ``component_scores`` converts the evidence into the five Stage 4 pillars -
+   AI core, authentication/protocols, GeoIP/route, domain, and threat
+   intelligence - as 0-100 analyst-scale scores using documented increments.
 2. ``weighted_risk`` sums them with ``Settings.weights`` into the raw risk score.
 3. ``rule_classify`` is a deterministic first-match policy (Fraud > Phishing >
    Impersonated > Suspicious > Legitimate) whose rationale lines name the exact
@@ -239,44 +239,119 @@ def _authentication_score(auth: AuthResult, sender_domain: str, cfg: Settings) -
     return _clamp(score)
 
 
-def _content_score(nlp: NlpAnalysis) -> float:
+def _ai_score(nlp: NlpAnalysis, urls: UrlAnalysis, atts: AttachmentAnalysis) -> float:
+    """Pillar 1 - AI core.
+
+    Everything the model and the content analysers concluded about intent: the
+    classifier's non-legitimate mass and social-engineering signals (``nlp.score``),
+    the strongest BEC pattern, the lure links, and the attachment risk, which now
+    includes the Shannon-entropy check for packed or encrypted payloads.
+    """
     max_bec = max((_clamp(p.confidence, 0.0, 1.0) for p in nlp.bec_patterns), default=0.0)
-    return _clamp(0.7 * _clamp(nlp.score, 0.0, 1.0) * 100 + 0.3 * max_bec * 100)
-
-
-def _links_score(urls: UrlAnalysis, atts: AttachmentAnalysis) -> float:
-    url_score = _clamp(urls.score, 0.0, 1.0)
-    att_score = _clamp(atts.score, 0.0, 1.0)
-    score = 100 * max(url_score, att_score * 0.9)
-    if url_score > 0.4 and att_score > 0.4:
+    intent = 0.7 * _clamp(nlp.score, 0.0, 1.0) + 0.3 * max_bec
+    payload = max(_clamp(urls.score, 0.0, 1.0), _clamp(atts.score, 0.0, 1.0) * 0.9)
+    score = 100 * max(intent, payload)
+    # A message that is both worded like an attack and carries a hostile payload
+    # is worse than either alone.
+    if intent > 0.4 and payload > 0.4:
         score += 10
     return _clamp(score)
 
 
-def _infrastructure_score(
-    header_analysis: HeaderAnalysis, domain_intel: list[DomainIntel], infra: InfraAnalysis
-) -> float:
-    domain_based = 0.0
-    for d in domain_intel:
-        if d.reputation:
-            domain_based = max(domain_based, 0.6)
-        if d.age_days is not None and d.age_days < 30 and not d.is_free_mail:
-            domain_based = max(domain_based, 0.6)
-        if d.lookalike_of:
-            domain_based = max(domain_based, 0.5)
-        if d.is_disposable:
-            domain_based = max(domain_based, 0.3)
-        if d.is_free_mail and d.role == "sender" and header_analysis.display_name_spoof:
-            domain_based = max(domain_based, 0.2)
-    return _clamp(100 * max(_clamp(infra.score, 0.0, 1.0), domain_based))
-
-
-def _anomaly_score(header_analysis: HeaderAnalysis, domain_intel: list[DomainIntel], intel: ThreatIntel) -> float:
-    score = 100 * _clamp(header_analysis.score, 0.0, 1.0)
-    if intel.related_incidents:
-        score += 15
-    if any(d.reputation for d in domain_intel):
+def _identity_forgery_score(header_analysis: HeaderAnalysis) -> float:
+    """Forged sender fields, scored with the authentication pillar because they
+    are protocol-level identity claims rather than wording."""
+    score = 0.0
+    if header_analysis.display_name_spoof:
+        score += 45
+    if header_analysis.reply_to_mismatch:
+        score += 35
+    if header_analysis.return_path_mismatch:
         score += 25
+    if header_analysis.message_id_mismatch:
+        score += 15
+    return score
+
+
+def _authentication_pillar(auth: AuthResult, header_analysis: HeaderAnalysis, sender_domain: str, cfg: Settings) -> float:
+    """Pillar 2 - Auth/protocols: SPF, DKIM, DMARC, alignment and forged fields."""
+    return _clamp(_authentication_score(auth, sender_domain, cfg) + _identity_forgery_score(header_analysis))
+
+
+_ROUTING_ANOMALIES: dict[str, float] = {
+    "forged_received_order": 40.0,
+    "negative_delay": 25.0,
+    "large_delay": 10.0,
+    "no_tls": 10.0,
+    "helo_mismatch": 10.0,
+    "unparseable": 5.0,
+}
+
+
+def _geoip_route_score(header_analysis: HeaderAnalysis, infra: InfraAnalysis) -> float:
+    """Pillar 3 - GeoIP and route: where it came from and how it travelled.
+
+    Combines the origin-infrastructure verdict (Tor, VPN, hosting, blocklisted
+    address, suspected open relay, botnet traits) with the delivery-path
+    anomalies found in the Received chain, including the hop time deltas.
+    """
+    infra_part = 100 * _clamp(infra.score, 0.0, 1.0)
+    seen: set[str] = set()
+    for hop in header_analysis.hops:
+        seen.update(hop.anomalies)
+    routing_part = sum(weight for name, weight in _ROUTING_ANOMALIES.items() if name in seen)
+    if header_analysis.hops and not any(h.from_ip and not h.is_private_ip for h in header_analysis.hops):
+        routing_part += 20  # the true origin is hidden behind private addressing
+    if not header_analysis.hops:
+        routing_part += 25  # no delivery record at all
+    if header_analysis.originating_ip and header_analysis.origin_confidence < 0.5:
+        routing_part += 10
+    return _clamp(max(infra_part, _clamp(routing_part)) + 0.25 * min(infra_part, _clamp(routing_part)))
+
+
+def _domain_score(domain_intel: list[DomainIntel], header_analysis: HeaderAnalysis) -> float:
+    """Pillar 4 - Domain: registration age, lookalikes and DNS/MX posture."""
+    score = 0.0
+    for d in domain_intel:
+        weight = 1.0 if d.role in ("sender", "reply_to", "return_path") else 0.6
+        candidate = 0.0
+        if d.lookalike_of:
+            candidate = max(candidate, 85.0)
+        if d.age_days is not None and not d.is_free_mail:
+            if d.age_days < 30:
+                candidate = max(candidate, 80.0)
+            elif d.age_days < 90:
+                candidate = max(candidate, 55.0)
+            elif d.age_days < 365:
+                candidate = max(candidate, 25.0)
+        if d.is_disposable:
+            candidate = max(candidate, 60.0)
+        if d.role == "sender" and not d.is_free_mail and d.source not in ("offline", "unavailable"):
+            if not d.resolves:
+                candidate = max(candidate, 70.0)
+            elif not d.has_mx:
+                candidate = max(candidate, 40.0)
+        if d.is_free_mail and d.role == "sender" and header_analysis.display_name_spoof:
+            candidate = max(candidate, 30.0)
+        score = max(score, candidate * weight)
+    return _clamp(score)
+
+
+def _threat_intel_score(domain_intel: list[DomainIntel], infra: InfraAnalysis, intel: ThreatIntel) -> float:
+    """Pillar 5 - Threat intel: blocklists, reputation feeds and prior incidents."""
+    score = 0.0
+    if intel.ip_blacklists:
+        score = max(score, 80.0)
+    if intel.tor_exits:
+        score = max(score, 85.0)
+    if any(d.reputation for d in domain_intel):
+        feeds = [t for d in domain_intel for t in d.reputation if t not in ("suspicious_tld", "disposable")]
+        score = max(score, 90.0 if feeds else 30.0)
+    if infra.blacklisted:
+        score = max(score, 75.0)
+    if intel.related_incidents:
+        worst = max((r.risk_score for r in intel.related_incidents), default=0)
+        score = max(score, 40.0 + 0.4 * worst)
     return _clamp(score)
 
 
@@ -310,11 +385,11 @@ def component_scores(
     if not sender_domain:
         sender_domain = next((d.domain.lower() for d in domain_intel if d.role == "sender"), "")
     return RiskBreakdown(
-        authentication=_authentication_score(header_analysis.auth, sender_domain, cfg),
-        content=_content_score(nlp_analysis),
-        links=_links_score(url_analysis, att_analysis),
-        infrastructure=_infrastructure_score(header_analysis, domain_intel, infra),
-        anomaly=_anomaly_score(header_analysis, domain_intel, intel),
+        ai=_ai_score(nlp_analysis, url_analysis, att_analysis),
+        authentication=_authentication_pillar(header_analysis.auth, header_analysis, sender_domain, cfg),
+        geoip_route=_geoip_route_score(header_analysis, infra),
+        domain=_domain_score(domain_intel, header_analysis),
+        threat_intel=_threat_intel_score(domain_intel, infra, intel),
         weights=_normalized_weights(cfg),
     )
 

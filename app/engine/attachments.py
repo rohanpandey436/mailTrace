@@ -3,7 +3,7 @@ Attachment risk analysis.
 
 Approach
 --------
-Each attachment is judged on four independent axes and the worst one wins:
+Each attachment is judged on five independent axes and the worst one wins:
 
 1. **Declared type** - the file extension mapped through ``RISKY_EXTENSIONS``.
 2. **Actual content** - magic bytes sniffed from the payload (PE/ELF/Mach-O
@@ -14,6 +14,12 @@ Each attachment is judged on four independent axes and the worst one wins:
    member names, password protection (flag bit 0) and ``vbaProject.bin``
    (macros) are detected without ever extracting to disk.
 4. **Naming tricks** - double extensions such as ``claim_form.pdf.exe``.
+5. **Byte entropy** - Shannon entropy over the 256-symbol byte alphabet.
+   High entropy on its own proves nothing (a ZIP, JPEG or MP4 is *supposed*
+   to look random), so it is read in the light of the declared type: random
+   bytes inside a format that stores its content uncompressed mean packing,
+   encryption or an embedded payload, and random bytes inside an executable
+   are the classic packed-malware signature.
 
 Inline images are inventoried but excluded from the score.  Nothing here
 touches the network or the filesystem, and nothing raises on hostile input.
@@ -23,8 +29,10 @@ from __future__ import annotations
 import hashlib
 import io
 import logging
+import math
 import re
 import zipfile
+from collections import Counter
 
 from ..config import Settings
 from ..schemas import SEVERITY_ORDER, AttachmentAnalysis, AttachmentMeta, Finding, Severity
@@ -68,6 +76,82 @@ _SCRIPT_MARKERS = (
     b"set-executionpolicy", b"invoke-expression", b"iex(", b"rundll32", b"regsvr32", b"mshta",
 )
 _RISK_VALUE: dict[str, float] = {"info": 0.0, "low": 0.15, "medium": 0.4, "high": 0.75, "critical": 1.0}
+
+# Entropy context -----------------------------------------------------------
+# Formats that store their payload as readable text or lightly-packed records.
+# Their bytes are highly redundant, so near-random content inside one of them
+# is evidence of packing, encryption or an appended blob rather than of format.
+_INCOMPRESSIBLE_EXTS: set[str] = {
+    "doc", "dot", "xls", "xlt", "ppt", "pdf", "rtf", "txt", "csv", "tsv", "log", "md",
+    "html", "htm", "shtml", "xml", "svg", "json", "eml", "msg", "ics", "vcf",
+}
+# Document formats that are really ZIP containers (OOXML, OpenDocument).  They
+# are documents by declaration but compressed by construction, so entropy near
+# 8.0 is only meaningful when the bytes are *not* the container they claim to
+# be - an opaque blob named ``invoice.docx`` rather than a Word file that
+# happens to embed a photo.  Judged in ``_entropy_escalates`` against the magic.
+_ZIP_CONTAINER_DOC_EXTS: set[str] = {
+    "docx", "docm", "dotm", "xlsx", "xlsm", "xlam", "xltm", "pptx", "pptm", "odt", "ods", "odp",
+}
+# Formats whose bytes are compressed or encoded by design: entropy near 8.0 is
+# the normal, expected state and says nothing about intent.
+_MEDIA_EXTS: set[str] = {
+    "mp3", "m4a", "aac", "ogg", "oga", "opus", "flac", "wma",
+    "mp4", "m4v", "avi", "mov", "mkv", "webm", "wmv", "mpg", "mpeg", "3gp",
+}
+_NATURALLY_COMPRESSED_EXTS: set[str] = ARCHIVE_EXTENSIONS | (_IMAGE_EXTS - {"svg"}) | _MEDIA_EXTS
+_NATURALLY_COMPRESSED_MAGIC: set[str] = _ARCHIVE_MAGIC | _IMAGE_MAGIC | {"ooxml"}
+# Image extensions ``sniff_magic`` has a signature for: for these the *absence*
+# of the signature is itself proof the file is not the image it claims to be.
+_SNIFFABLE_IMAGE_EXTS: set[str] = {"png", "jpg", "jpeg", "gif"}
+
+
+# --------------------------------------------------------------------------- #
+# Entropy
+# --------------------------------------------------------------------------- #
+def shannon_entropy(data: bytes) -> float:
+    """Shannon entropy of ``data`` in bits per byte over the 256-symbol alphabet.
+
+    ``H = -sum(p_i * log2(p_i))`` for each byte value present.  The result lies
+    in [0.0, 8.0]: 0.0 for a buffer of one repeated byte, roughly 4-5 for prose
+    or source code, and asymptotically 8.0 for compressed, encrypted or
+    otherwise uniformly random bytes.  Empty input is 0.0 by definition.
+
+    One pass over the buffer plus one pass over at most 256 counts, so O(n).
+    """
+    total = len(data)
+    if not total:
+        return 0.0
+    entropy = 0.0
+    for count in Counter(data).values():
+        p = count / total
+        entropy -= p * math.log2(p)
+    return entropy
+
+
+def _image_claim_mismatch(ext: str, magic: str) -> bool:
+    """True when a file claims an image extension its content does not back up."""
+    if ext in _SNIFFABLE_IMAGE_EXTS:
+        return magic not in _IMAGE_MAGIC  # includes '' - no PNG/JPEG/GIF header at all
+    if ext in _IMAGE_EXTS:  # bmp/webp/svg: the sniffer has no signature, so only a
+        return bool(magic) and magic not in _IMAGE_MAGIC  # positive foreign magic counts
+    return False
+
+
+def _entropy_escalates(extension: str, magic: str, high_entropy: bool) -> bool:
+    """Whether high entropy is *unexplained* by the file's declared type.
+
+    Kept as a pure function of the fields stored on :class:`AttachmentMeta` so
+    the message-level pass can re-derive it without re-reading the bytes.
+    Packed executables are excluded: they are already critical on their own.
+    """
+    if not high_entropy or magic in EXECUTABLE_MAGIC:
+        return False
+    if extension in _INCOMPRESSIBLE_EXTS:
+        return True
+    if extension in _ZIP_CONTAINER_DOC_EXTS:
+        return magic not in ("ooxml", "zip")  # a real OOXML/ODF file is deflated, so 8.0 is normal
+    return _image_claim_mismatch(extension, magic)
 
 
 # --------------------------------------------------------------------------- #
@@ -246,6 +330,37 @@ def analyze_attachment(att: RawAttachment, cfg: Settings) -> AttachmentMeta:
     if magic == "script" and ext not in ("txt", "csv", "log", "md"):
         severity = _worse(severity, "high")
         reasons.append("Content contains shell/PowerShell/script commands")
+
+    # Entropy ---------------------------------------------------------------
+    # Read in context: 7.9 bits/byte is unremarkable in a JPEG and damning in a
+    # .docx, so the same number moves the verdict only when the declared type
+    # cannot account for it.
+    entropy = shannon_entropy(data)
+    high_entropy = entropy >= cfg.entropy_threshold
+    if high_entropy:
+        measured = f"entropy {entropy:.2f} of a possible 8.00, above the {cfg.entropy_threshold:.1f} threshold"
+        if magic in EXECUTABLE_MAGIC:
+            severity = _worse(severity, "critical")
+            reasons.append(
+                f"Executable is packed or obfuscated ({measured}): the real code is unpacked only at run "
+                "time, which is how malware hides from signature scanners",
+            )
+        elif _entropy_escalates(ext, magic, high_entropy):
+            severity = _worse(severity, "high")
+            if _image_claim_mismatch(ext, magic):
+                claimed = f"a .{ext} image, but the bytes carry no image header"
+            elif ext in _ZIP_CONTAINER_DOC_EXTS:
+                claimed = f"a .{ext} file, and the bytes are not the document container that name implies"
+            else:
+                claimed = f"a .{ext} file, which stores its contents uncompressed"
+            reasons.append(
+                f"Content is almost random ({measured}) for {claimed}: this indicates packing, encryption "
+                "or an embedded payload rather than an ordinary document",
+            )
+        elif ext in _NATURALLY_COMPRESSED_EXTS or magic in _NATURALLY_COMPRESSED_MAGIC or is_archive:
+            kind = magic.upper() if magic else (f".{ext}" if ext else "this")
+            reasons.append(f"High {measured}, which is expected for {kind} content because it is compressed by design")
+
     if not data:
         reasons.append("Attachment is empty")
 
@@ -265,6 +380,8 @@ def analyze_attachment(att: RawAttachment, cfg: Settings) -> AttachmentMeta:
         is_archive=is_archive,
         has_macros=has_macros,
         double_extension=double_extension,
+        shannon_entropy=round(entropy, 3),
+        high_entropy=high_entropy,
         risk=Severity(severity),
         reasons=reasons,
     )
@@ -324,6 +441,23 @@ def analyze_attachments(raw_attachments: list[RawAttachment], cfg: Settings) -> 
             f"{_names(mismatched)}: the bytes inside are a different format from what the name or MIME type claims.",
             {"files": [{"filename": m.filename, "content_type": m.content_type, "magic_type": m.magic_type} for m in mismatched]},
         ))
+    entropic = [m for m in scored if _entropy_escalates(m.extension, m.magic_type, m.high_entropy)]
+    if entropic:
+        lead = max(entropic, key=lambda m: m.shannon_entropy)
+        others = [m for m in entropic if m is not lead]
+        detail = (
+            f"{lead.filename} measures {lead.shannon_entropy:.2f} out of 8.00 on the Shannon entropy scale, "
+            f"above the {cfg.entropy_threshold:.2f} threshold. Files of this type normally hold readable, "
+            "repetitive content, so bytes this close to random mean the file has been packed, encrypted or "
+            "has a payload hidden inside it."
+        )
+        if others:
+            detail += f" {_names(others)} show the same pattern."
+        findings.append(_finding(
+            "high_entropy_payload", Severity.HIGH, "High-entropy attachment", detail,
+            {"files": [{"filename": m.filename, "entropy": m.shannon_entropy,
+                        "type": m.magic_type or m.content_type or m.extension} for m in entropic[:8]]},
+        ))
     doubles = [m for m in scored if m.double_extension]
     if doubles:
         findings.append(_finding(
@@ -349,6 +483,6 @@ def analyze_attachments(raw_attachments: list[RawAttachment], cfg: Settings) -> 
             "attachment_inventory", Severity.INFO, "Attachment inventory",
             f"{len(metas)} attachment(s): {_names(metas)}.",
             {"files": [{"filename": m.filename, "size": m.size, "sha256": m.sha256, "type": m.magic_type or m.content_type,
-                        "inline": inline} for m, inline in zip(metas, inline_flags)]},
+                        "entropy": m.shannon_entropy, "inline": inline} for m, inline in zip(metas, inline_flags)]},
         ))
     return AttachmentAnalysis(attachments=metas, score=score, findings=findings)

@@ -12,10 +12,19 @@ Approach
    structural signals (links, attachments, sender/Reply-To relationship,
    display name): payment diversion, fake invoice, credential harvesting and
    executive impersonation.  Evidence lists quote the phrases actually found.
-3. The TF-IDF + logistic-regression model (``app.ml.train``) supplies a
-   category, class probabilities and the most influential tokens.  When
-   scikit-learn is unavailable the module degrades to a documented heuristic
-   probability estimate and ``ml_model="unavailable"``.
+3. The classifier (``app.ml.train``) supplies a category, class probabilities
+   and signed token-level attributions.  Two backends, picked in this order:
+
+   * ``transformer`` - a DistilRoBERTa (or other) sequence-classification model,
+     used only when ``Settings.transformer_model`` is set.  Its attributions are
+     occlusion deltas, not Shapley values, so the method is named in
+     ``ml_model`` and in the finding evidence.  Off by default: `transformers`
+     and `torch` are not in requirements.txt (see ``app/ml/train.py``).
+   * ``linear`` - the bundled TF-IDF + logistic-regression model, whose
+     attributions are *exact* SHAP values ``phi_i = w_i * (x_i - E[x_i])``.
+
+   When scikit-learn is unavailable the module degrades to a documented
+   heuristic probability estimate, ``ml_backend="unavailable"`` and no weights.
 4. ``score`` blends the model's non-legitimate mass, urgency, the strongest
    BEC pattern and cue diversity into one 0-1 content score.
 """
@@ -35,6 +44,7 @@ from ..schemas import (
     NlpAnalysis,
     ParsedEmail,
     Severity,
+    ShapWeight,
     ThreatCategory,
     UrlAnalysis,
 )
@@ -452,18 +462,50 @@ def _heuristic_probabilities(
     return {label: round(value / total, 4) for label, value in weights.items()}
 
 
-def _run_model(text: str, cfg: Settings) -> tuple[Optional[str], dict[str, float], list[str], str]:
+#: How many signed token attributions are carried on the report.
+_SHAP_TOP_K = 12
+#: What produced ``NlpAnalysis.shap_weights`` for each backend. The transformer
+#: string mirrors ``train.TRANSFORMER_ATTRIBUTION``: those values are honest
+#: leave-one-token-out deltas, not Shapley values.
+_ATTRIBUTION_METHOD = {"linear": "exact-shap-linear", "transformer": "occlusion", "unavailable": "none"}
+
+_ModelOutcome = tuple[Optional[str], dict[str, float], list[str], list[tuple[str, float]], str, str]
+
+
+def _run_model(text: str, cfg: Settings) -> _ModelOutcome:
+    """(label, probabilities, top terms, token attributions, model name, backend).
+
+    The optional transformer is tried first and falls back silently; the linear
+    model is the default.  ``label`` is None only when neither backend ran, and
+    the caller then uses the rule heuristic.
+    """
     try:
         from ..ml import train
+    except ImportError as exc:  # pragma: no cover - the package ships with the app
+        log.warning("ML package unavailable (%s); using rule heuristics", exc)
+        return None, {}, [], [], "unavailable", "unavailable"
 
+    model_id = (getattr(cfg, "transformer_model", "") or "").strip()
+    if model_id:
+        # Never fatal: transformer_predict returns None on any failure (packages
+        # absent, download blocked, OOM) so analysis continues on the linear model.
+        outcome = train.transformer_predict(text, cfg)
+        if outcome is not None:
+            label, probs, attributions = outcome
+            top_terms = [token for token, weight in attributions if weight > 0][:8]
+            name = f"{model_id} ({train.TRANSFORMER_ATTRIBUTION} attribution)"
+            return label, probs, top_terms, attributions[:_SHAP_TOP_K], name, "transformer"
+
+    try:
         pipeline = train.load_or_train(cfg)
         label, probs = train.predict(pipeline, text)
-        return label, probs, train.explain(pipeline, text, label), train.MODEL_VERSION
+        weights = train.shap_values(pipeline, text, label, top_k=_SHAP_TOP_K)
+        return label, probs, train.explain(pipeline, text, label), weights, train.MODEL_VERSION, "linear"
     except ImportError as exc:
         log.warning("ML classifier unavailable (%s); using rule heuristics", exc)
     except Exception:  # noqa: BLE001 - model failure must never abort analysis
         log.exception("ML classification failed; using rule heuristics")
-    return None, {}, [], "unavailable"
+    return None, {}, [], [], "unavailable", "unavailable"
 
 
 # --------------------------------------------------------------------------- #
@@ -532,7 +574,7 @@ def analyze_content(
     max_bec = max((p.confidence for p in bec), default=0.0)
     exec_conf = max((p.confidence for p in bec if p.pattern == "executive_impersonation"), default=0.0)
 
-    label, probs, top_terms, model_name = _run_model(text, cfg)
+    label, probs, top_terms, attributions, model_name, backend = _run_model(text, cfg)
     if label is None:
         probs = _heuristic_probabilities(
             len(credential), len(financial), len(threat), len(reward), len(secrecy), len(authority),
@@ -545,7 +587,9 @@ def analyze_content(
         analysis.ml_category = ThreatCategory.LEGITIMATE
     analysis.ml_probabilities = {k: round(float(v), 4) for k, v in probs.items()}
     analysis.ml_top_terms = top_terms
+    analysis.shap_weights = [ShapWeight(token=str(token), weight=round(float(weight), 6)) for token, weight in attributions]
     analysis.ml_model = model_name
+    analysis.ml_backend = backend
 
     non_legit = 1.0 - float(probs.get(ThreatCategory.LEGITIMATE.value, 0.0))
     analysis.score = _clamp01(0.45 * non_legit + 0.25 * urgency_score + 0.2 * max_bec + (0.1 if len(cues) >= 2 else 0.0))
@@ -616,11 +660,19 @@ def analyze_content(
             f"The sender steers the conversation to email replies ({reply_cues[0]}), typical of BEC and advance-fee scams.",
             {"phrases": reply_cues[:5]},
         ))
+    attribution_method = _ATTRIBUTION_METHOD.get(backend, "none")
+    shap_evidence = [{"token": w.token, "weight": round(w.weight, 4)} for w in analysis.shap_weights[:8]]
+    shap_summary = ", ".join(f"{w.token} {w.weight:+.3f}" for w in analysis.shap_weights[:5])
     findings.append(_finding(
         "ml_classification", Severity.INFO, "ML classification",
         f"Classifier {model_name} favours {analysis.ml_category.value} "
-        f"(p={analysis.ml_probabilities.get(analysis.ml_category.value, 0.0):.2f}); top terms: {', '.join(top_terms[:5]) or 'n/a'}.",
-        {"model": model_name, "category": analysis.ml_category.value, "probabilities": analysis.ml_probabilities, "top_terms": top_terms},
+        f"(p={analysis.ml_probabilities.get(analysis.ml_category.value, 0.0):.2f}); top terms: {', '.join(top_terms[:5]) or 'n/a'}. "
+        f"Token weights ({attribution_method}): {shap_summary or 'n/a'}.",
+        {
+            "model": model_name, "backend": backend, "attribution": attribution_method,
+            "category": analysis.ml_category.value, "probabilities": analysis.ml_probabilities,
+            "top_terms": top_terms, "shap_weights": shap_evidence,
+        },
     ))
     analysis.findings = findings
     return analysis

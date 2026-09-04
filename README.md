@@ -64,14 +64,38 @@ Engine version: `app.schemas.ENGINE_VERSION` (currently `1.0.0`).
 | Attachment analysis | Magic-byte sniffing against the declared type, double extensions, executables, macro documents, archives with risky members, password-protected archives, hashes | `app/engine/attachments.py` |
 | Domain intelligence | WHOIS age and registrar, DNS (A / MX / NS / SPF / DMARC), free-mail and disposable detection, lookalike-of-brand, URLhaus reputation | `app/engine/domains.py` |
 | NLP and social-engineering analysis | Urgency, fear, authority, secrecy, reward and scarcity lexicons; credential and financial terms; generic greeting; "reply, do not click" pattern; BEC patterns (payment diversion, fake invoice, credential harvesting, executive impersonation) with confidence and evidence phrases | `app/engine/nlp.py` |
-| AI classification with explainability | TF-IDF (word and character n-grams) with logistic regression over a labelled seed corpus; per-class probabilities and the top contributing terms | `app/ml/train.py`, `app/ml/seed_corpus.json` |
+| AI classification with explainability | TF-IDF (word and character n-grams) with logistic regression over a labelled seed corpus; per-class probabilities and exact SHAP token attributions; optional DistilRoBERTa backend | `app/ml/train.py`, `app/ml/seed_corpus.json` |
 | Risk scoring and dual validation | Five weighted component scores; deterministic first-match policy; ML corroboration modulates confidence; per-category floors; every step written to `verdict.rationale` | `app/engine/scoring.py` |
 | Source attribution | Spoofed domain / lookalike domain / compromised account / direct attacker infrastructure / legitimate sender, with confidence, reasoning and pivot indicators | `scoring.attribute_source` |
 | Threat-intel correlation and campaign detection | Normalised IOC keys per email, overlap search across all prior cases, automatic campaign creation and merging, shared-indicator pivots | `app/engine/campaigns.py` |
 | Relationship graph | Email, address, domain, IP, ASN, URL, attachment and campaign nodes with typed edges; merged per campaign | `app/engine/graph.py`, `GET /api/graph` |
 | Forensic reporting and chain of custody | Hash-linked custody ledger (`ingested`, `analyzed`, `viewed_unmasked`, `exported`, `report_generated`), ledger verification, JSON / HTML report with evidence integrity, timeline, IOCs, actions and legal notes | `app/db.py`, `app/engine/reporting.py`, `/api/reports`, `/api/custody` |
 | Privacy | PII masking (addresses, names, phone numbers, Aadhaar, PAN, card numbers) on every API representation, configurable default, unmasked views recorded in custody | `app/engine/privacy.py`, `?mask=` |
-| Real-time alerting and dashboard | Alerts above a configurable risk threshold pushed over Server-Sent Events; KPI dashboard, filterable case list, campaign views | `app/api/alerts.py`, `app/static/index.html` |
+| Real-time alerting and dashboard | Alerts above a configurable risk threshold pushed over Server-Sent Events to the browser and as JSON webhooks to a SIEM or Slack; KPI dashboard, filterable case list, campaign views | `app/api/alerts.py`, `app/static/index.html` |
+
+### Stage-by-stage compliance
+
+The pitch deck describes the engine as five stages. Each is implemented as
+follows, with the measurement that backs it.
+
+| Stage | Specified | Implementation | Measured |
+|---|---|---|---|
+| 1-2 | Native ingestion, sub-30 ms parse, headers/body/attachments separated | `parser.parse_email` times itself into `ParsedEmail.parse_ms` | 1.4-4.6 ms across the five samples, 6-20x headroom |
+| 3A | DistilRoBERTa NLP intent, Shannon entropy > 7.0, SHAP token weights | Linear classifier with **exact** SHAP by default, DistilRoBERTa behind `MAILTRACE_TRANSFORMER_MODEL`; `attachments.shannon_entropy` with `Settings.entropy_threshold` | SHAP additivity residual 3e-15; packed sample reads 7.90 bits/byte |
+| 3B | Header chain, MaxMind DB, hop latency, time-delta anomalies, VPN/TOR | `geoip.maxmind_lookup` preferred when a `.mmdb` is configured, ip-api fallback; per-hop `delay_seconds` and anomaly flags | Negative-delta anomaly fires on the phishing sample |
+| 3C | WHOIS age, DNS/MX alignment, lookalike detection, blacklists | `domains.py` (WHOIS over port 43, dnspython, `is_lookalike`), Spamhaus and five other DNSBL zones | onlinesbi.sbi resolved at 2321 days on the live site |
+| 4 | Calibrated 0-100 across 5 pillars with an explicit weighted formula | `RiskBreakdown.ai/authentication/geoip_route/domain/threat_intel`, weights normalised from `MAILTRACE_WEIGHT_*` | Sample verdicts 80 / 68 / 60 / 47 / 5 |
+| 5A | SimHash / TLSH fuzzy hashing for campaign grouping | Charikar SimHash in `parser.py`, TLSH when py-tlsh is present, distance matching in `campaigns.py` | Rewritten body clusters at distance 5-9, unrelated bodies 22-32 |
+| 5B | Webhook alerts, Section 65B legal PDF with SHA-256 custody | `alerts.deliver_webhooks`, `reporting.render_pdf`, `Section65BCertificate` with clauses (a)-(d) | 14-page PDF, 40 KB; webhook delivered while a slow endpoint still hung |
+| 5C | PII masking, stateless zero-persistence | `privacy.mask_result`, `Store(in_memory=True)` via `MAILTRACE_ZERO_PERSISTENCE` | No database and no evidence directory created in that mode |
+
+**One deviation, stated plainly.** The deck's scoring slide reads
+`0.20 Auth + 0.35 Text + 0.25 URL + 0.10 Net + 0.10 Entropy`, which is a
+different five than the stage list above (AI, Auth, GeoIP/Route, Domain, Threat
+Intel). The code implements the stage list, because that is what the
+architecture describes, and entropy is folded into the AI pillar where it
+belongs. The weights are configurable, so if the slide is the version you
+present, set `MAILTRACE_WEIGHT_*` to match it and the two agree again.
 
 ## 2. Architecture
 
@@ -124,6 +148,23 @@ during training:
 | Suspicious | 0.80 | 0.80 |
 
 Overall accuracy is **0.90**. Reproduce it any time with `python -m app.ml.train`.
+
+Every prediction carries **exact SHAP values**. For a linear model the Shapley
+value of a feature is `phi_i = coef_i * (x_i - E[x_i])`, where the expectation is
+the mean feature value over the training corpus, which is stored alongside the
+model. That decomposition is exact rather than approximate: summing all 34,643
+contributions reproduces the classifier's own decision function to a residual of
+3e-15, which is float64 rounding noise. Negative contributions are kept, so the
+dashboard can show that "verify" and "login" argued *against* Impersonated and
+*toward* Phishing, which a plain coefficient-times-feature view cannot express.
+
+A **DistilRoBERTa** backend is implemented and guarded behind
+`MAILTRACE_TRANSFORMER_MODEL`. It is off by default because `torch` is roughly a
+gigabyte and the free tier the public demo runs on has 512 MB of RAM. With the
+optional packages in `requirements-ml.txt` installed and a model id configured,
+the transformer takes over and the linear model becomes the fallback; token
+attributions there come from occlusion, and are labelled as such rather than
+being called SHAP.
 
 **2. A rule engine** (`app/engine/nlp.py`, `scoring.py` and friends). This is
 where the keyword lists live. They are deliberately not the model, for three
@@ -185,10 +226,12 @@ same pipeline retrains, with the rules unchanged underneath.
 - **SQLite** (WAL mode, one file): zero setup for judges and analysts, transactional,
   trivially handed over as part of an evidence bundle. An investigation workstation
   should not depend on a database server.
-- **scikit-learn**: trains in seconds on a CPU, is deterministic and explainable
-  (coefficients give the top terms per class) and needs no GPU, ONNX runtime or
-  model download. The rule engine, not the model, makes the final call, so the
-  model can stay small and auditable.
+- **scikit-learn**: trains in seconds on a CPU, is deterministic, and admits an
+  exact SHAP decomposition rather than an approximation, so every verdict can be
+  traced to individual tokens. It needs no GPU, ONNX runtime or model download.
+  The rule engine, not the model, makes the final call, so the model can stay
+  small and auditable. A DistilRoBERTa backend is available behind a setting for
+  deployments that can afford the memory.
 
 ### Why no bundled GeoIP database
 
@@ -279,18 +322,20 @@ raw messages under `data/evidence/<id>.eml`.
 
 ## 5. Scoring and classification policy
 
-**Component scores** (0-100, exposed as `verdict.breakdown`):
+**The five pillars** (0-100 each, exposed as `verdict.breakdown`):
 
-| Component | Default weight | Derived from |
+| Pillar | Default weight | Derived from |
 |---|---|---|
-| authentication | 0.20 | SPF fail 45 / softfail 25 / none 15 / unverifiable 10; DKIM fail 35 / missing 10 / unverifiable 5; DMARC fail 40 (60 under `p=reject`) / no record 10; +15 per misalignment; +20 when a protected or brand domain fails |
-| content | 0.35 | 0.7 x NLP score + 0.3 x strongest BEC pattern confidence |
-| links | 0.25 | max(URL score, 0.9 x attachment score), +10 when both exceed 0.4 |
-| infrastructure | 0.10 | max(infrastructure score; domain signals: newly registered under 30 days or blocklisted 0.6, lookalike 0.5, disposable 0.3, free-mail with display-name spoof 0.2) |
-| anomaly | 0.10 | header anomaly score, +15 when related incidents exist, +25 when a domain is on a reputation feed |
+| `ai` | 0.35 | max(intent, payload) x 100, +10 when both exceed 0.4. Intent = 0.7 x NLP score + 0.3 x strongest BEC pattern. Payload = max(URL score, 0.9 x attachment score), where the attachment score now includes the Shannon-entropy check |
+| `authentication` | 0.20 | SPF fail 45 / softfail 25 / none 15 / unverifiable 10; DKIM fail 35 / missing 10; DMARC fail 40 (60 under `p=reject`); +15 per misalignment; +20 when a protected or brand domain fails; plus forged sender fields (display name 45, Reply-To 35, Return-Path 25, Message-ID 15) |
+| `geoip_route` | 0.15 | Origin infrastructure (Tor, VPN/proxy, hosting, blocklisted address, suspected open relay, botnet traits) combined with delivery-path anomalies: forged Received order 40, negative hop delta 25, oversized delay 10, plaintext hop 10, HELO mismatch 10, private-only chain 20, missing chain 25, low origin confidence 10 |
+| `domain` | 0.20 | Lookalike 85, registered under 30 days 80 / under 90 days 55 / under a year 25, disposable 60, sender domain that does not resolve 70 or has no MX 40, free-mail sender behind a spoofed display name 30; link domains count at 0.6 weight |
+| `threat_intel` | 0.10 | Tor exit list 85, reputation feed hit 90, IP blocklist 80, AbuseIPDB or infrastructure blocklist 75, prior-incident overlap 40 + 0.4 x worst related risk |
 
-`risk_score = round(sum(weight x component))`. Weights come from
-`MAILTRACE_WEIGHT_*` and are normalised to sum to 1.
+`risk_score = round(sum(weight x pillar))`. Weights come from
+`MAILTRACE_WEIGHT_AI`, `_AUTHENTICATION`, `_GEOIP_ROUTE`, `_DOMAIN`,
+`_THREAT_INTEL` and are normalised to sum to 1, so they express relative
+importance rather than needing to add up by hand.
 
 **Rule policy** (first match wins, recorded as `verdict.rule_category`):
 
@@ -541,9 +586,10 @@ The CSV needs a text column (`body` or `text`, optionally with a `subject` colum
 and a label column whose values are exactly `Legitimate`, `Suspicious`,
 `Impersonated`, `Phishing` or `Fraud-Related`. The model is a `FeatureUnion` of a
 word (1-2 gram) and a character (3-5 gram) TF-IDF vectoriser feeding a
-class-balanced logistic regression (`tfidf-logreg-1`); the CLI prints accuracy on
-a 20 % stratified holdout, and the joblib bundle stores the SHA-256 of the corpus
-it was trained from.
+class-balanced logistic regression (`tfidf-logreg-2`); the CLI prints accuracy on
+a 20 % stratified holdout plus the SHAP additivity residual, and the joblib bundle
+stores the SHA-256 of the corpus it was trained from along with the expected
+feature vector the SHAP values are computed against.
 
 The running server always reconciles `data/model.joblib` with
 `app/ml/seed_corpus.json`: at startup and on first use it reloads the cached model

@@ -3,12 +3,15 @@ Forensic report and chain-of-custody endpoints.
 
 Generating a report is itself a custody event: it is recorded *before* the
 custody chain is read, so the report documents its own creation and its
-``custody_head_hash`` covers that event.  A masked report is built from an
-already-masked analysis and then passed through ``mask_report_fields`` so the
-narrative sections cannot leak what the structured data hides.
+``custody_head_hash`` covers that event.  The event records the requested
+format, so the ledger distinguishes a JSON pull from a PDF hand-over.  A masked
+report is built from an already-masked analysis and then passed through
+``mask_report_fields`` so the narrative sections cannot leak what the
+structured data hides.
 """
 from __future__ import annotations
 
+import re
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -16,17 +19,25 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from ..db import Store
 from ..engine.privacy import mask_report_fields, mask_result
-from ..engine.reporting import build_report, render_html
+from ..engine.reporting import PdfUnavailable, build_report, render_html, render_pdf
 from ..schemas import CustodyChain
 from .deps import DEFAULT_ACTOR, get_store, mask_param
 
 router = APIRouter(prefix="/api", tags=["reports"])
 
+# Content-Disposition is a header: keep the filename to characters that need no
+# quoting or encoding, whatever the report id happens to contain.
+_UNSAFE_FILENAME = re.compile(r"[^A-Za-z0-9._-]+")
+
+
+def _pdf_filename(report_id: str) -> str:
+    return "MailTrace-" + (_UNSAFE_FILENAME.sub("-", report_id).strip("-") or "report") + ".pdf"
+
 
 @router.get("/reports/{email_id}")
 def get_report(
     email_id: str,
-    fmt: Literal["json", "html"] = Query("json", alias="format"),
+    fmt: Literal["json", "html", "pdf"] = Query("json", alias="format"),
     mask: bool = Depends(mask_param),
     store: Store = Depends(get_store),
 ) -> Response:
@@ -43,6 +54,16 @@ def get_report(
         report = mask_report_fields(report)
     if fmt == "html":
         return HTMLResponse(render_html(report))
+    if fmt == "pdf":
+        try:
+            pdf = render_pdf(report)
+        except PdfUnavailable as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        return Response(
+            content=pdf,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="{_pdf_filename(report.report_id)}"'},
+        )
     return JSONResponse(content=report.model_dump(mode="json"))
 
 

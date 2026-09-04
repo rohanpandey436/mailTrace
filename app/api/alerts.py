@@ -1,5 +1,6 @@
 """
-Alert listing, acknowledgement and the live Server-Sent-Events stream.
+Alert listing, acknowledgement, outbound webhooks and the live
+Server-Sent-Events stream.
 
 ``Broadcaster`` is a tiny in-process fan-out: every SSE client owns an
 ``asyncio.Queue``; ``publish`` may be called from worker threads (the analysis
@@ -7,14 +8,27 @@ pipeline runs in a thread pool) and hops onto the event loop captured at
 startup with ``call_soon_threadsafe``.  ``maybe_alert`` is the single place
 that turns a finished analysis into a persisted, broadcast alert once the
 verdict crosses the configured risk threshold.
+
+Alert delivery has two independent channels and an alert always takes both:
+
+* the SSE stream, for a browser that has the dashboard open;
+* outbound webhooks (``MAILTRACE_WEBHOOK_URLS``), for a SIEM, Slack or any
+  other system that must hear about the alert whether or not anyone is
+  looking.  Webhook POSTs run on a small bounded thread pool so a slow or dead
+  endpoint delays nothing and can never grow the process without limit: at
+  most ``WEBHOOK_WORKERS`` sockets are open, at most ``WEBHOOK_MAX_INFLIGHT``
+  deliveries are outstanding, and each request is capped at
+  ``WEBHOOK_TIMEOUT`` seconds.
 """
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import threading
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Any, AsyncIterator, Optional
 
@@ -23,7 +37,7 @@ from fastapi.responses import StreamingResponse
 
 from ..config import Settings
 from ..db import Store
-from ..schemas import Alert, AnalysisResult
+from ..schemas import ENGINE_VERSION, Alert, AnalysisResult
 from .deps import get_store, mask_alert, mask_param
 
 log = logging.getLogger("mailtrace.api.alerts")
@@ -31,6 +45,13 @@ log = logging.getLogger("mailtrace.api.alerts")
 HEARTBEAT_SECONDS = 15.0
 POLL_SECONDS = 1.0
 SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+
+# Stage 5B: outbound webhook alert streams.
+WEBHOOK_EVENT = "mailtrace.alert"
+WEBHOOK_TIMEOUT = 3.0          # seconds per POST: connect, write, read
+WEBHOOK_WORKERS = 4            # hard ceiling on webhook threads
+WEBHOOK_MAX_INFLIGHT = 64      # queued + running deliveries before shedding load
+WEBHOOK_USER_AGENT = f"MailTrace/{ENGINE_VERSION}"
 
 
 class Broadcaster:
@@ -73,8 +94,117 @@ broadcaster = Broadcaster()
 router = APIRouter(prefix="/api/alerts", tags=["alerts"])
 
 
+# --------------------------------------------------------------------------- #
+# Outbound webhooks
+# --------------------------------------------------------------------------- #
+_webhook_lock = threading.Lock()
+_webhook_pool: Optional[ThreadPoolExecutor] = None
+_webhook_inflight = 0
+
+
+def case_url(email_id: str, settings: Settings) -> str:
+    """Deep link to the case in the dashboard (the UI routes on ``#/email/<id>``)."""
+    host = (settings.host or "127.0.0.1").strip()
+    if host in {"0.0.0.0", "::", "[::]", ""}:
+        host = "127.0.0.1"  # a wildcard bind is not an address anyone can click
+    if ":" in host and not host.startswith("["):
+        host = f"[{host}]"  # bare IPv6 literal
+    return f"http://{host}:{settings.port}/#/email/{email_id}"
+
+
+def webhook_payload(alert: Alert, settings: Settings) -> dict[str, Any]:
+    """The alert as JSON, plus the ``event`` type and a link back to the case."""
+    payload: dict[str, Any] = json.loads(alert.model_dump_json())
+    payload["event"] = WEBHOOK_EVENT
+    payload["url"] = case_url(alert.email_id, settings)
+    return payload
+
+
+def deliver_webhooks(alert: Alert, settings: Settings) -> None:
+    """POST ``alert`` to every configured webhook URL.  Blocking; never raises.
+
+    Called on the webhook pool by ``maybe_alert``; call it directly only when a
+    synchronous delivery is what you want (a test, or a CLI).  Each URL gets its
+    own warning on failure, with the HTTP status code when there was a response.
+    """
+    urls = [url for url in (settings.webhook_urls or []) if url]
+    if not urls:
+        return
+    try:
+        import httpx
+    except ImportError:  # pragma: no cover - httpx is a hard dependency of the API
+        log.warning("httpx is not installed; %d alert webhook(s) not delivered", len(urls))
+        return
+    payload = webhook_payload(alert, settings)
+    headers = {"User-Agent": WEBHOOK_USER_AGENT, "X-MailTrace-Event": WEBHOOK_EVENT}
+    try:
+        with httpx.Client(timeout=WEBHOOK_TIMEOUT, follow_redirects=True) as client:
+            for url in urls:
+                try:
+                    response = client.post(url, json=payload, headers=headers)
+                except Exception as exc:  # noqa: BLE001 - a dead endpoint is not our problem
+                    log.warning("alert webhook %s failed for alert %s: %s", url, alert.id, exc)
+                    continue
+                if response.status_code >= 400:
+                    log.warning("alert webhook %s returned HTTP %d for alert %s", url, response.status_code, alert.id)
+                else:
+                    log.info("alert %s delivered to webhook %s (HTTP %d)", alert.id, url, response.status_code)
+    except Exception:  # noqa: BLE001 - alerting must never break analysis
+        log.warning("alert webhook delivery for alert %s failed", alert.id, exc_info=True)
+
+
+def dispatch_webhooks(alert: Alert, settings: Settings) -> None:
+    """Hand the delivery to a background thread and return immediately.
+
+    The caller is a request worker thread, so nothing here may block on a
+    remote system.  The pool is created on first use (a deployment with no
+    webhooks configured never starts a thread) and load is shed with a warning
+    once ``WEBHOOK_MAX_INFLIGHT`` deliveries are already outstanding, so a dead
+    SIEM cannot make the queue grow without bound.
+    """
+    global _webhook_pool, _webhook_inflight
+
+    if not [url for url in (settings.webhook_urls or []) if url]:
+        return
+    with _webhook_lock:
+        if _webhook_inflight >= WEBHOOK_MAX_INFLIGHT:
+            log.warning(
+                "alert webhook backlog is full (%d outstanding); dropping delivery for alert %s",
+                _webhook_inflight, alert.id,
+            )
+            return
+        if _webhook_pool is None:
+            _webhook_pool = ThreadPoolExecutor(max_workers=WEBHOOK_WORKERS, thread_name_prefix="mt-webhook")
+        pool = _webhook_pool
+        _webhook_inflight += 1
+
+    def run() -> None:
+        global _webhook_inflight
+        try:
+            deliver_webhooks(alert, settings)
+        finally:
+            with _webhook_lock:
+                _webhook_inflight -= 1
+
+    try:
+        pool.submit(run)
+    except RuntimeError:  # pool shut down between the submit and the check (app stopping)
+        with _webhook_lock:
+            _webhook_inflight -= 1
+        log.warning("alert webhook pool is shut down; alert %s not delivered", alert.id)
+
+
+def shutdown_webhooks(wait: bool = False) -> None:
+    """Release the webhook pool at shutdown; a later alert lazily creates a new one."""
+    global _webhook_pool
+    with _webhook_lock:
+        pool, _webhook_pool = _webhook_pool, None
+    if pool is not None:
+        pool.shutdown(wait=wait, cancel_futures=not wait)
+
+
 def maybe_alert(result: AnalysisResult, store: Store, settings: Settings) -> Optional[Alert]:
-    """Create, persist and broadcast an alert when the verdict reaches the threshold."""
+    """Create, persist, broadcast and webhook an alert when the verdict reaches the threshold."""
     verdict = result.verdict
     if verdict.risk_score < settings.alert_threshold:
         return None
@@ -95,7 +225,8 @@ def maybe_alert(result: AnalysisResult, store: Store, settings: Settings) -> Opt
         ),
     )
     store.create_alert(alert)
-    broadcaster.publish(alert)
+    broadcaster.publish(alert)          # browsers watching /api/alerts/stream
+    dispatch_webhooks(alert, settings)  # SIEM / Slack / any external system
     log.info("alert %s raised for email %s (%s, risk %d)", alert.id, result.id, verdict.category.value, verdict.risk_score)
     return alert
 

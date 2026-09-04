@@ -35,10 +35,15 @@ def test_risk_scale_and_breakdown(analyses):
     for key in ("phishing", "bec", "fraud"):
         assert analyses[key].verdict.risk_score >= 60
     b = analyses["phishing"].verdict.breakdown
-    assert 0 <= b.authentication <= 100 and 0 <= b.content <= 100 and 0 <= b.links <= 100
+    # The five Stage 4 pillars all exist, are in range, and their weights normalise.
+    for pillar in ("ai", "authentication", "geoip_route", "domain", "threat_intel"):
+        value = getattr(b, pillar)
+        assert 0 <= value <= 100, f"{pillar} out of range: {value}"
+        assert pillar in b.weights
     assert abs(sum(b.weights.values()) - 1.0) < 1e-6
-    assert b.authentication >= 45  # SPF fail on a brand-spoofing sender
-    assert analyses["phishing"].verdict.breakdown.links >= 70
+    assert b.authentication >= 45  # SPF fail plus a spoofed display name and Reply-To
+    assert b.ai >= 70              # credential-harvest wording and a critical lure link
+    assert b.domain >= 50          # sbi-kyc-update.xyz is a lookalike domain
 
 
 def test_attribution(analyses):
