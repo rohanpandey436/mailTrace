@@ -12,8 +12,11 @@ Order of operations
 1. parse            -> ParsedEmail + raw attachment bytes
 2. headers          -> Received chain, origin IP, forged-field checks
 3. auth             -> SPF / DKIM / DMARC (Authentication-Results + live)
-4. urls / attachments / nlp   (offline content analysis)
-5. domains + geoip  (concurrent network enrichment, cached)
+4. urls             -> link extraction, needed by two of the three engines
+5. the three intelligence engines, concurrently:
+     3A  attachments + nlp   (entropy, intent, ML classification, SHAP)
+     3B  geoip               (origin trace, VPN/TOR, hop timing)
+     3C  domains             (WHOIS age, DNS/MX, lookalikes, reputation)
 6. campaigns.correlate        (threat-intel + prior-incident correlation)
 7. scoring          -> verdict, attribution, merged findings
 8. graph            -> relationship graph
@@ -30,7 +33,7 @@ from typing import TYPE_CHECKING, Any, Optional
 
 from ..config import Settings
 from ..config import settings as default_settings
-from ..schemas import ENGINE_VERSION, AnalysisResult, InfraAnalysis
+from ..schemas import ENGINE_VERSION, AnalysisResult, AttachmentAnalysis, InfraAnalysis, NlpAnalysis
 
 if TYPE_CHECKING:  # pragma: no cover
     from ..db import Store
@@ -79,18 +82,35 @@ def analyze_bytes(
     header_analysis.auth = auth_result
     header_analysis.findings.extend(auth_findings)
 
-    # 4. Content analyzers (offline) --------------------------------------
+    # 4. Link extraction -------------------------------------------------
+    # Cheap, offline, and a prerequisite of two of the three engines below:
+    # the AI core scores the lure links, and the domain engine enriches the
+    # hosts they point at.
     url_analysis = urls.analyze_urls(parsed, cfg)
-    att_analysis = attachments.analyze_attachments(raw_attachments, cfg)
-    nlp_analysis = nlp.analyze_content(parsed, url_analysis, att_analysis, cfg)
-
-    # 5. Network enrichment (concurrent, cached, fault tolerant) ----------
     domain_targets = domains.collect_domains(parsed, header_analysis, url_analysis, cfg)
-    with ThreadPoolExecutor(max_workers=2, thread_name_prefix="mt-enrich") as pool:
-        fut_domains = pool.submit(domains.analyze_domains, domain_targets, cfg, store)
-        fut_infra = pool.submit(geoip.analyze_infrastructure, header_analysis, cfg, store)
-        domain_intel = _safe_result(fut_domains, [], "domains")
+
+    def run_ai_core() -> tuple[Any, Any]:
+        """Engine 3A: attachment inspection (including Shannon entropy) and the
+        NLP/ML intent analysis that consumes it."""
+        atts = attachments.analyze_attachments(raw_attachments, cfg)
+        return atts, nlp.analyze_content(parsed, url_analysis, atts, cfg)
+
+    # 5. The three intelligence engines, genuinely in parallel ------------
+    # 3A is CPU-bound (vectorising and classifying) while 3B and 3C are almost
+    # entirely waiting on DNS, WHOIS and HTTP, so overlapping them turns the sum
+    # of their times into roughly the slowest one. Each is isolated: a failure
+    # degrades that engine's contribution and never aborts the analysis.
+    with ThreadPoolExecutor(max_workers=3, thread_name_prefix="mt-engine") as pool:
+        fut_ai = pool.submit(run_ai_core)          # 3A - AI core
+        fut_infra = pool.submit(geoip.analyze_infrastructure, header_analysis, cfg, store)  # 3B - GeoIP/route
+        fut_domains = pool.submit(domains.analyze_domains, domain_targets, cfg, store)      # 3C - domain intel
+        att_analysis, nlp_analysis = _safe_result(fut_ai, (None, None), "ai_core")
         infra = _safe_result(fut_infra, None, "geoip")
+        domain_intel = _safe_result(fut_domains, [], "domains")
+    if att_analysis is None:
+        att_analysis = AttachmentAnalysis()
+    if nlp_analysis is None:
+        nlp_analysis = NlpAnalysis()
     if infra is None:
         infra = InfraAnalysis()
 
