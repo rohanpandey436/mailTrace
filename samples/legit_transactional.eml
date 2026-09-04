@@ -1,0 +1,110 @@
+Delivered-To: rohan.pandey@acme-corp.in
+Received: by 2002:a05:6a20:9f8b:b0:1c4:2e5d:7a90 with SMTP id adf61e73a8af0-1c9e2b3d4e5csp2210987b3a;
+        Mon, 31 Aug 2026 04:14:48 -0700 (PDT)
+X-Received: by 2002:a05:6a21:6d84:b0:1d0:4f5e:6a7b with SMTP id adf61e73a8af0-1c9e2b3d4e5mr8827311637.11.1788174888510;
+        Mon, 31 Aug 2026 04:14:48 -0700 (PDT)
+Return-Path: <noreply@github.com>
+Received: from out-27.smtp.github.com (out-27.smtp.github.com. [192.30.252.206])
+        by mx.google.com with ESMTPS id 41be03b00d2f7-b1f2c3d4e5fsi1187203a12.204.2026.08.31.04.12.35
+        for <rohan.pandey@acme-corp.in>
+        (version=TLS1_3 cipher=TLS_AES_256_GCM_SHA384 bits=256/256);
+        Mon, 31 Aug 2026 04:12:35 -0700 (PDT)
+Received-SPF: pass (google.com: domain of noreply@github.com designates 192.30.252.206 as permitted sender) client-ip=192.30.252.206;
+Authentication-Results: mx.google.com;
+       spf=pass (google.com: domain of noreply@github.com designates 192.30.252.206 as permitted sender) smtp.mailfrom=noreply@github.com;
+       dkim=pass header.i=@github.com header.d=github.com header.s=pf2023 header.b=R7kPz2Wq;
+       dmarc=pass (p=REJECT sp=REJECT dis=NONE) header.from=github.com
+Received: from github-lowworker-c8e2f1a.va3-iad.github.net (github-lowworker-c8e2f1a.va3-iad.github.net [10.48.115.21])
+        by smtp.github.com (Postfix) with ESMTPS id 1A2B3C4D5E
+        for <rohan.pandey@acme-corp.in>; Mon, 31 Aug 2026 04:10:12 -0700 (PDT)
+Date: Mon, 31 Aug 2026 04:10:11 -0700
+From: GitHub <noreply@github.com>
+Reply-To: GitHub <noreply@github.com>
+To: rohan.pandey@acme-corp.in
+Message-ID: <acme-corp-india/receipts/GH-INV-2026-0831-771402@github.com>
+Subject: [GitHub] Payment receipt for acme-corp-india (31 August 2026)
+Mime-Version: 1.0
+Content-Type: multipart/mixed; boundary="--==_mimepart_68b3e9c4a1f2b_5d2e3f8c1e4a7"
+Content-Transfer-Encoding: 7bit
+Auto-Submitted: auto-generated
+X-Auto-Response-Suppress: All
+X-GitHub-Recipient: rohan-pandey-acme
+
+----==_mimepart_68b3e9c4a1f2b_5d2e3f8c1e4a7
+Content-Type: multipart/alternative; boundary="--==_mimepart_68b3e9c4a1f2b_5d2e3f8c1e4a8"
+Content-Transfer-Encoding: 7bit
+
+----==_mimepart_68b3e9c4a1f2b_5d2e3f8c1e4a8
+Content-Type: text/plain; charset="UTF-8"
+Content-Transfer-Encoding: 7bit
+
+Hi acme-corp-india,
+
+Thanks for your payment. This email confirms that a payment was processed
+for your GitHub Team plan.
+
+  Organization  : acme-corp-india
+  Plan          : GitHub Team (12 seats, monthly)
+  Amount        : USD 48.00
+  Payment date  : 31 August 2026
+  Receipt no.   : GH-INV-2026-0831-771402
+  Card          : Visa ending in 4402
+
+A PDF copy of the receipt is attached for your records. You can also view
+all your receipts from your organization settings:
+
+https://github.com/organizations/acme-corp-india/settings/receipts
+
+Thanks,
+The GitHub Team
+
+GitHub, Inc. 88 Colin P Kelly Jr St, San Francisco, CA 94107
+
+----==_mimepart_68b3e9c4a1f2b_5d2e3f8c1e4a8
+Content-Type: text/html; charset="UTF-8"
+Content-Transfer-Encoding: 7bit
+
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+</head>
+<body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:#24292f;font-size:14px;line-height:1.5;margin:0;">
+<div style="max-width:600px;margin:0 auto;padding:24px;">
+  <p>Hi <b>acme-corp-india</b>,</p>
+  <p>Thanks for your payment. This email confirms that a payment was processed for your GitHub Team plan.</p>
+  <table cellpadding="4" cellspacing="0" style="border-collapse:collapse;font-size:14px;">
+    <tr><td style="color:#57606a;padding-right:16px;">Organization</td><td>acme-corp-india</td></tr>
+    <tr><td style="color:#57606a;padding-right:16px;">Plan</td><td>GitHub Team (12 seats, monthly)</td></tr>
+    <tr><td style="color:#57606a;padding-right:16px;">Amount</td><td>USD 48.00</td></tr>
+    <tr><td style="color:#57606a;padding-right:16px;">Payment date</td><td>31 August 2026</td></tr>
+    <tr><td style="color:#57606a;padding-right:16px;">Receipt no.</td><td>GH-INV-2026-0831-771402</td></tr>
+    <tr><td style="color:#57606a;padding-right:16px;">Card</td><td>Visa ending in 4402</td></tr>
+  </table>
+  <p>A PDF copy of the receipt is attached for your records. You can also view all your receipts from your organization settings:</p>
+  <p><a href="https://github.com/organizations/acme-corp-india/settings/receipts" style="color:#0969da;">View your receipts</a></p>
+  <p>Thanks,<br>The GitHub Team</p>
+  <p style="color:#57606a;font-size:12px;">GitHub, Inc. 88 Colin P Kelly Jr St, San Francisco, CA 94107</p>
+</div>
+</body>
+</html>
+
+----==_mimepart_68b3e9c4a1f2b_5d2e3f8c1e4a8--
+
+----==_mimepart_68b3e9c4a1f2b_5d2e3f8c1e4a7
+Content-Type: application/pdf; name="GitHub-receipt-GH-INV-2026-0831-771402.pdf"
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="GitHub-receipt-GH-INV-2026-0831-771402.pdf"
+
+JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2Jq
+CjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUl0gL0NvdW50IDEgPj4KZW5kb2Jq
+CjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCAyNjAg
+ODBdIC9SZXNvdXJjZXMgPDwgL0ZvbnQgPDwgL0YxIDw8IC9UeXBlIC9Gb250IC9TdWJ0eXBlIC9U
+eXBlMSAvQmFzZUZvbnQgL0hlbHZldGljYSA+PiA+PiA+PiAvQ29udGVudHMgNCAwIFIgPj4KZW5k
+b2JqCjQgMCBvYmoKPDwgL0xlbmd0aCA2OCA+PgpzdHJlYW0KQlQgL0YxIDExIFRmIDE2IDQwIFRk
+IChHaXRIdWIgcmVjZWlwdCBHSC1JTlYtMjAyNi0wODMxLTc3MTQwMikgVGogRVQKZW5kc3RyZWFt
+CmVuZG9iagp4cmVmCjAgNQowMDAwMDAwMDAwIDY1NTM1IGYgCjAwMDAwMDAwMDkgMDAwMDAgbiAK
+MDAwMDAwMDA1OCAwMDAwMCBuIAowMDAwMDAwMTE1IDAwMDAwIG4gCjAwMDAwMDAyODkgMDAwMDAg
+biAKdHJhaWxlcgo8PCAvU2l6ZSA1IC9Sb290IDEgMCBSID4+CnN0YXJ0eHJlZgo0MDcKJSVFT0YK
+
+----==_mimepart_68b3e9c4a1f2b_5d2e3f8c1e4a7--

@@ -1,0 +1,26 @@
+# Deployment description for Render (https://render.com).
+# Create the service with Blueprints -> New Blueprint Instance and point it at
+# this repository; Render reads this file and needs no further configuration.
+services:
+  - type: web
+    name: mailtrace
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    # Render sets PORT; app/config.py picks it up and binds every interface.
+    startCommand: python run.py
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.7"
+      # The organisation MailTrace is protecting. Change these to your own
+      # domain to make the impersonation checks meaningful for your mail.
+      - key: MAILTRACE_ORG_DOMAINS
+        value: acme-corp.in
+      - key: MAILTRACE_EXECUTIVES
+        value: ceo,cfo,managing director,sarthak srivastava
+      # Live WHOIS, DNS, GeoIP, blocklist and Tor lookups.
+      - key: MAILTRACE_ENABLE_NETWORK
+        value: "true"
+      - key: MAILTRACE_LOOKUP_TIMEOUT
+        value: "4"

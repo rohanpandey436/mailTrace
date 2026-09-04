@@ -1,0 +1,124 @@
+Delivered-To: rohan.pandey@acme-corp.in
+Received: by 2002:a05:6a10:8f4c:b0:5c1:2d3e:4f50 with SMTP id 41be03b00d2f7-b2a1c3d4e5fcsp3098211a12;
+        Thu, 03 Sep 2026 00:17:22 -0700 (PDT)
+X-Received: by 2002:a05:6a21:7c0d:b0:1d2:5e6f:7a8b with SMTP id 41be03b00d2f7-b2a1c3d4e5fmr6620187a12.24.1788419842093;
+        Thu, 03 Sep 2026 00:17:22 -0700 (PDT)
+Return-Path: <rbi.prizefund.claims2026@yahoo.com>
+Received: from sonic306-21.consmr.mail.ne1.yahoo.com (sonic306-21.consmr.mail.ne1.yahoo.com. [66.163.189.83])
+        by mx.google.com with ESMTPS id 41be03b00d2f7-b2a1c3d4e5fsi4471902a12.77.2026.09.03.00.15.09
+        for <rohan.pandey@acme-corp.in>
+        (version=TLS1_3 cipher=TLS_AES_128_GCM_SHA256 bits=128/128);
+        Thu, 03 Sep 2026 00:15:09 -0700 (PDT)
+Received-SPF: pass (google.com: domain of rbi.prizefund.claims2026@yahoo.com designates 66.163.189.83 as permitted sender) client-ip=66.163.189.83;
+Authentication-Results: mx.google.com;
+       spf=pass (google.com: domain of rbi.prizefund.claims2026@yahoo.com designates 66.163.189.83 as permitted sender) smtp.mailfrom=rbi.prizefund.claims2026@yahoo.com;
+       dkim=pass header.i=@yahoo.com header.d=yahoo.com header.s=s2048 header.b=k3Jd9fXa;
+       dmarc=pass (p=REJECT sp=REJECT dis=NONE) header.from=yahoo.com
+Received: from 197.210.85.12 (EHLO DESKTOP-K8J2M1) ([197.210.85.12])
+        by smtp418.mail.ne1.yahoo.com (JAMES SMTP Server) with ESMTPA id 5e3b7c9a-0f1e-4d2c-b3a4-5c6d7e8f9a0b
+        for <rohan.pandey@acme-corp.in>; Thu, 3 Sep 2026 07:12:45 +0000
+Date: Thu, 3 Sep 2026 08:12:40 +0100
+To: rohan.pandey@acme-corp.in
+From: "Reserve Bank of India - RBI Prize Fund" <rbi.prizefund.claims2026@yahoo.com>
+Reply-To: rbi.prizefund.claims2026@yahoo.com
+Subject: =?UTF-8?B?Q29uZ3JhdHVsYXRpb25zISBZb3UgaGF2ZSB3b24g?=
+ =?UTF-8?B?4oK5MjUsMDAsMDAwIGluIHRoZSBSQkkg?=
+ =?UTF-8?B?UHJpemUgRHJhdyAyMDI2?=
+Message-ID: <a4c1e9f7d2b3856019e7f4c2a1d0b9e8@DESKTOP-K8J2M1>
+X-Mailer: PHPMailer 6.9.1 (https://github.com/PHPMailer/PHPMailer)
+X-Priority: 1
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="b1_a4c1e9f7d2b3856019e7f4c2a1d0b9e8"
+
+--b1_a4c1e9f7d2b3856019e7f4c2a1d0b9e8
+Content-Type: multipart/alternative; boundary="b2_a4c1e9f7d2b3856019e7f4c2a1d0b9e8"
+
+--b2_a4c1e9f7d2b3856019e7f4c2a1d0b9e8
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+ATTENTION: WINNER NOTIFICATION / REF: RBI/DIP/2026/0917-IN
+
+Dear Lucky Winner,
+
+We are pleased to inform you that your email address was selected in the
+Reserve Bank of India Digital India Prize Draw 2026, held on 28 August 2026
+in Mumbai under the supervision of the RBI Prize Fund Committee. Your email
+was attached to ticket number 5582-0917 with serial number 771-88 and drew
+the lucky winning numbers 07-19-23-41-56, which consequently WON you a cash
+prize of ₹25,00,000 (Twenty Five Lakh Rupees Only).
+
+To process the release of your winnings you must contact our claims officer
+within 72 hours of receiving this notification, otherwise the fund will be
+returned to the government treasury as unclaimed.
+
+Claims Officer : Mr. Anil Kumar Verma
+Email          : rbi.prizefund.claims2026@yahoo.com
+WhatsApp       : +234 803 552 1187
+
+Please fill and return the attached claim form (claim_form.pdf.exe) and
+kindly revert to this email with the following details:
+
+1. Full name and residential address
+2. Aadhaar number and PAN card copy
+3. Bank name, account number and IFSC code
+4. Mobile number
+
+NOTE: A processing and insurance fee of ₹4,850 is payable before the prize
+money can be transferred to your bank account. This fee is required under
+the RBI Foreign Exchange Management Act and is non-refundable. Do not
+disclose your winning to anyone until your claim has been processed, for
+security reasons and to avoid double claiming.
+
+Congratulations once again!!!
+
+Yours faithfully,
+Mrs. Sunita Rao
+Prize Coordinator, RBI Prize Fund
+Reserve Bank of India
+
+--b2_a4c1e9f7d2b3856019e7f4c2a1d0b9e8
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+</head>
+<body style="font-family:'Times New Roman',serif;font-size:15px;color:#000000;">
+<p style="text-align:center;font-weight:bold;color:#0a3d91;">ATTENTION: WINNER NOTIFICATION / REF: RBI/DIP/2026/0917-IN</p>
+<p>Dear Lucky Winner,</p>
+<p>We are pleased to inform you that your email address was selected in the <b>Reserve Bank of India Digital India Prize Draw 2026</b>, held on 28 August 2026 in Mumbai under the supervision of the RBI Prize Fund Committee. Your email was attached to ticket number 5582-0917 with serial number 771-88 and drew the lucky winning numbers 07-19-23-41-56, which consequently WON you a cash prize of <b>&#8377;25,00,000 (Twenty Five Lakh Rupees Only)</b>.</p>
+<p>To process the release of your winnings you must contact our claims officer <b>within 72 hours</b> of receiving this notification, otherwise the fund will be returned to the government treasury as unclaimed.</p>
+<p>Claims Officer : Mr. Anil Kumar Verma<br>
+Email : rbi.prizefund.claims2026@yahoo.com<br>
+WhatsApp : +234 803 552 1187</p>
+<p>Please fill and return the attached claim form (claim_form.pdf.exe) and kindly revert to this email with the following details:</p>
+<ol>
+<li>Full name and residential address</li>
+<li>Aadhaar number and PAN card copy</li>
+<li>Bank name, account number and IFSC code</li>
+<li>Mobile number</li>
+</ol>
+<p><b>NOTE:</b> A processing and insurance fee of <b>&#8377;4,850</b> is payable before the prize money can be transferred to your bank account. This fee is required under the RBI Foreign Exchange Management Act and is non-refundable. Do not disclose your winning to anyone until your claim has been processed, for security reasons and to avoid double claiming.</p>
+<p style="color:#b00020;font-weight:bold;">Congratulations once again!!!</p>
+<p>Yours faithfully,<br>
+Mrs. Sunita Rao<br>
+Prize Coordinator, RBI Prize Fund<br>
+Reserve Bank of India</p>
+</body>
+</html>
+
+--b2_a4c1e9f7d2b3856019e7f4c2a1d0b9e8--
+
+--b1_a4c1e9f7d2b3856019e7f4c2a1d0b9e8
+Content-Type: application/pdf; name="claim_form.pdf.exe"
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="claim_form.pdf.exe"
+
+TVqQACBNYWlsVHJhY2UgZGVtbyBzdHViIC4uLi4uLi4uLi4uLi4uIFRoaXMgcHJvZ3JhbSBjYW5u
+b3QgYmUgcnVuIGluIERPUyBtb2RlLg0KJCAuLi4uLi4gaW5lcnQgc2FtcGxlLCBub3QgYSByZWFs
+IGV4ZWN1dGFibGUgLi4uLi4u
+
+--b1_a4c1e9f7d2b3856019e7f4c2a1d0b9e8--

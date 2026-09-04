@@ -1,0 +1,90 @@
+Delivered-To: rohan.pandey@acme-corp.in
+Received: by 2002:a05:6a00:2e1b:b0:71e:4c2f:9a3d with SMTP id fa4csp2214893pfb;
+        Mon, 31 Aug 2026 21:25:02 -0700 (PDT)
+X-Received: by 2002:a17:90b:1c8e:b0:2d4:7f3a:6b21 with SMTP id 98e67ed59e1d1-2f1c4b9e7a3mr9182745pjb.19.1788236702281;
+        Mon, 31 Aug 2026 21:25:02 -0700 (PDT)
+Return-Path: <kyc-noreply@sbi-kyc-update.xyz>
+Received: from relay-eu2.bulkmail-hub.icu (relay-eu2.bulkmail-hub.icu. [193.42.33.118])
+        by mx.google.com with ESMTP id d9443c01a7336-2f0e6b7c4a1si2231907plg.88.2026.08.31.21.22.41
+        for <rohan.pandey@acme-corp.in>;
+        Mon, 31 Aug 2026 21:22:41 -0700 (PDT)
+Received-SPF: fail (google.com: domain of kyc-noreply@sbi-kyc-update.xyz does not designate 193.42.33.118 as permitted sender) client-ip=193.42.33.118;
+Authentication-Results: mx.google.com;
+       spf=fail (google.com: domain of kyc-noreply@sbi-kyc-update.xyz does not designate 193.42.33.118 as permitted sender) smtp.mailfrom=kyc-noreply@sbi-kyc-update.xyz;
+       dkim=none;
+       dmarc=fail (p=NONE sp=NONE dis=NONE) header.from=sbi-kyc-update.xyz
+Received: from srv-mail01.sbi-kyc-update.xyz (unknown [45.148.10.72])
+        by relay-eu2.bulkmail-hub.icu (Postfix) with ESMTP id 4F2C7A81D3
+        for <rohan.pandey@acme-corp.in>; Tue,  1 Sep 2026 04:25:41 +0000 (UTC)
+Received: from localhost (localhost [127.0.0.1])
+        by srv-mail01.sbi-kyc-update.xyz (Postfix) with ESMTP id 9B3E1C0D52
+        for <rohan.pandey@acme-corp.in>; Tue,  1 Sep 2026 04:22:10 +0000 (UTC)
+From: "State Bank of India" <alerts@sbi-kyc-update.xyz>
+Reply-To: sbi.kyc.helpdesk@gmail.com
+To: rohan.pandey@acme-corp.in
+Subject: URGENT: Your SBI account will be suspended - complete KYC within 24 hours
+Date: Tue, 1 Sep 2026 09:52:09 +0530
+Message-ID: <20260901042210.9B3E1C0D52@srv-mail01.sbi-kyc-update.xyz>
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="----=_Part_0_sbi_kyc_20260901"
+X-PHP-Originating-Script: 1001:sendkyc.php
+X-Priority: 1 (Highest)
+Importance: High
+
+------=_Part_0_sbi_kyc_20260901
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+Dear Customer,
+
+As per RBI guidelines your State Bank of India account XXXXXX2093 has been
+temporarily restricted because your KYC documents have expired.
+
+To avoid permanent suspension of your account, net banking and UPI services,
+you must complete KYC re-verification within 24 hours.
+
+Verify now: http://sbi-online-kyc-verify.xyz/login
+
+You will be asked to confirm your account number, registered mobile number,
+Aadhaar number, PAN card details and the OTP sent to your phone.
+
+Failure to update within 24 hours will result in permanent deactivation of
+your account and a penalty of Rs. 999 as per bank policy.
+
+Regards,
+Customer Care Team
+State Bank of India
+
+This is an automated message. For help write to sbi.kyc.helpdesk@gmail.com
+
+------=_Part_0_sbi_kyc_20260901
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>SBI KYC Update</title>
+</head>
+<body style="font-family:Arial,Helvetica,sans-serif;color:#222222;background:#f4f4f4;margin:0;padding:20px;">
+<div style="max-width:600px;margin:0 auto;background:#ffffff;border:1px solid #dddddd;">
+  <div style="background:#22409a;color:#ffffff;padding:14px 18px;font-size:18px;font-weight:bold;">State Bank of India</div>
+  <div style="padding:18px;font-size:14px;line-height:1.5;">
+    <p>Dear Customer,</p>
+    <p>As per RBI guidelines your State Bank of India account <b>XXXXXX2093</b> has been temporarily restricted because your KYC documents have expired.</p>
+    <p>To avoid <b>permanent suspension</b> of your account, net banking and UPI services, you must complete KYC re-verification within <b>24 hours</b>.</p>
+    <p style="text-align:center;margin:24px 0;">
+      <a href="http://sbi-online-kyc-verify.xyz/login?uid=cm9oYW4ucGFuZGV5QGFjbWUtY29ycC5pbg==" style="background:#e8501f;color:#ffffff;padding:12px 26px;text-decoration:none;border-radius:4px;font-weight:bold;">Complete KYC Now</a>
+    </p>
+    <p>Or open this link in your browser: <a href="http://sbi-online-kyc-verify.xyz/login">https://onlinesbi.sbi</a></p>
+    <p>You will be asked to confirm your account number, registered mobile number, Aadhaar number, PAN card details and the OTP sent to your phone.</p>
+    <p style="color:#b00020;">Failure to update within 24 hours will result in permanent deactivation of your account and a penalty of Rs. 999 as per bank policy.</p>
+    <p>Regards,<br>Customer Care Team<br>State Bank of India</p>
+  </div>
+  <div style="background:#eeeeee;color:#666666;padding:10px 18px;font-size:11px;">This is an automated message. For help write to sbi.kyc.helpdesk@gmail.com</div>
+</div>
+</body>
+</html>
+
+------=_Part_0_sbi_kyc_20260901--

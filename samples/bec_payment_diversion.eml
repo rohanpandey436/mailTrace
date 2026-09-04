@@ -1,0 +1,99 @@
+Delivered-To: accounts@acme-corp.in
+Received: by 2002:a05:6a00:3d0c:b0:72a:9e1f:4b73 with SMTP id d2e1a72fcca58-72a9e1f4b73csp1927364pfk;
+        Wed, 02 Sep 2026 02:07:55 -0700 (PDT)
+X-Received: by 2002:a17:90a:5f0e:b0:2d6:1a2b:3c4d with SMTP id 98e67ed59e1d1-2f2a1b3c4d5mr1123987pjb.7.1788340075412;
+        Wed, 02 Sep 2026 02:07:55 -0700 (PDT)
+Return-Path: <rajesh.mehta@acme-corp-in.com>
+Received: from mail.acme-corp-in.com (mail.acme-corp-in.com. [91.215.85.140])
+        by mx.google.com with ESMTPS id 98e67ed59e1d1-2f2a1b3c4d5si5567123pjb.41.2026.09.02.02.05.40
+        for <accounts@acme-corp.in>
+        (version=TLS1_3 cipher=TLS_AES_256_GCM_SHA384 bits=256/256);
+        Wed, 02 Sep 2026 02:05:40 -0700 (PDT)
+Received-SPF: none (google.com: rajesh.mehta@acme-corp-in.com does not designate permitted sender hosts) client-ip=91.215.85.140;
+Authentication-Results: mx.google.com;
+       spf=none (google.com: rajesh.mehta@acme-corp-in.com does not designate permitted sender hosts) smtp.mailfrom=rajesh.mehta@acme-corp-in.com;
+       dkim=none;
+       dmarc=none header.from=acme-corp-in.com
+Received: from mail.acme-corp-in.com ([127.0.0.1])
+        by localhost (mail.acme-corp-in.com [127.0.0.1]) (amavis, port 10024)
+        with ESMTP id Xk3J2b9pQw1R for <accounts@acme-corp.in>;
+        Wed,  2 Sep 2026 09:03:14 +0000 (UTC)
+Received: from [127.0.0.1] (unknown [185.220.101.45])
+        (Authenticated sender: rajesh.mehta@acme-corp-in.com)
+        by mail.acme-corp-in.com (Postfix) with ESMTPSA id 2B7D4C0A91
+        for <accounts@acme-corp.in>; Wed,  2 Sep 2026 09:01:12 +0000 (UTC)
+Message-ID: <f3c0a9d2-7e1b-4c58-9a6d-2b41e7c8d905@acme-corp-in.com>
+Date: Wed, 2 Sep 2026 10:01:08 +0100
+MIME-Version: 1.0
+User-Agent: Mozilla Thunderbird
+Subject: Updated bank details for invoice #4471
+From: "Rajesh Mehta, Director" <rajesh.mehta@acme-corp-in.com>
+Reply-To: rajesh.mehta.acme@protonmail.com
+To: "Priya Nair" <accounts@acme-corp.in>
+Content-Type: multipart/alternative; boundary="------------7Kd2wR1xPq9LmN0cVb3aYs5T"
+Content-Language: en-IN
+
+--------------7Kd2wR1xPq9LmN0cVb3aYs5T
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+Hi Priya,
+
+Hope you are doing well. I am travelling for the board meeting this week and
+will mostly be unreachable on phone, so please handle this over email only.
+
+Our banker has informed me that the account we normally use for vendor
+payments is under audit until the end of the month. Please update the
+beneficiary details for invoice #4471 (Rs. 18,45,000 due to Nexora
+Technologies) and release the payment to the new account below before 4 PM
+today. This is urgent as the vendor has already escalated the delay.
+
+    Beneficiary name : Nexora Technologies Pvt Ltd
+    Bank             : Axis Bank, Andheri East branch
+    Account number   : 920020045871236
+    IFSC code        : UTIB0000567
+    Account type     : Current
+
+Kindly keep this confidential until the audit is over - I do not want the
+vendor or the rest of the finance team worrying unnecessarily. Do not call
+the vendor on the old number, they have changed their accounts contact.
+Confirm once the NEFT/RTGS is done and share the UTR number with me on this
+email.
+
+Regards,
+Rajesh Mehta
+Director - Finance
+Acme Corp India
+
+Sent from my iPhone
+
+--------------7Kd2wR1xPq9LmN0cVb3aYs5T
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+</head>
+<body style="font-family:Calibri,Arial,sans-serif;font-size:14px;color:#1f1f1f;">
+<p>Hi Priya,</p>
+<p>Hope you are doing well. I am travelling for the board meeting this week and will mostly be unreachable on phone, so please handle this over email only.</p>
+<p>Our banker has informed me that the account we normally use for vendor payments is under audit until the end of the month. Please update the beneficiary details for invoice #4471 (Rs. 18,45,000 due to Nexora Technologies) and release the payment to the new account below <b>before 4 PM today</b>. This is urgent as the vendor has already escalated the delay.</p>
+<table cellpadding="3" cellspacing="0" style="border-collapse:collapse;font-size:14px;margin-left:24px;">
+<tr><td>Beneficiary name</td><td>:</td><td>Nexora Technologies Pvt Ltd</td></tr>
+<tr><td>Bank</td><td>:</td><td>Axis Bank, Andheri East branch</td></tr>
+<tr><td>Account number</td><td>:</td><td>920020045871236</td></tr>
+<tr><td>IFSC code</td><td>:</td><td>UTIB0000567</td></tr>
+<tr><td>Account type</td><td>:</td><td>Current</td></tr>
+</table>
+<p>Kindly keep this <b>confidential</b> until the audit is over - I do not want the vendor or the rest of the finance team worrying unnecessarily. Do not call the vendor on the old number, they have changed their accounts contact. Confirm once the NEFT/RTGS is done and share the UTR number with me on this email.</p>
+<p>Regards,<br>
+Rajesh Mehta<br>
+Director - Finance<br>
+Acme Corp India</p>
+<p style="color:#777777;">Sent from my iPhone</p>
+</body>
+</html>
+
+--------------7Kd2wR1xPq9LmN0cVb3aYs5T--

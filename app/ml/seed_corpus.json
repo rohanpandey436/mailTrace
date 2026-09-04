@@ -1,0 +1,1247 @@
+[
+  {
+    "subject": "Minutes: weekly sprint sync 3 Sep",
+    "body": "Hi all,\nThanks for joining today. Quick recap:\n- API rate limiting ships Friday (Priya)\n- Staging DB migration moved to Monday\n- Design review for the onboarding flow on Thursday at 11\nAction items are on the Jira board. Ping me if I missed anything.\nRegards,\nAnkit",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Invoice INV-2041 for August services",
+    "body": "Dear Rohan,\nPlease find attached invoice INV-2041 for consulting services rendered in August, as per our agreement dated 12 March. Total: ₹1,18,000 inclusive of GST. Payment is due within 30 days to the account already on file; nothing has changed on our side.\nLet me know if you need the PO reference added.\nThanks,\nMeera Nair\nNair & Associates",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Your IRCTC e-ticket: 12951 Mumbai Rajdhani, 14 Sep",
+    "body": "PNR 8412467512 CONFIRMED. Train 12951 MMCT to NDLS departing 17:00 on 14 Sep 2026. Coach B3, berth 41 (lower). Passenger: ROHAN PANDEY, 27, M. Please carry a valid photo ID during the journey. This is an auto-generated mail, do not reply.",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Password reset you requested",
+    "body": "Hi Rohan,\nWe received a request to reset the password for your GitHub account. If this was you, open the link from the GitHub app or visit https://github.com/password_reset within the next 30 minutes.\nIf you did not request this, you can safely ignore this email; your password will not change.\nThanks,\nThe GitHub Team",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "URGENT: production deploy paused - need sign-off",
+    "body": "Team, holding the 4 PM deploy because the canary showed a 2% error spike on /checkout. Nothing customer-facing yet. Vikram is bisecting the last three merges. I need a go/no-go from Suresh before 5:30 or we roll to tomorrow. Updates in #deploys.",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Re: Diwali holiday schedule",
+    "body": "Hi everyone,\nAs discussed, the office will remain closed from 19 Oct to 21 Oct for Diwali. The support rota for those days is on the shared calendar. Please plan your leaves accordingly and set your out-of-office message.\nHappy Diwali in advance!\nRegards,\nHR Team",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Your Amazon.in order has shipped",
+    "body": "Hello Rohan, your order of Logitech MX Keys has been dispatched and is expected to arrive on Thursday. Track your package from Your Orders in the app. The order total of ₹9,995 was charged to the card ending 4471.",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Lunch on Saturday?",
+    "body": "Hey! Are you free Saturday around 1? Thinking of trying that new Andhra place near Koramangala. Let me know and I will book a table. Also bring the book you promised :)",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Q3 OKR draft for review",
+    "body": "Hi Rohan, attached is the Q3 OKR draft for the platform team. I have marked the areas where I need your input in yellow, mostly the reliability targets and the hiring plan. Could you add comments by Wednesday so we can finalise before the leadership review? Thanks, Kavya",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Your HDFC Bank account statement for August 2026",
+    "body": "Dear Customer, your account statement for the period 01-Aug-2026 to 31-Aug-2026 is now available in NetBanking and the HDFC Bank MobileBanking app under Accounts > Statements. For any query please call the number printed on the back of your debit card. This is a system-generated email.",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Newsletter: The Pragmatic Engineer - this week in tech",
+    "body": "In this issue: how Stripe runs incident reviews, a look at the latest compensation data across Europe, and why more teams are moving to monorepos. You are receiving this because you subscribed at pragmaticengineer.com. Unsubscribe anytime from the link at the bottom.",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Interview confirmation - Backend Engineer, 10 Sep 11:00 IST",
+    "body": "Dear Rohan,\nThank you for your interest in the Backend Engineer role. Your technical interview is confirmed for 10 September at 11:00 IST over Google Meet (link in the calendar invite). The panel will be Sneha Raman and Arjun Iyer. Expect a 60-minute session with a coding exercise and a system design discussion.\nBest regards,\nTalent Acquisition, Zerodha",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Receipt for your Zoom subscription",
+    "body": "Thanks for your payment. Zoom Workplace Pro, monthly, USD 15.99. Invoice number INV12309876. Billing period 01 Sep 2026 to 30 Sep 2026. You can download the invoice from Billing in your Zoom account. This charge will appear as ZOOM.US on your statement.",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Vendor onboarding: documents received",
+    "body": "Hi Meera, confirming we have received your GST certificate, cancelled cheque and MSME registration. Procurement will complete vendor creation in SAP by Friday and you will receive a vendor code from the ERP system by email. Thanks for the quick turnaround. Regards, Suresh, Procurement",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "EPFO: Monthly contribution credited",
+    "body": "Dear Member, the contribution for the month of July 2026 has been credited to your UAN ending 0412 by your employer. You may view your passbook by logging in to the member portal. This is an informational message from EPFO; no action is required.",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Photos from the Goa trip",
+    "body": "Finally uploaded all the pictures to the shared album. There are about 300, mostly of Aditya falling off the paddle board. The sunset ones from Palolem came out really well. Let me know which ones you want printed for Amma.",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Reminder: GST return due 20 Sep",
+    "body": "Hi Rohan, gentle reminder that GSTR-3B for August is due on 20 September. I have prepared the draft from the sales and purchase registers you shared; please confirm the ITC figures by the 17th so we can file on time and avoid late fees. Regards, CA Priyanka Joshi",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Re: Contract renewal - Annexure B",
+    "body": "Thanks for sending the revised annexure. Legal has one change on clause 4.2 (limitation of liability capped at 12 months of fees rather than 6). If that works for you we can sign this week. I have attached the redline for reference.",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Your monthly Jio bill is ready",
+    "body": "Hi, your Jio postpaid bill of ₹599 for September is ready. The due date is 15 Sep. You can pay through the MyJio app or any UPI app using the bill payment option. Thank you for being with Jio.",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Standup notes - 2 Sep",
+    "body": "Done: fixed the pagination bug on /cases, merged PR 214.\nDoing: adding tests for the custody chain.\nBlocked: waiting on Devi for the staging creds (she is back tomorrow).\nNo meetings this afternoon so heads-down.",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Welcome to the team!",
+    "body": "Hi Rohan, welcome aboard! Your laptop will be ready at the IT desk on Monday at 9:30. Your manager Kavya will walk you through the first-week plan. The employee handbook is on the intranet under HR > Policies. Looking forward to working with you. Regards, People Operations",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Swiggy: Your order from Meghana Foods has been delivered",
+    "body": "Your order #167823401 was delivered at 8:42 PM. Total paid ₹612. Hope you enjoyed your meal! Rate your delivery partner Manoj in the app.",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Slides for tomorrow's client demo",
+    "body": "Hi team, the deck for the Infosys demo is in the shared drive under Sales/Demos/Sept. I trimmed it to 12 slides. Arjun, can you double check the pricing slide? I will run through it once at 9 tomorrow in the small conference room if anyone wants to join.",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Your Netflix membership: plan change confirmed",
+    "body": "Hi Rohan, you changed your plan to Standard (₹499/month). The new price takes effect on your next billing date, 22 September. You can review or change your plan anytime under Account. Thanks for being a member.",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Library books due next week",
+    "body": "This is a reminder that the following items are due on 11 September: Designing Data-Intensive Applications and The Pragmatic Programmer. You can renew online through your library account if nobody has placed a hold. Bangalore City Library.",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Following up on the SIH project",
+    "body": "Hi Rohan, hope you are doing well. Wanted to check how the MailTrace build is going and whether the team needs any help with the deck. I can review the architecture section over the weekend if you send it by Friday. Best, Prof. Deshpande",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Payment received - thank you",
+    "body": "Dear Rohan, we have received your payment of ₹24,500 towards invoice INV-1187. Your account is now fully settled. A receipt is attached for your records. We appreciate your business. Accounts, Bright Prints Pvt Ltd",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Your Uber trip receipt",
+    "body": "Thanks for riding with Ravi. Trip on Tue 2 Sep, 6:18 PM, from Indiranagar to Kempegowda International Airport. Fare ₹1,042 paid via UPI. You rated this trip 5 stars.",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Change of office address from 1 October",
+    "body": "Dear all, effective 1 October our Pune office moves to 4th Floor, Panchshil Tech Park, Yerawada. The seating plan and parking details will be shared next week. Please update courier and visitor addresses on your side accordingly. Regards, Admin",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Re: Bug 4412 - null pointer in report renderer",
+    "body": "Reproduced it. The custody list is empty for emails analysed with store=None and render_html assumes at least one event. I have pushed a fix that guards the table and added a test. Should be in tonight's build.",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Invitation: Design review @ Thu 4 Sep 11:00",
+    "body": "Kavya Menon has invited you to Design review. When: Thursday 4 September, 11:00 to 12:00 IST. Where: Google Meet. Attendees: Kavya, Rohan, Arjun, Priya. Reply Yes / No / Maybe from your calendar.",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Invoice query: PO mismatch on line 3",
+    "body": "Hi Meera, our AP team flagged that line 3 on invoice INV-2041 references PO 88213 but the PO we raised was 88231. Could you reissue with the correct PO number? Everything else matches. Sorry for the hassle. Thanks, Suresh",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Class 10 parent-teacher meeting on Saturday",
+    "body": "Dear Parent, the parent-teacher meeting for Class 10 will be held on Saturday, 6 September from 9 AM to 12 noon in the school auditorium. Kindly do the needful and confirm your attendance with the class teacher. Regards, Principal, DPS Whitefield",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Your Coursera certificate is ready",
+    "body": "Congratulations on completing the Machine Learning Specialization. Your certificate is available on your Accomplishments page and can be added to your LinkedIn profile. Keep learning!",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Hotel booking confirmation - Taj Coromandel, 12-14 Sep",
+    "body": "Dear Mr Pandey, we are pleased to confirm your reservation. Booking ID TC-4491027. Check-in 12 Sep from 2 PM, check-out 14 Sep by 12 noon. Deluxe Room, breakfast included. Total ₹18,400 paid. We look forward to welcoming you.",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Question about the API rate limits",
+    "body": "Hi, I am integrating your analysis endpoint into our SOC workflow and wanted to check the recommended concurrency for /api/analyze. We expect around 200 emails per hour. Is there a documented limit or should we just batch? Thanks, Daniel Weber, Security Engineering",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Your electricity bill for August",
+    "body": "BESCOM: The bill for consumer ID 4587120033 is ₹2,340, due on 18 Sep 2026. Units consumed: 312. Pay through the BESCOM Mitra app, BBPS or any UPI app. Thank you.",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Weekly security digest",
+    "body": "This week: 3 phishing simulations sent (click rate 4%, down from 9%), MFA now enforced for all contractors, and the VPN certificate rotation completed without incident. Reminder that the annual security training is due by 30 Sep. - Security Team",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Re: Draft paper - comments inline",
+    "body": "Rajesh, went through the draft. Main comments: the related-work section is strong but the evaluation needs a baseline beyond the rules engine; maybe add a plain TF-IDF plus SVM comparison. Also Figure 3 axis labels are unreadable at print size. Nice work overall.",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Your Apple invoice",
+    "body": "Apple Invoice. iCloud+ 200GB, ₹219.00, billed on 1 Sep 2026. Order ID MMR4TQ1K9. Manage your subscriptions in Settings > Apple ID > Subscriptions. Total ₹219.00.",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Kitchen renovation quote",
+    "body": "Hi Rohan, as discussed at the site visit, the quote for the modular kitchen comes to ₹3,85,000 including installation, with 40% advance and the balance on completion. Timeline is 6 weeks from the advance. Let me know if you want to change the countertop material; quartz would add about ₹40,000.",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Team outing on 20 Sep - RSVP",
+    "body": "Hey folks, we have booked the go-karting track in Hebbal for Saturday 20 Sep, 3 PM onwards, followed by dinner. The company covers the cost. Please RSVP on the form by Wednesday so we can confirm the headcount. Bring family if you like!",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Fwd: Approved: Leave request 8-10 Sep",
+    "body": "---------- Forwarded message ---------\nFrom: HR Portal\nSubject: Leave approved\n\nYour leave request for 8 Sep to 10 Sep (3 days, casual leave) has been approved by Kavya Menon. Balance: 9 days.\n\nFYI, forwarding so you can update the on-call rota. - Rohan",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Tax filing acknowledgement ITR-1 AY 2026-27",
+    "body": "Your Income Tax Return for Assessment Year 2026-27 has been successfully e-verified. Acknowledgement number 314872910040926. You can download the ITR-V from the e-Filing portal under View Filed Returns. No further action is required.",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Notice: scheduled maintenance Sunday 2-4 AM",
+    "body": "The internal Git server and CI runners will be unavailable on Sunday 7 Sep from 2 AM to 4 AM IST for a kernel upgrade. Queued pipelines will resume automatically. Contact the devops alias if you have a release that cannot wait.",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Re: Mum's 60th - venue options",
+    "body": "I called the two places. Windflower can do 40 people on the 27th for about 1.2 lakh with a veg menu; The Lalit is booked. Papa prefers Windflower because of the parking. Shall I pay the advance? Also please remind Ritu to send the guest list.",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Your Spotify Premium renewal",
+    "body": "Your Spotify Premium Individual subscription renewed on 3 Sep 2026 for ₹119. Your next billing date is 3 Oct 2026. Manage your subscription at spotify.com/account.",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Follow-up from today's call with Acme Logistics",
+    "body": "Thanks for the time today. Summary of what we agreed: a 3-month pilot on the Mumbai lane, weekly reporting, and pricing as per the attached rate card. I will send the MSA draft on Monday. Please introduce me to your ops lead so we can plan the kickoff.",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Urgent: blood donors needed (O negative) - Manipal Hospital",
+    "body": "Hi all, a colleague's father is admitted at Manipal Hospital, Old Airport Road and needs O negative blood urgently. If you or anyone you know can donate, please contact Deepak at the extension listed in the intranet directory. The blood bank is open till 8 PM. Thank you.",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Your domain renewal is complete",
+    "body": "Hi Rohan, your domain mailtrace.dev has been renewed for one year and will now expire on 4 Sep 2027. Auto-renew remains on. You can manage DNS and renewal settings from your account dashboard. Thanks, Namecheap Support",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Sharing the expense sheet for the Hyderabad trip",
+    "body": "Hi Priya, expense sheet for the Hyderabad client visit is attached (flights, two nights at Novotel, cabs). Total comes to ₹31,260 and all bills are in the folder. Let me know if finance needs the original boarding passes. Thanks, Rohan",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Re: Re: Weekend cricket",
+    "body": "Count me in for Sunday. I can bring the stumps and a couple of bats. Ground near HSR at 7 AM? We need at least 8 more people, so ask your flatmates. Chai is on me if we win.",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Please review attached document",
+    "body": "Hello,\nPlease review the attached document and revert at the earliest.\nThanks.",
+    "label": "Suspicious"
+  },
+  {
+    "subject": "Boost your website ranking to Google page 1",
+    "body": "Hi, I was going through your website and noticed it is not ranking on the first page of Google for your main keywords. We are a leading SEO company in India with 10+ years of experience and can guarantee page 1 results in 90 days at very affordable prices. Reply for a free audit report. Regards, Rahul, Business Development",
+    "label": "Suspicious"
+  },
+  {
+    "subject": "Work from home and earn ₹40,000 per month!!!",
+    "body": "Dear friend, we have limited part time openings for data entry and ad posting jobs. No experience required, only 2-3 hours daily. Weekly payment through Paytm or bank transfer. Serious candidates only. WhatsApp us at the number below for registration details.",
+    "label": "Suspicious"
+  },
+  {
+    "subject": "Congratulations! You have been selected for our customer survey",
+    "body": "You are one of 100 customers selected to take our 2-minute survey. Complete it today and get a chance to win a Samsung Galaxy S25 or a ₹5,000 Amazon voucher. Hurry, only limited spots left! Start here: http://survey-rewards-india.top/start",
+    "label": "Suspicious"
+  },
+  {
+    "subject": "Re: Re: Fwd: FW: Do not delete this message",
+    "body": "This message has been sent around the world 9 times. Forward it to 12 friends within 24 hours and something good will happen to you. One man ignored it and lost his job the next day. Do not break the chain!!!",
+    "label": "Suspicious"
+  },
+  {
+    "subject": "Quick question about your team's security stack",
+    "body": "Hi Rohan,\nI noticed your company is growing fast on LinkedIn, congrats. Most teams your size still rely on default email filters, which miss about 30% of targeted attacks. I would love 15 minutes to show you how we help. Does Thursday or Friday work? If not, when would be a better time?\nBest,\nJason Miller\nSenior Account Executive",
+    "label": "Suspicious"
+  },
+  {
+    "subject": "Exclusive offer expiring tonight: 70% off everything",
+    "body": "Our biggest sale ever ends at midnight. Designer watches, sunglasses and bags at up to 70% off. Free shipping worldwide. Don't miss out, shop now at http://luxe-deals-outlet.shop",
+    "label": "Suspicious"
+  },
+  {
+    "subject": "Job opportunity - Immediate joining - High salary",
+    "body": "Dear Candidate, your CV has been shortlisted from a job portal for the position of Customer Support Executive at a reputed MNC in Gurgaon. Salary 35k to 55k. Interview is telephonic. Send your updated CV and a passport size photo to this email today itself. Regards, HR Consultant",
+    "label": "Suspicious"
+  },
+  {
+    "subject": "Your opinion matters - 5 minute survey with reward",
+    "body": "Thank you for being a loyal customer. Tell us about your recent experience and receive a $50 gift card as a token of our appreciation. Survey closes in 48 hours. http://customer-feedback-reward.club/s/9921",
+    "label": "Suspicious"
+  },
+  {
+    "subject": "Meeting request",
+    "body": "Hi, are you available for a quick call this week? I have an opportunity I would like to discuss with you. Let me know a suitable time. Regards, Sam",
+    "label": "Suspicious"
+  },
+  {
+    "subject": "Document",
+    "body": "Hi,\n\nSee attached.\n\nSent from my iPhone",
+    "label": "Suspicious"
+  },
+  {
+    "subject": "Bulk SMS and email marketing at lowest rates",
+    "body": "Promote your business with 1 lakh SMS for just ₹4,999. Also offering WhatsApp bulk messaging, an email database of 50 lakh Indian users city-wise, and voice call campaigns. DND numbers also covered. Call now for a demo.",
+    "label": "Suspicious"
+  },
+  {
+    "subject": "Increase your followers by 10x guaranteed",
+    "body": "Grow your Instagram organically with our proven method. 10,000 real followers in 30 days or your money back. Trusted by 5,000+ influencers. Limited slots for September. DM or reply to this email.",
+    "label": "Suspicious"
+  },
+  {
+    "subject": "Fwd: Important information for all Indians",
+    "body": "Forwarding as received. Please read carefully and share with all your groups. The government is going to stop old ₹500 notes from next month. Exchange them at your bank before 30 September. Forward to everyone you know so that no one suffers.",
+    "label": "Suspicious"
+  },
+  {
+    "subject": "Invitation: Free webinar on making money with AI",
+    "body": "Learn how ordinary people are earning $3,000 a month using ChatGPT with zero investment. Free live training this Sunday. Only 200 seats. Register here: http://ai-income-secrets.online/register",
+    "label": "Suspicious"
+  },
+  {
+    "subject": "Partnership proposal",
+    "body": "Dear Sir/Madam, we are an export-import company based in Dubai looking for reliable partners in India for our products. We have gone through your company profile and are impressed. Please send us your product catalogue and price list so that we can proceed further. Await your quick response.",
+    "label": "Suspicious"
+  },
+  {
+    "subject": "Hi",
+    "body": "Hello dear, how are you doing today? I saw your profile and I would like to know you better. Please write back to me so we can share more about each other. I will be waiting. Hugs, Maria",
+    "label": "Suspicious"
+  },
+  {
+    "subject": "Last chance: renew your listing before it expires",
+    "body": "Your business listing on IndiaBizDirectory will expire in 3 days. Renew now to keep receiving customer enquiries. Premium listing is available at ₹2,999/year with top placement and a verified badge. Renew here: http://indiabizdirectory-renew.info",
+    "label": "Suspicious"
+  },
+  {
+    "subject": "Free portfolio review from a certified planner",
+    "body": "Hi Rohan, I am a certified financial planner. Most salaried professionals overpay tax by ₹50,000 a year without knowing it. I offer a free 30-minute portfolio review, no obligation. Slots are filling up fast for September. Reply with a convenient time.",
+    "label": "Suspicious"
+  },
+  {
+    "subject": "You have 1 unread message",
+    "body": "Hi, you have 1 new message in your inbox on ConnectPro. Messages expire after 7 days. Visit connectpro-notify.site to read it.",
+    "label": "Suspicious"
+  },
+  {
+    "subject": "Cheap flight tickets - domestic and international",
+    "body": "Book flights at up to 60% below airline prices. We are IATA approved agents (approval pending). Special group discounts for Dubai, Bangkok and Singapore. Contact us on WhatsApp for today's rates.",
+    "label": "Suspicious"
+  },
+  {
+    "subject": "Regarding your loan requirement",
+    "body": "Dear Sir, we provide personal loans, business loans and home loans at attractive interest rates starting 8.5%. Minimum documentation, approval within 24 hours. If you are interested kindly share your name, city and loan amount.",
+    "label": "Suspicious"
+  },
+  {
+    "subject": "Free trial: Premium antivirus for 90 days",
+    "body": "Your PC may be at risk. Install our award-winning antivirus and get 90 days free. No credit card needed. Over 10 million downloads. Get it now from http://pc-shield-secure.download",
+    "label": "Suspicious"
+  },
+  {
+    "subject": "Can we talk?",
+    "body": "Hi Rohan, I came across your profile and think you would be a great fit for a role we are hiring for. I cannot share details over email. Are you open to a quick chat this week?",
+    "label": "Suspicious"
+  },
+  {
+    "subject": "Rate your recent experience",
+    "body": "How likely are you to recommend us to a friend? Click a number from 0 to 10. As a thank you, every response this month goes into a draw for an iPad.",
+    "label": "Suspicious"
+  },
+  {
+    "subject": "Attention: Your subscription to our newsletter",
+    "body": "You are receiving this email because someone subscribed this address to Daily Deals India. If this was not you, no action is needed, you will keep receiving our best offers every day. Today's deal: 80% off on smartwatches.",
+    "label": "Suspicious"
+  },
+  {
+    "subject": "Notice regarding your business",
+    "body": "We tried reaching you by phone regarding your business listing. It is important that you get back to us before the end of the week. Call 1800-XXX-XXXX between 10 AM and 6 PM.",
+    "label": "Suspicious"
+  },
+  {
+    "subject": "Sponsored post opportunity for your blog",
+    "body": "Hi, I am reaching out on behalf of a client who would like to publish a guest article on your website with a do-follow link. We pay $30 per post. Please share your rates and guidelines. Looking forward.",
+    "label": "Suspicious"
+  },
+  {
+    "subject": "Fwd: Fwd: Fwd: Watch this before it gets deleted!!",
+    "body": "You will not believe what this doctor revealed about drinking water in the morning. The media is hiding this. Watch the video: http://truthvideos-daily.club/watch?v=88213 and forward to your family groups.",
+    "label": "Suspicious"
+  },
+  {
+    "subject": "Casting call: models and actors needed, no experience",
+    "body": "A leading production house is casting for a web series in Mumbai. Males and females aged 18-35. No experience required. Selected candidates will be paid ₹15,000 per day. Send your photos and details to this email.",
+    "label": "Suspicious"
+  },
+  {
+    "subject": "Hello from Shenzhen - LED display factory",
+    "body": "Dear purchasing manager, this is Lily from Shenzhen Brightled Technology. We are manufacturer of LED display with 12 years experience. Good price and quality. Do you have any project need LED? Please feel free to contact me. Best regards, Lily",
+    "label": "Suspicious"
+  },
+  {
+    "subject": "We miss you! Come back for 50% off",
+    "body": "It has been a while since you visited us. Here is a special 50% discount valid for the next 24 hours only. Use code COMEBACK50 at http://fashion-mart-outlet.site",
+    "label": "Suspicious"
+  },
+  {
+    "subject": "Regarding the document we discussed",
+    "body": "Hi, as per our discussion please find the document attached. Kindly go through and share your comments at the earliest. Thanks and regards",
+    "label": "Suspicious"
+  },
+  {
+    "subject": "Complete your profile to unlock premium jobs",
+    "body": "Your profile on QuickHire is 60% complete. Recruiters from top companies are searching for candidates like you. Complete your profile now and get 3x more interview calls. Premium membership is at 50% off this week.",
+    "label": "Suspicious"
+  },
+  {
+    "subject": "Please read: 5G towers and your health",
+    "body": "Forwarded from a doctor friend. Scientists have found that 5G radiation affects sleep and memory. Keep your phone away from the bed and share this with your loved ones. Unity is strength.",
+    "label": "Suspicious"
+  },
+  {
+    "subject": "Your feedback is required",
+    "body": "Dear valued customer, we request you to spare 2 minutes to rate our service. The top 50 respondents will receive a free gift hamper. Hurry, offer valid till stocks last.",
+    "label": "Suspicious"
+  },
+  {
+    "subject": "Business proposal: Web development outsourcing",
+    "body": "Hi, we are a 50-person web and mobile development company in Indore with expertise in React, Node and Flutter. We can provide dedicated developers at $12/hour. Would you be interested in a free consultation? If you are not the right person, please forward to the concerned team.",
+    "label": "Suspicious"
+  },
+  {
+    "subject": "Recruitment drive - certified training with placement",
+    "body": "Join our 3-month certified course in data analytics with 100% placement guarantee. Fee ₹45,000 payable in installments. Batch starts 15 Sep, only 20 seats. Registered under Skill India (registration in process).",
+    "label": "Suspicious"
+  },
+  {
+    "subject": "Hey",
+    "body": "hey, long time. u still working at that startup? got something u might like, hit me up",
+    "label": "Suspicious"
+  },
+  {
+    "subject": "New listing near you: 2BHK at unbelievable price",
+    "body": "2BHK flats in Whitefield from ₹29 lakh only, possession in 6 months, bank loan available. Pre-launch offer for the first 50 buyers. Visit the site this weekend, free pick up and drop. Call now.",
+    "label": "Suspicious"
+  },
+  {
+    "subject": "Reminder: your cart is waiting",
+    "body": "You left 3 items in your cart at GadgetBazaar. Prices may go up soon. Complete your purchase in the next 12 hours and get free shipping. http://gadgetbazaar-deals.online/cart",
+    "label": "Suspicious"
+  },
+  {
+    "subject": "Invitation to join our exclusive trading community",
+    "body": "Learn intraday trading from experts. Our members made 15-20% returns last month. Free Telegram group with daily calls. Join now, limited to 500 members. Past performance is not a guarantee of future results.",
+    "label": "Suspicious"
+  },
+  {
+    "subject": "Update on your application",
+    "body": "Dear applicant, thank you for applying. Your application is under process. To speed up processing, please reply with your current CTC, expected CTC and notice period. Regards, Hiring Team",
+    "label": "Suspicious"
+  },
+  {
+    "subject": "One-time discount on Microsoft Office - 90% off",
+    "body": "Genuine Office 2024 Professional lifetime license for only ₹1,499 (retail ₹32,000). Instant delivery by email. Windows 11 Pro keys also available at ₹899. Limited stock.",
+    "label": "Suspicious"
+  },
+  {
+    "subject": "Are you still interested?",
+    "body": "Hi Rohan, I sent you a note last week about our services and did not hear back. I understand you are busy. Should I close your file, or is there a better time to connect? Just reply with a 1, 2 or 3: 1 - yes, let's talk; 2 - not now; 3 - not interested.",
+    "label": "Suspicious"
+  },
+  {
+    "subject": "Free sample - just pay shipping",
+    "body": "Try our new herbal weight loss tea absolutely free. Just pay ₹99 for shipping. Lose up to 8 kg in one month without dieting. Clinically proven (results may vary). Order at http://herbal-slim-free.store",
+    "label": "Suspicious"
+  },
+  {
+    "subject": "Get your research paper published in a Scopus indexed journal",
+    "body": "Dear Researcher, we invite you to publish your research paper in our international journal (impact factor 6.2, Scopus and UGC listed). Fast track review in 7 days. Publication charges ₹8,000. Submit your manuscript to this email.",
+    "label": "Suspicious"
+  },
+  {
+    "subject": "IMPORTANT: Read this if you use WhatsApp",
+    "body": "From tomorrow WhatsApp will start charging ₹10 per message unless you forward this message to 20 contacts. When your icon turns blue you are safe. This has been confirmed by the CEO.",
+    "label": "Suspicious"
+  },
+  {
+    "subject": "Free consultation: Reduce your income tax legally",
+    "body": "Salaried? You could be paying ₹1 lakh extra tax every year. Our CA panel will show you 7 legal ways to save. Book a free 20-minute call. Limited slots this week.",
+    "label": "Suspicious"
+  },
+  {
+    "subject": "Are you at your desk?",
+    "body": "Are you at your desk? I need you to handle something for me quickly. I am in a meeting and cannot take calls, so reply here.\n\nSent from my iPhone\nSarthak Srivastava\nCEO",
+    "label": "Impersonated"
+  },
+  {
+    "subject": "Quick favour",
+    "body": "Hi Priya, are you available right now? I need a quick favour done before my next meeting. Let me know as soon as you see this.\nRegards,\nRajesh Mehta\nManaging Director",
+    "label": "Impersonated"
+  },
+  {
+    "subject": "State Bank of India: Important notice regarding your account",
+    "body": "Dear SBI Customer, as per RBI guidelines your account has been kept under review due to incomplete details. Our representative will call you from our official number within 24 hours. Kindly cooperate and share the requested details to avoid inconvenience.\nRegards,\nCustomer Care, State Bank of India",
+    "label": "Impersonated"
+  },
+  {
+    "subject": "Microsoft 365: Your subscription requires attention",
+    "body": "Your Microsoft 365 Business subscription for this tenant will be suspended because your payment method is no longer valid. To avoid interruption contact Microsoft Billing Support at +1 (888) 555-0142 within 48 hours. Microsoft Corporation, One Microsoft Way, Redmond, WA 98052",
+    "label": "Impersonated"
+  },
+  {
+    "subject": "DHL: Parcel on hold - action required",
+    "body": "Dear Customer, your DHL Express shipment 7218 4432 019 could not be delivered because customs duty of ₹289 is pending. Reply to this email with your full delivery address and mobile number so our agent can arrange re-delivery. DHL Express India",
+    "label": "Impersonated"
+  },
+  {
+    "subject": "Income Tax Department - Notice u/s 143(1)",
+    "body": "Dear Taxpayer, a discrepancy has been found in your return for AY 2025-26. You are required to respond to this notice within 7 days by replying to this email with your PAN, date of birth and a copy of Form 16, failing which penalty proceedings will be initiated. Assessing Officer, Ward 4(2), Income Tax Department, Bengaluru",
+    "label": "Impersonated"
+  },
+  {
+    "subject": "Request",
+    "body": "Hi, are you in office today? Need you to do something urgent for me. I am busy in a conference, reply to this mail. Thanks. Anil Kumar, CFO",
+    "label": "Impersonated"
+  },
+  {
+    "subject": "From IT Helpdesk: mailbox migration tonight",
+    "body": "Hello,\nThis is Ramesh from IT Helpdesk. We are migrating all mailboxes to the new Exchange server tonight. To make sure your mailbox is moved correctly please reply with your employee ID, extension and confirm whether you use the authenticator app.\nThanks,\nIT Helpdesk",
+    "label": "Impersonated"
+  },
+  {
+    "subject": "Bluedart: Undelivered consignment",
+    "body": "Your consignment AWB 59012348871 is at our Mumbai hub. The delivery attempt failed as the address was incomplete. Please confirm your address and a contact number by replying to this email. Failure to respond within 3 days will result in return to sender. Blue Dart Express Ltd.",
+    "label": "Impersonated"
+  },
+  {
+    "subject": "Apple ID: New sign-in from Windows PC",
+    "body": "Your Apple ID was used to sign in to iCloud via a web browser on Windows in Kyiv, Ukraine. If this was not you, contact Apple Support immediately at the number below. Apple Support Team",
+    "label": "Impersonated"
+  },
+  {
+    "subject": "HR: Updated employee handbook - acknowledgement required",
+    "body": "Dear Employee, the company has updated its HR policies effective 1 September. All employees are required to acknowledge the new handbook. Please reply with the words I ACKNOWLEDGE along with your employee code and department. Human Resources Department",
+    "label": "Impersonated"
+  },
+  {
+    "subject": "ICICI Bank: Credit card charged ₹47,999",
+    "body": "Dear Customer, a transaction of ₹47,999 at Amazon India was done on your ICICI Bank Credit Card XX4471 today. If this transaction was not done by you, call our fraud helpline immediately at 1800-XXX-2266 and share the OTP received on your mobile with the executive to block the card. ICICI Bank Ltd.",
+    "label": "Impersonated"
+  },
+  {
+    "subject": "Google: Someone has your password",
+    "body": "Google Security. We detected a sign-in attempt to your Google Account from an unrecognised device in Lagos, Nigeria on 2 Sep. We blocked it, but you should review your recent activity. If you need help, reply to this email and a Google Security specialist will assist you.",
+    "label": "Impersonated"
+  },
+  {
+    "subject": "Message from Sarah (Netflix)",
+    "body": "Hi, this is Sarah from Netflix Customer Care. We noticed a problem with your recent payment and your membership is on hold. Please call us on the toll-free number 1-800-555-0199 so we can fix it and restore your account within minutes.",
+    "label": "Impersonated"
+  },
+  {
+    "subject": "Delhi Police Cyber Cell - Case reference DP/CC/2026/8813",
+    "body": "You are hereby informed that your mobile number and Aadhaar have been used in a money laundering case under investigation. You are directed to contact Inspector Vikram Singh on the number below within 24 hours to record your statement. Non-compliance will lead to issuance of an arrest warrant. Cyber Crime Cell, Delhi Police",
+    "label": "Impersonated"
+  },
+  {
+    "subject": "Re: Following up",
+    "body": "Hi Rohan, I hope you are well. Hiring your team was the right decision. Can you do me a favour? I am tied up at the board meeting and need something handled discreetly. Let me know when you are free. Best, David Chen, CEO",
+    "label": "Impersonated"
+  },
+  {
+    "subject": "EPFO: PF claim status",
+    "body": "Dear Member, your PF withdrawal claim has been put on hold due to KYC mismatch. Contact the EPFO helpdesk officer Mr. Sharma at the number given below and keep your UAN and Aadhaar ready for verification. Employees' Provident Fund Organisation",
+    "label": "Impersonated"
+  },
+  {
+    "subject": "Amazon: Problem with your order #403-8871234-1199201",
+    "body": "Hello, we were unable to process your order because of a billing address mismatch. Your order has been placed on hold. Contact Amazon Customer Service through the number below to confirm your details and release the order. Thank you for shopping with Amazon.",
+    "label": "Impersonated"
+  },
+  {
+    "subject": "FedEx: Your package is waiting",
+    "body": "Package 6129 0034 5578 is being held at our facility because the delivery address could not be confirmed. Reply to this email with your full address and phone number or call our office to arrange delivery. FedEx Customer Service",
+    "label": "Impersonated"
+  },
+  {
+    "subject": "WhatsApp: Your account will be deactivated",
+    "body": "Dear user, your WhatsApp account has been reported for violation of our terms. To keep your account active, reply to this email with your registered mobile number and full name for verification within 24 hours. WhatsApp Support Team",
+    "label": "Impersonated"
+  },
+  {
+    "subject": "Reserve Bank of India - Public notice",
+    "body": "This is to inform all account holders that RBI has introduced a new mandatory account safety verification. Customers who fail to verify will have their accounts frozen from 15 September. Call our helpline 1800-XXX-0011 to complete the process. Reserve Bank of India, Department of Communication",
+    "label": "Impersonated"
+  },
+  {
+    "subject": "UIDAI: Aadhaar deactivation notice",
+    "body": "Your Aadhaar number XXXX XXXX 4413 has been flagged for deactivation due to non-updation of biometrics. Please reach the UIDAI regional officer on the given number to schedule an update appointment, failing which Aadhaar-linked services (bank, SIM, LPG subsidy) will be suspended. Unique Identification Authority of India",
+    "label": "Impersonated"
+  },
+  {
+    "subject": "Hello from Kavya",
+    "body": "Hi Rohan, this is Kavya (using my personal email, my office account is locked out). Are you free? I need you to help with something quickly, will explain. Reply here.",
+    "label": "Impersonated"
+  },
+  {
+    "subject": "LinkedIn: Your account is restricted",
+    "body": "We have temporarily restricted your account due to unusual activity. To restore access, reply to this email with a photo of your government ID and your date of birth. LinkedIn Trust and Safety",
+    "label": "Impersonated"
+  },
+  {
+    "subject": "IRCTC: Refund pending for cancelled ticket",
+    "body": "Dear Passenger, the refund of ₹2,340 for cancelled PNR 6412330912 is pending due to a bank detail mismatch. Contact the IRCTC refund cell officer at the given number to complete the refund process. Indian Railway Catering and Tourism Corporation Ltd.",
+    "label": "Impersonated"
+  },
+  {
+    "subject": "Urgent request",
+    "body": "I need you to take care of a task for me today. Are you available? Reply as soon as possible, I am in a hurry.\n\nThanks,\nDr. Sunita Rao\nDirector\nSent from my Samsung device",
+    "label": "Impersonated"
+  },
+  {
+    "subject": "PayPal: Unusual activity on your account",
+    "body": "We noticed unusual activity on your PayPal account and have limited some features. Our team has tried calling you. Please contact the PayPal Resolution Center by phone at the number below to remove the limitation. PayPal, Inc.",
+    "label": "Impersonated"
+  },
+  {
+    "subject": "GST Department: Compliance notice GSTIN 29AAACR1234A1Z5",
+    "body": "Dear Taxpayer, discrepancies have been noticed between GSTR-1 and GSTR-3B for FY 2025-26. You are required to appear before the undersigned or respond by email within 7 days with reconciled statements and copies of invoices. Superintendent, CGST Range-IV, Bengaluru",
+    "label": "Impersonated"
+  },
+  {
+    "subject": "Airtel: Your number will be disconnected in 24 hours",
+    "body": "Dear Customer, your Airtel number will be disconnected within 24 hours as your KYC documents are incomplete. Please call our KYC officer at the number below and complete the process on call. Airtel Customer Care",
+    "label": "Impersonated"
+  },
+  {
+    "subject": "Confidential",
+    "body": "Rohan, I need your help with a sensitive matter today. Please keep this between us for now. Are you in office? Let me know as soon as you read this.\nSarthak\nChief Executive Officer\nSent from mobile",
+    "label": "Impersonated"
+  },
+  {
+    "subject": "Your Instagram account was reported",
+    "body": "Hello, your account has been reported for copyright infringement. If you think this is a mistake, you must reply to this email within 24 hours with your username and full name, otherwise your account will be permanently deleted. Instagram Copyright Team",
+    "label": "Impersonated"
+  },
+  {
+    "subject": "Steam Support: Ticket #4471902",
+    "body": "Hello, we have received a report that your Steam account was used for fraudulent trades. To avoid a permanent ban you must contact a Steam Support agent through the Discord handle below within 48 hours. Steam Support",
+    "label": "Impersonated"
+  },
+  {
+    "subject": "Notice from Ministry of Electronics and IT",
+    "body": "MeitY has observed that your email address was involved in transmitting objectionable content. You are required to contact the CERT-In officer at the number below within 48 hours to explain, failing which legal action will be taken under the IT Act 2000.",
+    "label": "Impersonated"
+  },
+  {
+    "subject": "From CEO - Need your cell number",
+    "body": "Hi, I need your personal mobile number, need to talk to you about something, cannot use the office line right now. Reply asap. Thanks, John Peterson, CEO and Founder",
+    "label": "Impersonated"
+  },
+  {
+    "subject": "HDFC Bank: Debit card blocked",
+    "body": "Dear Customer, your HDFC Bank debit card ending 8827 has been temporarily blocked due to suspicious usage. To unblock, call our 24x7 helpline at 1800-XXX-4466 and provide your card details to the executive. HDFC Bank Ltd.",
+    "label": "Impersonated"
+  },
+  {
+    "subject": "Coinbase: Your withdrawal is on hold",
+    "body": "A withdrawal of 0.42 BTC from your Coinbase account was flagged by our compliance team. If you did not initiate it, contact our fraud desk at the number below immediately. Coinbase Security",
+    "label": "Impersonated"
+  },
+  {
+    "subject": "Regarding pending task",
+    "body": "Good morning, I trust you are well. I am travelling and have limited access to email. Can you handle a task for me? Reply once you get this. Kind regards, Anita Desai, Chairperson",
+    "label": "Impersonated"
+  },
+  {
+    "subject": "Zomato: Refund failed for order #ZM-99123",
+    "body": "Hi, your refund of ₹840 could not be processed. Our support executive will contact you shortly; please share the details he asks for to receive your refund. Zomato Customer Support",
+    "label": "Impersonated"
+  },
+  {
+    "subject": "LIC: Policy lapse notice",
+    "body": "Dear Policyholder, your LIC policy 76543210 is about to lapse due to non-payment of premium. Contact our agent Mr. Verma at the given number today to revive the policy and avoid loss of benefits. Life Insurance Corporation of India",
+    "label": "Impersonated"
+  },
+  {
+    "subject": "Adobe: Your Creative Cloud license has been suspended",
+    "body": "Your Creative Cloud subscription has been suspended due to a licensing audit. To restore access, contact Adobe Licensing Compliance at the phone number below within 24 hours. Adobe Inc.",
+    "label": "Impersonated"
+  },
+  {
+    "subject": "Re: Vendor meeting",
+    "body": "Hi Suresh, this is Meera from Nair and Associates writing from my personal mail as our server is down. Are you around today? I need to discuss something about the pending invoices. Reply to this email please.",
+    "label": "Impersonated"
+  },
+  {
+    "subject": "Flipkart: Your account has been suspended",
+    "body": "Dear Customer, your Flipkart account has been suspended due to a violation of our return policy. To appeal, reply with your registered mobile number and last order ID. Flipkart Customer Support.",
+    "label": "Impersonated"
+  },
+  {
+    "subject": "Message from the Vice Chancellor's office",
+    "body": "Dear Professor, the Vice Chancellor would like to speak to you regarding an urgent matter. Please share a phone number where you can be reached in the next hour. Office of the Vice Chancellor",
+    "label": "Impersonated"
+  },
+  {
+    "subject": "Canara Bank: Account frozen under PMLA",
+    "body": "Dear Customer, your Canara Bank account has been frozen under the Prevention of Money Laundering Act as suspicious transactions were noticed. To unfreeze, contact our nodal officer on the number below with your account details. Canara Bank",
+    "label": "Impersonated"
+  },
+  {
+    "subject": "NPCI: UPI ID de-registration",
+    "body": "Dear User, your UPI ID linked to mobile XXXXXX2210 will be de-registered as per new NPCI guidelines. To continue using UPI, contact our verification desk at the given number within 48 hours. National Payments Corporation of India",
+    "label": "Impersonated"
+  },
+  {
+    "subject": "Are you free?",
+    "body": "Hey Rohan, are you free at the moment? Need your help on something. Cheers, Mark Thompson, Director of Operations (sent from my phone)",
+    "label": "Impersonated"
+  },
+  {
+    "subject": "Zoom: Your account has been flagged",
+    "body": "Your Zoom account has been flagged for hosting meetings that violate our terms. A representative from Zoom Trust and Safety will contact you. Please keep your account details ready. Zoom Video Communications",
+    "label": "Impersonated"
+  },
+  {
+    "subject": "SEBI: Notice regarding your demat account",
+    "body": "The Securities and Exchange Board of India has noticed unauthorised trading through your demat account. You must contact the investigating officer at the number below and provide your client ID and transaction details within 2 days. SEBI Enforcement Department",
+    "label": "Impersonated"
+  },
+  {
+    "subject": "Kotak Bank: Cheque bounce notice",
+    "body": "Dear Customer, cheque number 001274 issued from your Kotak account has been returned unpaid. To avoid legal action under Section 138, call our recovery officer immediately. Kotak Mahindra Bank",
+    "label": "Impersonated"
+  },
+  {
+    "subject": "Office mein ho?",
+    "body": "Rohan, tum office mein ho? Ek urgent kaam hai, abhi meeting mein hoon isliye call nahi kar sakta. Is mail pe reply karo jaldi.\nRajesh Mehta\nMD",
+    "label": "Impersonated"
+  },
+  {
+    "subject": "SBI: Your KYC is pending - complete now",
+    "body": "Dear Customer, your SBI account will be suspended within 24 hours due to pending KYC. Update your KYC now by clicking the link below and logging in with your internet banking user ID and password. http://secure-login-sbi.xyz/verify\nState Bank of India",
+    "label": "Phishing"
+  },
+  {
+    "subject": "Action required: Verify your Microsoft account",
+    "body": "We noticed unusual sign-in activity on your Microsoft account. To keep your account secure, verify your identity within 24 hours: https://login-microsoftonline.verify-account.top/common/oauth2 . If you do not verify, your account will be locked. Microsoft account team",
+    "label": "Phishing"
+  },
+  {
+    "subject": "Your mailbox is 98% full",
+    "body": "Your mailbox has almost reached its storage limit (1.96 GB of 2 GB). You will not be able to send or receive emails once the limit is reached. Increase your quota for free here: http://webmail-quota-upgrade.info/upgrade?user=rohan\nMail Administrator",
+    "label": "Phishing"
+  },
+  {
+    "subject": "Password reset required",
+    "body": "Your password for rohan@example.org will expire today. To keep your current password click Keep Same Password: http://owa-example-org.password-portal.click/keep . Otherwise you will be locked out of Outlook. IT Support",
+    "label": "Phishing"
+  },
+  {
+    "subject": "Document shared with you: Q3 Financials.xlsx",
+    "body": "Kavya Menon shared a file with you via OneDrive. Q3 Financials.xlsx. Open: http://onedrive-share.docs-view.link/open/8813 . You will need to sign in with your Office 365 email and password to view the document. Microsoft OneDrive",
+    "label": "Phishing"
+  },
+  {
+    "subject": "DocuSign: Please sign - Vendor Agreement 2026",
+    "body": "Rohan, Suresh Kumar sent you a document to review and sign. REVIEW DOCUMENT: http://docusign-secure-view.xyz/sign/4471 . Sign in with your email credentials to access. DocuSign is the global standard for eSignature.",
+    "label": "Phishing"
+  },
+  {
+    "subject": "HDFC Bank: NetBanking access blocked",
+    "body": "Dear Customer, due to multiple failed login attempts your NetBanking access has been blocked. Reactivate now by verifying your customer ID, password and debit card details: http://hdfcbank-netbanking-reactivate.com/login . HDFC Bank",
+    "label": "Phishing"
+  },
+  {
+    "subject": "Your Netflix account is on hold",
+    "body": "Hi, we are having some trouble with your current billing information. We will try again, but in the meantime you may want to update your payment details. UPDATE ACCOUNT NOW: http://netflix-billing-update.cam/account . Netflix",
+    "label": "Phishing"
+  },
+  {
+    "subject": "Income Tax e-Filing: Refund of ₹18,432 approved",
+    "body": "Dear Taxpayer, your income tax refund of ₹18,432 has been approved. Verify your bank account to receive the refund: http://incometax-refund-portal.in.net/verify . You need to enter your PAN, net banking user ID and password. Income Tax Department",
+    "label": "Phishing"
+  },
+  {
+    "subject": "Apple ID locked",
+    "body": "Your Apple ID has been locked for security reasons. Unlock it here: http://appleid-apple.com-unlock.icu/ . You will need your Apple ID password and the security code from your iPhone. Apple",
+    "label": "Phishing"
+  },
+  {
+    "subject": "Google Drive: Salary revision 2026.pdf shared with you",
+    "body": "arjun.iyer@gmail.com shared a document with you. Open with Google Docs: http://drive-google-docs.share-file.top/view . Sign in to continue. Google Drive",
+    "label": "Phishing"
+  },
+  {
+    "subject": "Voicemail: You have 1 new voice message (0:43)",
+    "body": "You received a new voicemail from +91 98XXX XX341. Listen to the message: http://teams-voicemail.msg-play.site/listen?id=7712 . Login with your Microsoft credentials to play. Microsoft Teams",
+    "label": "Phishing"
+  },
+  {
+    "subject": "Airtel: Your recharge failed, update payment",
+    "body": "Your ₹719 recharge could not be completed. Update your card details to keep your number active: http://airtel-recharge-secure.online/pay . Enter card number, expiry and CVV. Airtel",
+    "label": "Phishing"
+  },
+  {
+    "subject": "IRCTC: Verify account to avoid deactivation",
+    "body": "Dear User, as per the new security policy all IRCTC accounts must be re-verified. Login and verify: http://irctc-co-in.verify-user.xyz/login . Accounts not verified by 10 Sep will be deactivated. IRCTC",
+    "label": "Phishing"
+  },
+  {
+    "subject": "Payroll: Your salary slip for August is ready",
+    "body": "Hi Rohan, your August salary slip is ready. Login to the HR portal to download it: http://hr-portal-payslip.link/login . Use your office email and password. HR Department",
+    "label": "Phishing"
+  },
+  {
+    "subject": "PayPal: Confirm your identity",
+    "body": "Dear customer, we have limited your account. Confirm your information to restore full access: http://paypal.com.verify-identity-secure.buzz/cgi-bin/webscr . Have your login details and card ready. PayPal",
+    "label": "Phishing"
+  },
+  {
+    "subject": "Zoom: Meeting invitation from CFO",
+    "body": "Anil Kumar has invited you to a Zoom meeting: Budget review. Join here: http://zoom-us-join.meet-now.click/j/88213456 . You must sign in with your work email and password to join.",
+    "label": "Phishing"
+  },
+  {
+    "subject": "Facebook: Someone tried to log in to your account",
+    "body": "We noticed a login from an unrecognised device. If this was not you, secure your account: http://facebook-security-check.icu/recover . You will be asked to enter your password and confirm your phone number.",
+    "label": "Phishing"
+  },
+  {
+    "subject": "Amazon: Suspicious sign-in, verify now",
+    "body": "Amazon Security Alert. A new sign-in to your account from a device in Russia. If this was not you, verify your account immediately: http://amazon-account-verify.top/ap/signin . Enter your email, password and the OTP we send. Amazon",
+    "label": "Phishing"
+  },
+  {
+    "subject": "Paytm KYC expiring today",
+    "body": "Dear Paytm user, your Paytm wallet KYC will expire today. Complete your KYC in 2 minutes: http://paytm-kyc-complete.site/kyc . Keep your Aadhaar number, PAN and the OTP handy. Paytm",
+    "label": "Phishing"
+  },
+  {
+    "subject": "UIDAI: Update your Aadhaar biometrics online",
+    "body": "Update your Aadhaar online now to avoid deactivation. Enter your 12-digit Aadhaar number and the OTP received on your mobile at http://uidai-aadhaar-update.online/self-service . UIDAI",
+    "label": "Phishing"
+  },
+  {
+    "subject": "Your GST portal password has expired",
+    "body": "Dear Taxpayer, your GST portal password has expired. Reset immediately to avoid late filing penalty: http://gst-gov-in.password-reset.tech/login . Enter your GSTIN, username and old password. GSTN Helpdesk",
+    "label": "Phishing"
+  },
+  {
+    "subject": "Dropbox: Someone shared Invoice_0921.pdf with you",
+    "body": "You have a new file shared. View file: http://dropbox-shared-files.rest/view/0921 . Sign in with your email provider (Gmail, Outlook, Yahoo) to view. Dropbox",
+    "label": "Phishing"
+  },
+  {
+    "subject": "Okta: Unusual sign-in - verify your identity",
+    "body": "We detected a sign-in from a new device. Verify it was you: http://okta-verify-sso.click/login . Enter your username, password and the push code. Okta Security",
+    "label": "Phishing"
+  },
+  {
+    "subject": "SharePoint: Payroll Adjustment Notice",
+    "body": "A document Payroll Adjustment Notice - Sept 2026.docx has been shared with all staff. Review your adjustment: http://sharepoint-hr-docs.top/payroll . Login required with corporate credentials.",
+    "label": "Phishing"
+  },
+  {
+    "subject": "ICICI Bank: Reward points expiring - redeem now",
+    "body": "Dear Customer, your ICICI Bank reward points worth ₹4,875 will expire in 2 days. Redeem now: http://icici-rewards-redeem.xyz/points . Login with your internet banking user ID, password and card details.",
+    "label": "Phishing"
+  },
+  {
+    "subject": "PhonePe: Cashback of ₹1,500 credited - claim now",
+    "body": "Congratulations! Your cashback of ₹1,500 is waiting. Claim it by verifying your UPI PIN here: http://phonepe-cashback-claim.icu/claim . Offer valid for 24 hours. PhonePe",
+    "label": "Phishing"
+  },
+  {
+    "subject": "Password expiry notice",
+    "body": "Dear rohan, your email password will expire in 1 day. Click here to update or keep your password: http://185.220.101.45/webmail/verify.php . Failure to do so will result in account suspension. Email Administrator",
+    "label": "Phishing"
+  },
+  {
+    "subject": "WeTransfer: Files sent by Meera Nair",
+    "body": "Meera Nair sent you 2 files (43.2 MB): Contract_final.pdf, Annexure.pdf. Download: http://wetransfer-download.review/get/xx . The files will be deleted in 7 days. Sign in with your email account to download.",
+    "label": "Phishing"
+  },
+  {
+    "subject": "Chase: Your account has been temporarily locked",
+    "body": "Dear Client, we locked your account after detecting unusual activity. To unlock, verify your details: http://chase-online-secure.cyou/unlock . Enter your username, password and SSN. JPMorgan Chase and Co.",
+    "label": "Phishing"
+  },
+  {
+    "subject": "Instagram: Verify your account to get the blue badge",
+    "body": "You are eligible for verification! Confirm your identity by logging in here: http://instagram-verify-badge.club/apply . Enter your username and password. Instagram",
+    "label": "Phishing"
+  },
+  {
+    "subject": "Zimbra: Your account will be closed",
+    "body": "Dear User, we are upgrading our servers. Users who do not validate their account within 48 hours will be deleted. Validate now: http://zimbra-mail-validate.tk/login.php . Enter email and password. Webmail Admin",
+    "label": "Phishing"
+  },
+  {
+    "subject": "EPFO: e-KYC pending on your UAN",
+    "body": "Dear Member, your UAN 1001XXXXXX has pending e-KYC. Complete it to continue receiving PF benefits: http://epfo-ekyc-portal.in.net/unified . Enter UAN, password and Aadhaar OTP. EPFO",
+    "label": "Phishing"
+  },
+  {
+    "subject": "X: Copyright complaint on your post",
+    "body": "We received a copyright complaint about your post. To appeal, log in here within 24 hours: http://x-com-appeal-copyright.top/login . Otherwise your account will be suspended.",
+    "label": "Phishing"
+  },
+  {
+    "subject": "Coinbase: Confirm withdrawal to avoid account freeze",
+    "body": "A withdrawal request of 0.5 BTC was made. If this was not you, cancel it now: http://coinbase-cancel-withdraw.win/verify . Sign in with your email, password and 2FA code. Coinbase Security",
+    "label": "Phishing"
+  },
+  {
+    "subject": "Wells Fargo: Verify your online banking",
+    "body": "We were unable to verify your recent sign-in. Please confirm your online banking username, password and card PIN at http://wellsfargo-online-verify.gdn/ within 12 hours to avoid restrictions.",
+    "label": "Phishing"
+  },
+  {
+    "subject": "Action needed: Confirm your Slack workspace login",
+    "body": "Someone is trying to add a new device to your Slack workspace. Confirm it is you: http://slack-com-device-confirm.icu/confirm . You will need to sign in with your email and password.",
+    "label": "Phishing"
+  },
+  {
+    "subject": "Your Adobe document is ready to view",
+    "body": "You have received a secure PDF: Purchase Order 7788.pdf. View online: http://adobe-cloud-documents.click/view . Log in with your email provider to access the encrypted document. Adobe Document Cloud",
+    "label": "Phishing"
+  },
+  {
+    "subject": "Jio: Your number will be blocked - update KYC",
+    "body": "Dear Jio customer, your KYC is incomplete. Update it here in 5 minutes to avoid disconnection: http://jio-kyc-update.online/verify . Enter your Aadhaar number and the OTP you receive. Jio Care",
+    "label": "Phishing"
+  },
+  {
+    "subject": "LinkedIn: Confirm your email to keep your account",
+    "body": "We noticed you have not confirmed your email. Confirm now to avoid losing your connections: http://linkedin-confirm-email.rest/login . Sign in with your LinkedIn password.",
+    "label": "Phishing"
+  },
+  {
+    "subject": "Flipkart Big Billion Days: ₹10,000 voucher for you",
+    "body": "You have won a ₹10,000 shopping voucher! Login with your Flipkart account to claim before it expires: http://flipkart-bigbillion-voucher.xyz/claim . Enter your registered mobile number and OTP.",
+    "label": "Phishing"
+  },
+  {
+    "subject": "Security alert: unrecognised device on your Gmail",
+    "body": "Someone just used your password to sign in from a Samsung device in Karachi. Google blocked them, but you should check your account now: http://accounts-google-com.security-check.live/signin . Google",
+    "label": "Phishing"
+  },
+  {
+    "subject": "DigiLocker: Your documents will be deleted",
+    "body": "Your DigiLocker account is inactive. Documents will be permanently deleted unless you login and verify: http://digilocker-gov-in.verify.website/login . Enter Aadhaar, mobile number and OTP. DigiLocker Team",
+    "label": "Phishing"
+  },
+  {
+    "subject": "Steam: Your account is about to be deleted",
+    "body": "Due to a chargeback dispute, your Steam account will be deleted in 24 hours. Login here to dispute: http://steamcommunity-com.dispute-center.ru/login . Enter your Steam login and Steam Guard code.",
+    "label": "Phishing"
+  },
+  {
+    "subject": "Axis Bank: Mobile number change request",
+    "body": "Dear Customer, a request to change the mobile number linked to your account was received. If not done by you, cancel the request at http://axisbank-cancel-request.icu/cancel by entering your customer ID, password and debit card PIN. Axis Bank",
+    "label": "Phishing"
+  },
+  {
+    "subject": "New Fax Received",
+    "body": "You have received a new fax (2 pages) from +1 415 555 0132. View: http://efax-message-view.cc/fax/22190 . Sign in with Office 365 to view.",
+    "label": "Phishing"
+  },
+  {
+    "subject": "IT Notice: MFA re-enrolment required",
+    "body": "All employees must re-enrol for multi-factor authentication before Friday. Re-enrol here: http://mfa-enrol-example-org.xyz/setup . Enter your username, current password and the code from your authenticator app. IT Security",
+    "label": "Phishing"
+  },
+  {
+    "subject": "Zoho Mail: Confirm ownership",
+    "body": "Your Zoho Mail account will be suspended because ownership could not be confirmed. Confirm now: http://zoho-mail-confirm.info/verify . Enter your email and password. Zoho Mail Team",
+    "label": "Phishing"
+  },
+  {
+    "subject": "Verify your bank account to receive the PM Kisan installment",
+    "body": "Dear beneficiary, your PM Kisan 18th installment of ₹2,000 is pending because your bank account is not verified. Verify with your Aadhaar number, bank account number and OTP at http://pmkisan-gov-in.verify-benefit.top/ . Ministry of Agriculture",
+    "label": "Phishing"
+  },
+  {
+    "subject": "Updated bank details for invoice #4471",
+    "body": "Hi Suresh,\nPlease note that our bank account has changed with effect from this month due to an audit at our old bank. Kindly remit the payment for invoice #4471 (₹6,42,000) to the new account below:\nAccount name: Nair and Associates\nAccount number: 50200077112345\nIFSC: UTIB0001204\nPlease keep this confidential until the transition is complete and confirm once the transfer is done.\nRegards,\nMeera",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "RE: RE: Payment for PO 88213",
+    "body": "Hello, further to our earlier mail, please be informed our accounts department has moved to a new bank. Kindly update the beneficiary in your system and process the pending amount of USD 48,300 to the account in the attached letter. Do not send to the old account as it is under audit. Regards, Accounts, Brightled Technology",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "Gift cards for the team",
+    "body": "Hi Priya, I want to surprise the team with gift cards today. Please buy 10 Amazon gift cards of ₹5,000 each from any store, scratch the back and send me the codes on this email. I will reimburse you tomorrow. Keep it between us, I want it to be a surprise. Sarthak",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "Congratulations! You have won ₹25,00,000 in the RBI Prize Fund",
+    "body": "Dear Lucky Winner, your email ID was selected in the Reserve Bank of India lucky draw 2026. To claim your prize of ₹25,00,000, send your full name, address, Aadhaar number, PAN and bank details along with a processing fee of ₹4,500 to the claims agent. Reply within 72 hours. Claims Officer, RBI Prize Fund",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "URGENT BUSINESS PROPOSAL",
+    "body": "Dear Friend, I am Barrister Emmanuel Okafor, attorney to a late client who died with no next of kin leaving USD 12.5 million in a bank here. I want to present you as the next of kin so we can share the fund 50/50. You will be required to pay only the legal documentation charges. Reply with your phone number for more details. Strictly confidential.",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "Invoice overdue - final notice",
+    "body": "Dear Sir/Madam, our records show that invoice 20260114 for ₹87,500 is 45 days overdue. Please find the attached invoice and make the payment immediately to avoid legal action and additional late charges. Bank details are in the attached PDF. Accounts Receivable, Global Office Supplies",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "Job offer - Amazon work from home - registration fee",
+    "body": "Congratulations, you have been selected for the Amazon product review job. Earn ₹2,000 to ₹5,000 daily working from your phone. To activate your account pay a one-time registration fee of ₹1,499 to the UPI ID amazon.jobs@ybl and send the screenshot. Your first payment will be credited within 24 hours.",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "I know what you did",
+    "body": "I have been watching you. Your device was infected with my malware while you were visiting an adult website and I have recorded you through your webcam. I have also downloaded your contacts. Send 0.05 BTC to the wallet bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh within 48 hours or I will send the video to all your contacts. Do not try to contact the police.",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "Your tax refund of ₹36,400 is ready - pay processing charge",
+    "body": "Dear Taxpayer, your income tax refund for AY 2025-26 amounting to ₹36,400 has been sanctioned. Due to bank charges, a processing fee of ₹499 must be paid via UPI to release the refund. Pay to refund.itd@upi and reply with the transaction ID. Refund Processing Unit",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "Guaranteed 30% monthly returns on crypto trading",
+    "body": "Dear Investor, our AI-based trading bot has delivered consistent 30% monthly profits for our 12,000 clients. Start with just ₹10,000 and withdraw profits anytime. Deposit via USDT to the wallet address below or UPI to our manager. Limited time bonus of 20% on the first deposit. Join our Telegram for proof of payouts.",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "Personal loan approved - ₹5,00,000 at 4% - pay insurance first",
+    "body": "Dear Applicant, your loan of ₹5,00,000 has been pre-approved by our finance company. Interest rate 4% per annum, no CIBIL check. To disburse, pay loan insurance and processing charges of ₹3,999 to the account below. The amount will be credited within 2 hours of payment. Loan Officer, QuickCash Finance",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "Re: Quick favour",
+    "body": "Great, thanks. I need you to process a wire transfer of USD 24,850 to a new vendor today for a confidential acquisition. Details: Beneficiary: Halcyon Consulting LLC, Bank: Wells Fargo, Account: 8874102231, Routing: 121000248. Do it before 3 PM and send me the confirmation. Do not discuss this with anyone. David",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "Dad I dropped my phone, using a friend's email",
+    "body": "Dad, I dropped my phone in water and am using a friend's email. I need ₹15,000 urgently for the repair and the hostel fee, please transfer to my friend's GPay 98XXXXXX21 (name Ravi). Will call you tonight. Love, Aditya",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "Delivery charges pending for your parcel",
+    "body": "Your package from India Post is waiting at the sorting centre. Pay the redelivery fee of ₹49 via UPI to indiapost.fee@okaxis and reply with the UTR to receive your parcel within 24 hours. Parcels not cleared in 3 days are returned.",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "Inheritance from late Mr. Pandey",
+    "body": "Attention, I am Mrs. Grace Williams of HSBC London. A deceased customer bearing your surname left a dormant account of GBP 8,450,000. As you share the same last name, I propose we work together to claim the funds. 40% for you. You will need to pay for the transfer certificate only. Reply for details.",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "Purchase order confirmation - security deposit required",
+    "body": "Dear Supplier, we confirm the order for 500 units of industrial pumps as per the attached PO. As per our company policy the vendor must pay a refundable security deposit of ₹85,000 before we issue the LC. Please transfer to the account below and share the receipt so we can start the process. Purchase Manager, Reliance Petro Ventures",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "Charity appeal: Flood relief in Assam",
+    "body": "Dear Sir, we are collecting funds for flood victims in Assam. Thousands are without food. Please donate generously by UPI to assam.relief2026@ybl or bank transfer (details below). Every rupee counts. Forward to your friends.",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "You have been selected for a WHO grant",
+    "body": "The World Health Organization is offering recovery grants of USD 50,000 to individuals. You have been shortlisted. To receive the grant, pay a courier fee of USD 120 to the delivery agent. Reply with your full details.",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "Investment in Bitcoin mining farm - 12% weekly",
+    "body": "Hi, we operate a licensed mining farm in Kazakhstan. Minimum investment $500, returns 12% every week paid in BTC. Contract 6 months. Join now: send funds to the wallet below and email us the transaction hash. Ask about our referral program.",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "Final reminder: Domain renewal invoice",
+    "body": "This is the final notice for domain registration renewal of mailtrace.dev. Failure to pay within 5 days will result in loss of your domain. Amount due: USD 89.00. Pay at http://domain-registration-services.info/pay?ref=7712 . Domain Registration Services",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "Kindly do the needful - vendor payment",
+    "body": "Dear Accounts Team, as instructed by MD sir please release payment of ₹3,20,000 for the attached proforma invoice today itself. The vendor account is: Sharma Traders, A/c 3312001122334, IFSC SBIN0001234. MD sir is travelling, kindly do the needful and share the UTR. Regards, Office of MD",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "Your parcel has been seized - pay fine",
+    "body": "Sir, a parcel booked in your name containing narcotics has been seized by Mumbai Customs. To avoid FIR and arrest you must pay a settlement fine of ₹65,000 today. Transfer to the account below and reply with the receipt. Customs Officer, Mumbai Airport",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "Rental deposit for 2BHK - book before it goes",
+    "body": "Hi, thanks for your interest in the flat. I am currently abroad so cannot show it in person. Many people are interested. To block it for you, transfer a token of ₹25,000 to my account and I will courier the keys and agreement. Owner",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "Lottery winning notification - Coca Cola Promo",
+    "body": "Your email address won USD 1,000,000 in the Coca-Cola International Email Promotion. Ticket number CC-2026-8873. Contact the claims agent Mr. Peter Adams with your name, address and phone, and pay the winnings transfer charge of USD 250.",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "Payment reminder: Invoice INV-9021 (attached)",
+    "body": "Please see attached invoice INV-9021 of USD 12,480 which is due today. Kindly arrange payment to the bank details on the invoice. Note our remittance account has recently changed; use only the details on this invoice. Thanks, Accounts Payable",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "Crypto recovery service - get your lost funds back",
+    "body": "Did you lose money to a scam? Our team of certified recovery experts has recovered over $40 million. We charge a 10% recovery fee upfront. Send us your wallet address, the transaction details and pay the initial assessment fee of $300 to begin.",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "Re: Are you at your desk?",
+    "body": "Thanks for your quick response. I need you to purchase 6 Google Play gift cards of $200 each for a client. Scratch and send me the codes with a photo. I will approve reimbursement when I am back. Do it now please, I am in a meeting.",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "Trading account: pay tax to withdraw profits",
+    "body": "Dear client, your trading account balance is ₹14,82,000. To withdraw, you must first pay 18% GST and income tax of ₹1,92,000 to our compliance account as per regulations. After payment, funds will be released within 24 hours.",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "Winner!!! KBC Lucky Draw 2026",
+    "body": "Congratulation!! Your mobile number has won ₹25 lakh in the KBC Jio lucky draw. To claim the lottery amount contact KBC head office manager Rana Pratap Singh on WhatsApp. Send Aadhaar photo and bank passbook. Refundable processing charge Rs 8,500 applicable. KBC Head Office Mumbai",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "Part-time task: earn by liking YouTube videos",
+    "body": "Hello, we pay ₹50 per like on YouTube videos. Complete 3 tasks and receive ₹150 instantly. For VIP tasks with higher earnings deposit ₹5,000 in your task wallet (100% returned with profit). Join our Telegram group now.",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "Airline refund approved - pay convenience fee",
+    "body": "Your cancelled flight refund of ₹9,870 is approved. Due to payment gateway policy, a convenience fee of ₹199 must be paid via UPI before release. Pay to refunds.airline@paytm and share the screenshot.",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "Model recruitment - registration fees",
+    "body": "Congratulations! You have been selected for our modelling agency's portfolio shoot in Mumbai. To confirm your slot pay ₹6,000 registration and portfolio charges to the account below. The photoshoot date will be shared after payment. Star Casting Agency",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "Emergency - stuck in Bangkok, need help",
+    "body": "Hi, I hope this reaches you. I am in Bangkok for a conference and my wallet and passport were stolen. The embassy is helping with the passport but I need $1,200 to settle the hotel and fly back. Can you send it via Western Union? I will pay you back as soon as I land. Please keep this quiet, I am embarrassed. Ravi",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "Notice of unpaid toll - immediate payment",
+    "body": "Your vehicle KA01MJ4471 has an unpaid FASTag toll of ₹1,240. Pay within 24 hours to avoid a ₹5,000 penalty and RTO blacklisting. Pay at http://fastag-toll-dues.icu/pay via UPI. NHAI",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "Investment in our new fund - 24% assured",
+    "body": "Dear Rohan, our chit fund society is opening a new scheme with 24% assured annual return, backed by real estate. Minimum ₹1 lakh. Deposit before 10 Sep to get a 5% joining bonus. Transfer to the society account below; a receipt will be issued.",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "Re: Contract renewal - new remittance instructions",
+    "body": "Hi, please note that going forward all payments to us should be made to our new HSBC account as we have closed our Indian account due to compliance reasons. New details: HSBC Hong Kong, Account 741-223114-838, SWIFT HSBCHKHHHKH. Please confirm you have updated your records before the next payment run.",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "Blackmail",
+    "body": "Hello pervert. I got access to your phone and your camera. I have videos of you and your browsing history. Pay $900 in bitcoin to this wallet within 24 hours and I delete everything. If you ignore, the video goes to your family and your employer. The clock is ticking.",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "Puppy for adoption - only shipping fee",
+    "body": "Hello, I am giving away my Golden Retriever puppies to a loving home for free because I am relocating. You only need to pay the pet transport of ₹4,500 to the shipping agent. Please send payment via UPI so they can deliver the puppy tomorrow.",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "Government scheme: Free solar panel - pay registration",
+    "body": "Under PM Surya Ghar Yojana you are eligible for a free rooftop solar system worth ₹1,20,000. Register today by paying ₹1,999 registration charges via UPI to suryaghar.reg@ybl. Limited to the first 1,000 applicants in your district.",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "Overpayment - please refund the difference",
+    "body": "Hi, I sent you ₹40,000 by mistake instead of ₹4,000 for the item on OLX. Please check your account and send back ₹36,000 to my GPay number 98XXXXXX77 today. I have attached the screenshot of the transfer. Please be honest.",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "Pending customs duty for your iPhone gift",
+    "body": "Hello dear, I have sent you a gift parcel containing an iPhone 16 and some cash through Royal Express Courier. The parcel is held at Delhi airport and the courier is asking ₹18,500 for customs clearance. Please pay them and I will return it to you when we meet. Love, Jessica",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "Special price Basmati rice - 40% below market, advance required",
+    "body": "Dear Sir, we are offering 20 tonnes of premium Basmati rice at ₹48,000 per tonne, 40% below market rate, as a distress sale. Kindly transfer 50% advance of ₹4,80,000 to the personal account of our proprietor within 2 days to reserve the stock. Bank: Punjab National Bank, A/c 0123456789012, IFSC PUNB0123400. Export Manager, Haryana Agro Exports",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "Reward for your loyalty - claim ₹5,000 (small fee)",
+    "body": "Dear Customer, you have been chosen for a ₹5,000 loyalty reward. To transfer the reward to your bank, an activation fee of ₹99 is required. Pay via UPI to rewards.claim@okhdfcbank and reply with the UTR number.",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "Wire instructions changed for closing",
+    "body": "Hello, this is to inform you that our escrow wire instructions have changed for your property closing on Friday. Please use the new account: First Republic Bank, Account 33019874, ABA 321081669. Disregard the previous instructions. Confirm once wired so we can finalise. Escrow Officer",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "Hi, can I get your help with a payment",
+    "body": "Hi Rohan, I am at the hospital with my mother and my net banking is not working. Can you send ₹20,000 to this account for her admission? I will return it tomorrow morning. A/c 9988776655, IFSC HDFC0000123, name Suresh K. Please do it fast. Suresh",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "Franchise opportunity - Amul parlour, pay security deposit",
+    "body": "Get an Amul franchise in your city with guaranteed monthly income of ₹1,50,000. Pay a refundable security deposit of ₹2 lakh to the company account below and the franchise agreement will be sent within 24 hours. Amul Franchise Division",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "IPO allotment: pay balance to receive shares",
+    "body": "Congratulations, you have been allotted 500 shares in the Tata Technologies IPO through our grey market channel. Pay the balance of ₹1,95,000 to the account below within 24 hours or the allotment will be cancelled. Broker Desk",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "Fwd: Please pay this invoice today",
+    "body": "---------- Forwarded message ---------\nFrom: Sarthak Srivastava\nSubject: Please pay this invoice today\n\nPriya, this vendor has been chasing me. Please pay the attached invoice of ₹2,18,000 today to the bank details mentioned and mark it as approved by me. I am in flight so cannot call. Thanks.",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "Unlock your blocked wallet - pay verification amount",
+    "body": "Your Paytm wallet with balance ₹22,400 has been blocked. To unblock and receive your balance, send a verification amount of ₹1,000 to UPI paytm.verify@ybl. The amount will be refunded along with your balance within 30 minutes.",
+    "label": "Fraud-Related"
+  }
+]

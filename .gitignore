@@ -1,0 +1,10 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+# Runtime data (SQLite DB, evidence store, cached model)
+data/
+.env
+# Local demo QR (points at a home Wi-Fi address, regenerate per network)
+demo_qr.png

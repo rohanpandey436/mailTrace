@@ -1,0 +1,69 @@
+Delivered-To: priya.nair@acme-corp.in
+Received: by 2002:a05:6a00:1d8f:b0:72c:3e4f:5a61 with SMTP id d2e1a72fcca58-72c3e4f5a61csp3345566pfk;
+        Fri, 04 Sep 2026 03:23:30 -0700 (PDT)
+X-Received: by 2002:a17:90b:3c2e:b0:2d8:6f1a:9b0c with SMTP id 98e67ed59e1d1-2f4b6c8d0e2mr4419023pjb.33.1788517410627;
+        Fri, 04 Sep 2026 03:23:30 -0700 (PDT)
+Return-Path: <sarthak.ceo.office@gmail.com>
+Received: from mail-sor-f41.google.com (mail-sor-f41.google.com. [209.85.220.41])
+        by mx.google.com with SMTPS id d9443c01a7336-2f1c3d4e5f6sor1122334plg.3.2026.09.04.03.21.07
+        for <priya.nair@acme-corp.in>
+        (Google Transport Security);
+        Fri, 04 Sep 2026 03:21:07 -0700 (PDT)
+Received-SPF: pass (google.com: domain of sarthak.ceo.office@gmail.com designates 209.85.220.41 as permitted sender) client-ip=209.85.220.41;
+Authentication-Results: mx.google.com;
+       spf=pass (google.com: domain of sarthak.ceo.office@gmail.com designates 209.85.220.41 as permitted sender) smtp.mailfrom=sarthak.ceo.office@gmail.com;
+       dkim=pass header.i=@gmail.com header.d=gmail.com header.s=20230601 header.b=Qm9nd3Vz;
+       dmarc=pass (p=NONE sp=QUARANTINE dis=NONE) header.from=gmail.com
+X-Gm-Message-State: AOJu0YxK3n2pQ7rT9vW1eX4bZ6cD8fG0hJ2kL4mN6oP8qR0sT2uV4wX6yZ8aB0cD2eF4gH6iJ8kL0
+X-Google-Smtp-Source: AGHT+IEw9xQ2rT4vY6bN8dF0hK2mP4sU6wA8cE0gI2kM4oQ6sW8yC0eG2iK4mO6qS8uY0aC2eG4i
+Received: from smtpclient.apple ([49.36.220.14])
+        by smtp.gmail.com with ESMTPSA id d9443c01a7336-2f1c3d4e5f6sm7891234plg.7.2026.09.04.03.18.52
+        for <priya.nair@acme-corp.in>
+        (version=TLS1_3 cipher=TLS_AES_256_GCM_SHA384 bits=256/256);
+        Fri, 04 Sep 2026 03:18:53 -0700 (PDT)
+From: "Sarthak Srivastava (CEO)" <sarthak.ceo.office@gmail.com>
+Content-Type: multipart/alternative; boundary="Apple-Mail-2F3A1B4C-5D6E-7F80-91A2-B3C4D5E6F708"
+Content-Transfer-Encoding: 7bit
+Mime-Version: 1.0 (1.0)
+Subject: Are you available?
+Date: Fri, 4 Sep 2026 15:48:51 +0530
+Message-ID: <8F2A1C3D-4E5B-6F70-8A9B-0C1D2E3F4A5B@gmail.com>
+To: "Priya Nair" <priya.nair@acme-corp.in>
+X-Mailer: iPhone Mail (21F90)
+
+--Apple-Mail-2F3A1B4C-5D6E-7F80-91A2-B3C4D5E6F708
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+Priya,
+
+Are you at your desk? I need you to handle something urgent for me but I am
+in a meeting with the board right now and can't take calls. Reply on this
+email only and let me know once you see this.
+
+Sarthak Srivastava
+CEO, Acme Corp
+
+Sent from my iPhone
+
+--Apple-Mail-2F3A1B4C-5D6E-7F80-91A2-B3C4D5E6F708
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+<html>
+<head>
+<meta http-equiv="content-type" content="text/html; charset=utf-8">
+</head>
+<body dir="auto">
+<div>Priya,</div>
+<div><br></div>
+<div>Are you at your desk? I need you to handle something urgent for me but I am in a meeting with the board right now and can't take calls. Reply on this email only and let me know once you see this.</div>
+<div><br></div>
+<div>Sarthak Srivastava</div>
+<div>CEO, Acme Corp</div>
+<div><br></div>
+<div>Sent from my iPhone</div>
+</body>
+</html>
+
+--Apple-Mail-2F3A1B4C-5D6E-7F80-91A2-B3C4D5E6F708--
