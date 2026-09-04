@@ -6,6 +6,9 @@ services:
     name: mailtrace
     runtime: python
     plan: free
+    # The Python service lives in backend/; the dashboard and demo messages sit
+    # beside it and are found relative to the package.
+    rootDir: backend
     buildCommand: pip install -r requirements.txt
     # Render sets PORT; app/config.py picks it up and binds every interface.
     startCommand: python run.py

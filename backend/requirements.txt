@@ -1,0 +1,19 @@
+fastapi>=0.115,<1.0
+uvicorn[standard]>=0.30
+pydantic>=2.7
+python-multipart>=0.0.18
+httpx>=0.27
+dnspython>=2.6
+dkimpy>=1.1.5
+tldextract>=5.1
+scikit-learn>=1.5
+numpy>=1.26
+joblib>=1.3
+reportlab>=4.0
+maxminddb>=2.6
+# XGBoost URL/domain model (app/ml/url_model.py). Ships a prebuilt manylinux
+# wheel -- 58 MB download, 87 MB unpacked, no compiler, no CUDA -- so it cannot
+# fail to build on the free tier. Measured 2026-09-05 against 3.4.1. Still fully
+# optional at runtime: uninstall it, or set MAILTRACE_URL_MODEL=0, and the URL
+# pillar returns to the deterministic rules with identical output.
+xgboost>=2.1,<4

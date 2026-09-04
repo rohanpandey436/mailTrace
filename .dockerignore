@@ -1,0 +1,47 @@
+# Keep the build context small and free of anything host- or secret-specific.
+# Build from the repository root: docker build -f deploy/Dockerfile -t mailtrace .
+
+# Version control and CI
+.git/
+.github/
+.gitignore
+
+# Python bytecode, caches and the local virtualenv (a Windows venv would be
+# useless in a Linux image and is larger than the image itself)
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# Runtime state: the SQLite database, stored evidence .eml files and the cached
+# classifier. Never bake an analyst's real cases into an image.
+data/
+backend/data/
+
+# Secrets and local configuration. Configuration reaches the container through
+# environment variables (-e / --env-file), never through a baked-in .env.
+.env
+*.env
+
+# Not needed at runtime: the C++ engine sources, the pitch decks, the docs and
+# the deployment descriptors themselves
+engine/
+docs/
+deploy/
+*.pptx
+*.pdf
+demo_qr.png
+
+# Tests are excluded from the image; CI runs them from the checkout, not from
+# a container. Remove this line if you want `docker run ... pytest` to work.
+backend/tests/
+
+# Editor / OS noise
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

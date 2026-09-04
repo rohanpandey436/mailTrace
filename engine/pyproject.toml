@@ -1,0 +1,19 @@
+# PEP 518 build metadata for the OPTIONAL mailtrace_engine extension.
+#
+# pybind11 is a BUILD-time dependency only.  It is declared here, not in
+# backend/requirements.txt, so `pip install ./engine` pulls it into an isolated
+# build environment and the deployed backend never sees it.
+[build-system]
+requires = ["setuptools>=64", "wheel", "pybind11>=2.11"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mailtrace-engine"
+version = "1.0.0"
+description = "MailTrace C++20 MIME dissection, SHA-256 and Shannon entropy engine"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+
+[tool.setuptools]
+py-modules = []

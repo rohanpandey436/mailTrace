@@ -1,0 +1,38 @@
+# Optional transformer backend for Stage 3A (DistilRoBERTa NLP intent).
+#
+# NOT installed by default and deliberately NOT referenced from requirements.txt:
+# torch alone is roughly 1 GB unpacked, so this does not fit the 512 MB free
+# tier the public demo runs on. Without these packages MailTrace uses the
+# bundled TF-IDF + logistic-regression classifier, which carries exact SHAP
+# attributions and scores 0.90 accuracy on a stratified hold-out.
+#
+# To enable the transformer locally:
+#     pip install -r requirements-ml.txt
+#     set MAILTRACE_TRANSFORMER_MODEL=<a sequence-classification model id>
+#
+# Any Hugging Face sequence-classification model works; the label mapping in
+# app/ml/train.py understands the common phishing/benign/spam/scam spellings.
+# The first run downloads the weights, so it needs network access and disk.
+transformers>=4.44
+torch>=2.2
+
+# ---------------------------------------------------------------------------
+# Two AI/ML packages the deck names that are handled WITHOUT a dependency here,
+# so nobody has to go looking for them:
+#
+#   xgboost - IS a hard dependency, in requirements.txt. Checked 2026-09-05:
+#     xgboost 3.4.1 ships xgboost-3.4.1-py3-none-manylinux_2_28_x86_64.whl,
+#     57.6 MB compressed / 87.5 MB unpacked (one 86.4 MB libxgboost.so), no
+#     build step and no CUDA, so it installs on the free tier in seconds. It
+#     backs app/ml/url_model.py and is still optional at runtime: uninstall it,
+#     or set MAILTRACE_URL_MODEL=0, and the URL pillar falls back to the
+#     deterministic rules with identical output.
+#
+#   lime - deliberately NOT installed, in any file. The published package is an
+#     sdist only (lime-0.2.0.1.tar.gz, no wheel) so every deploy would compile
+#     it from source, and its install_requires pulls matplotlib and
+#     scikit-image (>100 MB installed) for plotting and image-segmentation code
+#     this service never calls. The algorithm is instead implemented directly
+#     in app/ml/lime_text.py against numpy + scikit-learn's Ridge, which the
+#     project already depends on. See that module's docstring for the
+#     step-by-step correspondence with lime.lime_text.LimeTextExplainer.

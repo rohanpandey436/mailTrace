@@ -1,0 +1,19 @@
+# Optional PostgreSQL / Supabase backend for app/db.py.
+#
+# NOT installed by default and deliberately NOT referenced from
+# requirements.txt: the Render free tier has no database attached, and the
+# service must keep starting with nothing but the SQLite file under data/.
+#
+# Install it only when MAILTRACE_DATABASE_URL points at a real server:
+#
+#     pip install -r requirements.txt -r requirements-pg.txt
+#     export MAILTRACE_DATABASE_URL='postgresql://user:pass@host:5432/mailtrace'
+#
+# psycopg[binary] ships a self-contained wheel (libpq included), so there is no
+# apt package and no compiler involved on manylinux, macOS or Windows.  If a
+# platform has no wheel, `pip install psycopg` plus the system libpq-dev is the
+# fallback - which is exactly why this file is separate from requirements.txt.
+#
+# With the driver missing, or the server unreachable, Store logs the reason and
+# runs on SQLite instead; /api/health reports which backend actually won.
+psycopg[binary]>=3.1,<4

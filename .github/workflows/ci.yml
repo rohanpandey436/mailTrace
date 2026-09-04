@@ -1,0 +1,76 @@
+# MailTrace continuous integration.
+#
+# One job, one Python, no services: the test-suite is offline by design
+# (tests/conftest.py sets enable_network=False) and the store it exercises is
+# the bundled SQLite file, so there is nothing to stand up.  Typical run is
+# well under two minutes, almost all of it pip install.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+# A new push to the same branch cancels the previous run instead of queueing.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: pytest + import check (Python 3.12)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        # Everything happens from backend/: pytest.ini lives there and
+        # tests/conftest.py resolves samples/ relative to it.
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          # 3.12 matches render.yaml's PYTHON_VERSION and the Dockerfile base.
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+
+      - name: Install dependencies
+        # requirements-dev.txt pulls in requirements.txt via "-r".  The optional
+        # extras (requirements-ml.txt, requirements-pg.txt) are deliberately NOT
+        # installed: CI must prove the service works without them.
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Import every module
+        # Catches a syntax error, a circular import or a missing guard around an
+        # optional dependency in a module no test happens to touch - the failure
+        # mode that otherwise only shows up at startup in production.
+        run: |
+          python - <<'PY'
+          import importlib, pkgutil, sys
+          import app
+
+          # "run" is the entry point script beside the package, not part of it.
+          names = ["app"] + [m.name for m in pkgutil.walk_packages(app.__path__, "app.")] + ["run"]
+          failures = []
+          for name in names:
+              try:
+                  importlib.import_module(name)
+              except Exception as exc:               # noqa: BLE001 - report them all, then fail
+                  failures.append(f"{name}: {type(exc).__name__}: {exc}")
+
+          print(f"imported {len(names) - len(failures)}/{len(names)} modules")
+          for failure in failures:
+              print(f"  FAIL {failure}")
+          sys.exit(1 if failures else 0)
+          PY
+
+      - name: Run tests
+        run: python -m pytest -q
