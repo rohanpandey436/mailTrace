@@ -87,6 +87,7 @@ class Settings:
     max_domain_lookups: int = 6
     max_geo_lookups: int = 8
     abuseipdb_key: str = ""
+    urlhaus_key: str = ""
     cache_ttl_seconds: int = 6 * 3600
     # Privacy / alerting
     pii_mask_default: bool = False
@@ -144,6 +145,7 @@ class Settings:
             max_domain_lookups=_env_int("MAX_DOMAIN_LOOKUPS", 6),
             max_geo_lookups=_env_int("MAX_GEO_LOOKUPS", 8),
             abuseipdb_key=_env("ABUSEIPDB_KEY", ""),
+            urlhaus_key=_env("URLHAUS_KEY", ""),
             cache_ttl_seconds=_env_int("CACHE_TTL_SECONDS", 6 * 3600),
             pii_mask_default=_env_bool("PII_MASK_DEFAULT", False),
             alert_threshold=_env_int("ALERT_THRESHOLD", 70),

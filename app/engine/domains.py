@@ -301,7 +301,10 @@ def domain_reputation(domain: str, cfg: Settings, store: Optional["Store"]) -> l
     tld = domain.rsplit(".", 1)[-1]
     if tld in SUSPICIOUS_TLDS and domain not in FREEMAIL_DOMAINS:
         tags.append("suspicious_tld")
-    if not cfg.enable_network or _is_ip(domain):
+    # URLhaus began requiring an Auth-Key in 2025 and answers 401 without one.
+    # Skipping the call when no key is configured keeps the local tags above and
+    # saves a doomed round trip per domain on every analysis.
+    if not cfg.enable_network or _is_ip(domain) or not cfg.urlhaus_key:
         return tags
     cache_key = f"rep:{domain}"
     cached = _cache_get(store, cache_key)
@@ -311,9 +314,12 @@ def domain_reputation(domain: str, cfg: Settings, store: Optional["Store"]) -> l
     try:
         import httpx
 
-        with httpx.Client(timeout=_timeout(cfg), headers={"User-Agent": "MailTrace/1.0"}) as client:
+        headers = {"User-Agent": "MailTrace/1.0", "Auth-Key": cfg.urlhaus_key}
+        with httpx.Client(timeout=_timeout(cfg), headers=headers) as client:
             response = client.post("https://urlhaus-api.abuse.ch/v1/host/", data={"host": domain})
-        if response.status_code == 200:
+        if response.status_code == 401:
+            log.warning("URLhaus rejected the configured MAILTRACE_URLHAUS_KEY")
+        elif response.status_code == 200:
             payload = response.json()
             if payload.get("query_status") == "ok" and payload.get("urls"):
                 remote.append("urlhaus")
