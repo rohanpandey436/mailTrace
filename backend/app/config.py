@@ -93,20 +93,13 @@ class Settings:
     # it the store logs the problem and stays on SQLite rather than failing to
     # start.  Ignored in zero-persistence mode, which must stay in-process.
     database_url: str = ""
-    # Celery broker and result backend (app/tasks.py).  Empty - the default -
-    # runs tasks eagerly in the request process, which is what the test suite
-    # and any single-instance deployment do; POST /api/analyze/async then still
-    # works and returns finished jobs.  Point it at a Redis instance and the
-    # same endpoint becomes a real queue.
+    # Celery broker and result backend (app/tasks.py). Empty runs tasks eagerly in
+    # the request process; a Redis URL makes POST /api/analyze/async a real queue.
     redis_url: str = ""
-    # Worker slots to run inside this process when a broker is configured.  1
-    # is the free-tier shape: one container that is both API and worker, since
-    # a separate Render Background Worker is a paid service.  0 means this
-    # process only enqueues and workers run elsewhere (docker-compose does).
+    # Worker slots run inside this process when a broker is configured. 1 is one
+    # container that is both API and worker; 0 means workers run elsewhere.
     queue_workers: int = 1
-    # How long a finished job stays pollable.  Long enough for a browser to
-    # come back from a reload, short enough that Redis is not an archive - the
-    # case itself is in the database and outlives this entirely.
+    # How long a finished job stays pollable. The case itself is in the database.
     queue_result_ttl: int = 3600
     # Organisation context (the party being protected)
     org_name: str = "Protected Organisation"
@@ -246,8 +239,7 @@ class Settings:
             # Managed hosts often inject a bare DATABASE_URL; honour it, but let
             # the prefixed name win so MailTrace can be pointed elsewhere.
             database_url=_env("DATABASE_URL", os.environ.get("DATABASE_URL", "")).strip(),
-            # Render's Key Value, Heroku's Redis add-on and docker-compose all
-            # publish a bare REDIS_URL; honour it, but let the prefixed name win.
+            # Render, Heroku and docker-compose publish a bare REDIS_URL; the prefixed name wins.
             redis_url=_env("REDIS_URL", os.environ.get("REDIS_URL", "")).strip(),
             queue_workers=_env_int("QUEUE_WORKERS", 1),
             queue_result_ttl=_env_int("QUEUE_RESULT_TTL", 3600),

@@ -2,16 +2,10 @@
 //
 // FIPS 180-4 SHA-256, implemented from the specification.
 //
-// Two backends, chosen at build time by setup.py.  With OpenSSL's headers
-// present the one-shot `sha256_hex` - which is every hash the engine actually
-// produces - calls EVP_Digest, and `sha256_backend()` reports "openssl".
-// Without them the self-contained implementation below runs instead and reports
-// "builtin", so the extension still builds on any C++20 toolchain with no
-// external library, no headers to locate and no ABI to match.
-//
-// The from-specification code is not dead in either case: it stays compiled,
-// and both paths are checked against Python's hashlib, so a build can never
-// quietly disagree with the interpreter about what SHA-256 is.
+// Two backends, chosen at build time by setup.py: with OpenSSL available the
+// one-shot `sha256_hex` calls EVP_Digest and `sha256_backend()` reports
+// "openssl"; otherwise the implementation below runs and reports "builtin".
+// Both are compiled and both are tested against Python's hashlib.
 #ifndef MAILTRACE_SHA256_HPP
 #define MAILTRACE_SHA256_HPP
 

@@ -35,9 +35,8 @@ deploy/
 *.pdf
 demo_qr.png
 
-# engine/ IS part of the context - the builder stage compiles it against
-# OpenSSL - but its build output is not: a Windows .pyd or a stale object tree
-# from the host would be copied in and then confuse or shadow the Linux build.
+# engine/ is part of the context (the builder compiles it); its host build
+# output is not, since a Windows .pyd would shadow the Linux build.
 engine/build/
 engine/*.egg-info/
 *.so

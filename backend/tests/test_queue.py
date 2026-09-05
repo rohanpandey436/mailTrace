@@ -1,11 +1,7 @@
 """
-The Celery queue: eager execution, the HTTP job endpoints, and - when a broker
-is reachable - a worker that really consumes from it.
-
-The eager tests run everywhere and are the ones that matter for correctness,
-because eager execution is what a deployment without ``MAILTRACE_REDIS_URL``
-does. The broker test is skipped unless one is configured, which is how CI
-reaches it: the ``queue`` job starts a Redis service and sets that variable.
+The Celery queue: eager execution, the job endpoints and, when a broker is
+configured, a worker that consumes from it.  The broker test is skipped without
+``MAILTRACE_REDIS_URL``; CI sets it and starts a separate worker process.
 """
 from __future__ import annotations
 
@@ -21,8 +17,7 @@ from app import tasks
 from app.main import create_app
 
 REDIS_URL = os.environ.get("MAILTRACE_REDIS_URL", "").strip()
-# CI sets this to 0 and starts a separate `celery worker` process, so the broker
-# test proves an out-of-process consumer rather than a thread of its own making.
+# CI sets this to 0 and starts a separate worker process.
 QUEUE_WORKERS = int(os.environ.get("MAILTRACE_QUEUE_WORKERS", "1"))
 requires_broker = pytest.mark.skipif(not REDIS_URL, reason="no MAILTRACE_REDIS_URL; eager mode covers the rest")
 
@@ -44,34 +39,23 @@ def _submit(client, sample, *names):
 def test_eager_mode_is_the_default(cfg):
     """With no broker configured, tasks must run in-process rather than block."""
     assert not cfg.redis_url
-    # Built from cfg rather than read off the module-level application, whose
-    # broker CI does configure - the claim here is about the default, not about
-    # whatever this process happens to be pointed at.
+    # Built from cfg: CI configures the module-level application with a broker.
     configured = tasks.build_celery(cfg)
     assert configured.conf.task_always_eager is True
-    # The one setting that makes eager results pollable; without it every job
-    # would answer PENDING forever. Asserted because it is easy to lose.
+    # Without this every eager job stays PENDING.
     assert configured.conf.task_store_eager_result is True
     assert "eager" in tasks.queue_status(cfg)
 
 
 def test_reconfiguring_moves_the_live_connections(cfg):
-    """configure() must move what the application actually uses.
+    """configure() must move the live backend and producer pool, not just the settings.
 
-    Both halves of this were real failures. Rewriting result_backend left the
-    cached backend behind, so results were written to Redis and read from
-    memory. Rewriting broker_url left the cached *producer pool* behind, so an
-    application that had been eager went on publishing into the in-memory
-    transport while correctly reporting a Redis broker - the message vanished
-    and every job read PENDING forever.
-
-    The fix is to build a new application rather than reconfigure one, so this
-    asserts the effect: after switching, the backend and the producer pool both
-    point at the new broker. Nothing here connects to anything.
+    Celery caches both on first use; rewriting the URLs left them pointing at
+    the old broker.  Nothing here connects to anything.
     """
     tasks.configure(cfg)
     assert type(tasks.celery_app.backend).__name__ == "CacheBackend"
-    # Publishing once is what created the stale pool in the first place.
+    # Publishing creates the producer pool.
     tasks.enqueue(b"From: a@b\r\nSubject: warm\r\n\r\nx\r\n", "warm.eml", "analyst")
     assert tasks.celery_app.amqp.producer_pool.connections.connection.as_uri().startswith("memory://")
 
@@ -102,15 +86,13 @@ def test_async_upload_returns_jobs_that_resolve(client, sample):
         assert state["state"] == "SUCCESS", state
         assert state["result"]["email_id"]
 
-    # The queue is not a separate universe: the cases it produced are the same
-    # cases the synchronous endpoint would have written, readable the same way.
+    # Cases from the queue are readable exactly like synchronous ones.
     listing = client.get("/api/emails").json()
     assert listing["total"] == 2
     verdicts = {item["filename"]: item["category"] for item in listing["items"]}
     assert verdicts["phishing.eml"] == "Phishing"
 
-    # The id the job reported is the id the case has, so a client can go
-    # straight from a finished job to the full analysis.
+    # The job's email_id is the case id.
     email_id = client.get(f"/api/jobs/{by_name['phishing.eml']['job_id']}").json()["result"]["email_id"]
     detail = client.get(f"/api/emails/{email_id}")
     assert detail.status_code == 200
@@ -158,16 +140,8 @@ def test_unknown_and_malformed_job_ids(client):
 
 
 def test_an_unreachable_broker_is_refused_rather_than_waited_on(cfg, sample):
-    """A dead Redis must fail the upload quickly and say so.
-
-    Celery's default publish-retry policy keeps trying for minutes, which would
-    leave the request hanging and the analyst with no idea why. The endpoint
-    answers 503 instead, and points at the synchronous endpoint that still
-    works.
-    """
-    # Port 1 is reserved; nothing listens there, so the connection is refused
-    # immediately rather than timing out. queue_workers=0 keeps this test from
-    # leaving a worker thread behind retrying a broker that will never exist.
+    """A dead Redis must fail the upload quickly with a 503, not hang on retries."""
+    # Port 1: refused immediately. queue_workers=0 avoids leaving a worker thread retrying.
     broken = replace(cfg, redis_url="redis://127.0.0.1:1/0", queue_workers=0)
     app = create_app(broken)
     started = time.monotonic()
@@ -190,12 +164,7 @@ def test_health_reports_how_tasks_execute(client):
 
 
 def test_task_result_carries_no_message_content(client, sample):
-    """What lands in the result backend must not be the email itself.
-
-    In a real deployment the backend is Redis, which is neither the evidence
-    store nor covered by the PII-masking policy, so the task returns an
-    identifier and a verdict and nothing that could quote the message.
-    """
+    """The result backend must never hold message content, only an id and a verdict."""
     body = _submit(client, sample, ("phishing", "phishing.eml"))
     result = client.get(f"/api/jobs/{body['jobs'][0]['job_id']}").json()["result"]
     assert set(result) == {
@@ -208,16 +177,11 @@ def test_task_result_carries_no_message_content(client, sample):
 
 @requires_broker
 def test_a_real_worker_consumes_from_the_broker(sample):
-    """End to end against Redis: publish here, consume in a Celery worker.
+    """Publish here, consume in a Celery worker, read the case back.
 
-    Skipped without a broker. When it does run it is the only test that proves
-    the distributed path, and MAILTRACE_QUEUE_WORKERS decides how much it
-    proves: at 0 nothing in this process can run the task, so the job can only
-    finish if the separate worker CI starts picked it up.
-
-    Settings come from the environment rather than the ``cfg`` fixture,
-    deliberately: the worker is a different process reading the same variables,
-    so this is what makes the two agree on one database to write the case into.
+    With MAILTRACE_QUEUE_WORKERS=0 nothing in this process can run the task,
+    so the job only completes if the separate worker picked it up.  Settings
+    come from the environment so both processes share one database.
     """
     from app.config import Settings
 
@@ -228,9 +192,7 @@ def test_a_real_worker_consumes_from_the_broker(sample):
     app = create_app(cfg)
     with TestClient(app) as client:
         assert "redis" in client.get("/api/health").json()["queue"]
-        # A name unique to this run. The database is whatever MAILTRACE_DATA_DIR
-        # points at, shared with the worker and not necessarily empty, so this
-        # test finds its own case rather than assuming it is the only one.
+        # The database is shared with the worker and may not be empty.
         filename = f"phishing-{uuid.uuid4().hex[:8]}.eml"
         response = client.post(
             "/api/analyze/async",

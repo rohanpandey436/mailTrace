@@ -10,12 +10,7 @@ import { toast } from "./toast.js";
 /** @typedef {import('../types.js').JobStatus} JobStatus */
 /** @typedef {'help' | 'paste' | null} OpenPanel */
 
-/**
- * Batches of this size or more go through the queue instead of waiting on one
- * request. Below it the direct endpoint answers in a second or two and lands
- * straight on the case, which is the better experience for the common one or
- * two files.
- */
+/** Batches of this size or more go through the queue; smaller ones use the direct endpoint and land on the case. */
 const QUEUE_FROM = 5;
 const POLL_MS = 1200;
 /** A job that will never change again. */
@@ -69,14 +64,9 @@ export function Dropzone() {
   }
 
   /**
-   * Queue a batch and watch it finish.
-   *
-   * With a broker configured the upload returns immediately and the work
-   * happens in a Celery worker, so this is a progress bar over real background
-   * work. Without one the same endpoint runs the analyses inline before it
-   * answers, and every job is already finished on the first poll - the same
-   * code path, one deployment setting apart.
-   *
+   * Queue a batch and poll it to completion. With a broker the upload returns
+   * immediately and a worker does the work; without one every job is already
+   * finished on the first poll.
    * @param {File[]} files
    */
   async function runBatch(files) {

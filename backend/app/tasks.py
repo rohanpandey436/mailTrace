@@ -1,42 +1,18 @@
 """
-Celery task queue for out-of-band analysis.
+Celery task queue for bulk analysis.
 
-Analysing a message is CPU-bound and, with ``MAILTRACE_ENABLE_NETWORK=true``,
-also waits on WHOIS, DNS, GeoIP and blocklist lookups.  A single upload is
-fast enough to answer inline, which is what ``POST /api/analyze`` does; a
-mailbox export of several hundred messages is not, and holding an HTTP
-connection open for it is the wrong shape.  ``POST /api/analyze/async``
-enqueues one task per message and answers immediately with job ids the client
-polls.
+``POST /api/analyze/async`` enqueues one task per message and returns job ids
+that ``GET /api/jobs`` polls.  Which process runs the task is configuration:
 
-Three deployment shapes, all of them real, chosen by configuration alone:
+- ``MAILTRACE_REDIS_URL`` unset: Celery runs eagerly in the request process,
+  results go to a process-local backend, and the job endpoints behave the same.
+- Set, with ``MAILTRACE_QUEUE_WORKERS`` > 0 (default 1): Redis is the broker
+  and result backend, and this process also runs a worker thread.
+- Set, with ``MAILTRACE_QUEUE_WORKERS=0``: producer only.  Run workers with
+  ``celery -A app.tasks worker`` (deploy/docker-compose.yml does).
 
-``MAILTRACE_REDIS_URL`` unset
-    Celery runs in eager mode: ``apply_async`` executes the task inline and
-    stores the result in a process-local cache backend.  The job endpoints
-    behave identically, so the frontend has one code path.  This is what the
-    test suite and a plain ``pip install -r requirements.txt`` deployment use.
-
-``MAILTRACE_REDIS_URL`` set, ``MAILTRACE_QUEUE_WORKERS`` > 0 (the default)
-    Redis is the broker and the result backend, and this process also runs a
-    Celery worker in a thread.  One container, a genuine queue: work is
-    durable across a request, survives a client disconnect, and is rate-limited
-    by worker concurrency rather than by however many uploads arrive at once.
-    This is the shape the free tier can afford, since a separate Render
-    Background Worker is a paid service.
-
-``MAILTRACE_REDIS_URL`` set, ``MAILTRACE_QUEUE_WORKERS=0``
-    Producer only.  Workers run elsewhere - ``deploy/docker-compose.yml``
-    starts one, and ``celery -A app.tasks worker`` is the manual form.  This is
-    the shape that scales horizontally.
-
-One caveat is worth stating plainly: an alert raised inside an *external*
-worker is written to the database but cannot reach the browsers subscribed to
-this process's ``/api/alerts/stream``, because that stream is fed by an
-in-process broadcaster.  Those alerts appear on the next poll of
-``/api/alerts`` rather than instantly.  With the embedded worker - the default
-whenever a broker is configured - the worker shares the process and the
-broadcaster, so live alerts are unaffected.
+An alert raised inside an external worker is stored but cannot reach this
+process's ``/api/alerts/stream`` broadcaster; it appears on the next poll.
 """
 from __future__ import annotations
 
@@ -56,25 +32,19 @@ if TYPE_CHECKING:
 
 log = logging.getLogger("mailtrace.tasks")
 
-#: Task name, spelled explicitly rather than derived from the module path, so a
-#: worker started as ``celery -A app.tasks`` and one started as
-#: ``celery -A backend.app.tasks`` agree on what to consume.
+#: Explicit so workers started as ``app.tasks`` and ``backend.app.tasks`` agree.
 ANALYZE_TASK = "mailtrace.analyze_message"
 
-#: Queue name.  Named rather than default so an operator can run workers
-#: dedicated to analysis alongside workers for anything added later.
+#: Named, so workers can be dedicated to it.
 QUEUE_NAME = "mailtrace.analysis"
 
-#: In eager mode results live in a process-local dict rather than in Redis.
-#: Celery's own name for that backend.
+#: Eager mode keeps results in a process-local dict.
 _MEMORY_BACKEND = "cache+memory://"
 _MEMORY_BROKER = "memory://"
 
-# The Store the task should use.  The web process binds its own during startup
-# so that eager and embedded-worker execution share one database handle - which
-# matters for MAILTRACE_ZERO_PERSISTENCE, where a second Store object would be
-# a second, separate in-memory database rather than the same one.  An external
-# worker process binds nothing and opens its own; see _task_store.
+# The web process binds its Store so eager and embedded execution share its
+# database handle; under MAILTRACE_ZERO_PERSISTENCE a second Store would be a
+# separate in-memory database.  An external worker opens its own.
 _bound_store: Store | None = None
 _bound_settings: Settings | None = None
 _own_store: Store | None = None
@@ -96,43 +66,31 @@ def build_celery(cfg: Settings | None = None) -> Celery:
         task_default_queue=QUEUE_NAME,
         task_serializer="json",
         result_serializer="json",
-        # Never unpickle: a broker that an attacker can write to would
-        # otherwise be remote code execution in the worker.
+        # JSON only: unpickling broker messages would be remote code execution.
         accept_content=["json"],
         result_accept_content=["json"],
         timezone="UTC",
         enable_utc=True,
-        # Distinguishes "queued behind other work" from "being analysed now",
-        # which is the difference the progress bar shows.
+        # STARTED separates "queued" from "running" for the progress bar.
         task_track_started=True,
         result_expires=cfg.queue_result_ttl,
-        # One message at a time per worker process.  Analysis is CPU-bound and
-        # already parallel across processes; prefetching would only make one
-        # worker sit on messages another could be running.
+        # Analysis is CPU-bound; prefetching only parks messages on a busy worker.
         worker_prefetch_multiplier=1,
         task_acks_late=True,
         # A message whose worker died is redelivered rather than lost.
         task_reject_on_worker_lost=True,
         broker_connection_retry_on_startup=True,
-        # A broker that has gone away must fail the upload quickly rather than
-        # block the thread that published to it. Two short retries and then an
-        # error the endpoint can turn into a 503; without this the default
-        # policy retries for minutes and the request simply hangs.
+        # Bounded publish retries; the default retries for minutes and hangs the request.
         task_publish_retry_policy={
             "max_retries": 2,
             "interval_start": 0.0,
             "interval_step": 0.2,
             "interval_max": 0.5,
         },
-        # Connection establishment only. socket_timeout is deliberately not set:
-        # it also applies to the worker's blocking read for the next message,
-        # where a timeout is normal rather than a fault.
+        # socket_timeout is left unset: it would also cut the worker's blocking read.
         broker_transport_options={"socket_connect_timeout": 5.0},
-        # The result backend keeps its own reconnect loop, and its default of 20
-        # retries with exponential backoff means a dead Redis takes over a
-        # minute to report itself - measured, not guessed. Publishing touches
-        # this backend too, so bounding only the publish policy above was not
-        # enough to stop an upload hanging.
+        # The result backend has its own reconnect loop (20 retries, exponential
+        # backoff) and publishing touches it too, so it is bounded as well.
         result_backend_transport_options={
             "socket_connect_timeout": 5.0,
             "retry_policy": {
@@ -145,13 +103,9 @@ def build_celery(cfg: Settings | None = None) -> Celery:
         # Celery's logging configuration otherwise replaces uvicorn's.
         worker_hijack_root_logger=False,
         task_always_eager=not broker,
-        # Eager mode must report a failed task the same way the broker does -
-        # as a FAILURE state to poll for - not by raising into the HTTP handler.
+        # A failed eager task must surface as FAILURE, not raise into the handler.
         task_eager_propagates=False,
-        # ...and must write its results to the backend, which eager mode does
-        # not do by default. Without this the job endpoints would answer
-        # PENDING forever for work that had already finished, and the frontend
-        # would need to know which mode it was talking to.
+        # Eager results are not stored by default; without this every job stays PENDING.
         task_store_eager_result=True,
     )
     return app
@@ -161,31 +115,20 @@ celery_app = build_celery()
 
 
 def configure(cfg: Settings) -> None:
-    """Point the task queue at ``cfg``'s broker, by building a new application.
+    """Point the queue at ``cfg`` by building a new Celery application.
 
-    The module-level application is built from the environment at import time,
-    because ``celery -A app.tasks worker`` has to work with no application
-    factory in sight.  ``create_app`` calls this so an injected ``Settings``
-    wins instead, which is what makes ``create_app(Settings(redis_url=...))``
-    mean anything.
-
-    Replaced rather than reconfigured, and the reason is worth recording.
-    Rewriting ``broker_url`` and ``result_backend`` on a live application does
-    not move it: Celery caches the result backend, the broker connection pool
-    and the producer pool on first use.  Both were observed - an application
-    that had been eager published into the in-memory transport while reporting
-    a Redis broker, so the message was silently dropped and every job read
-    PENDING forever; before that, results were written to Redis and read back
-    from memory.  Each fix invalidated one more private attribute.  A fresh
-    application has no cache to be stale, so this stops playing that game.
-
-    That is possible because the task is declared with ``shared_task``, which
-    registers it with every application rather than binding it to one.
+    The module-level application is built from the environment so that
+    ``celery -A app.tasks worker`` works without the app factory; ``create_app``
+    calls this so injected ``Settings`` win.  It is rebuilt rather than
+    reconfigured because Celery caches the result backend, the connection pool
+    and the producer pool on first use, and changing ``broker_url`` on a live
+    application leaves them pointing at the old broker.  ``shared_task``
+    registers the task with every application, so nothing is lost.
     """
     global celery_app
     previous = celery_app
     celery_app = build_celery(cfg)
-    # So the shared_task proxy and any bare AsyncResult resolve to the new one.
+    # So the shared_task proxy and AsyncResult resolve to the new application.
     celery_app.set_default()
     if previous is not None:
         previous.close()
@@ -229,26 +172,16 @@ def _task_store() -> Store:
         return _own_store
 
 
-# shared_task rather than @celery_app.task: it registers the task with every
-# Celery application, present and future, so configure() can build a new one
-# without leaving the registration behind on the old.
-#
-# Celery ships no type information for its decorator, so under strict mode it
-# would erase the signature of whatever it wraps. Ignored here rather than
-# loosening the settings for the module, so the body stays fully checked.
+# shared_task registers with every Celery application, which configure() relies
+# on.  Celery's decorator is untyped; ignored here so the body stays checked.
 @shared_task(name=ANALYZE_TASK, bind=True, queue=QUEUE_NAME)  # type: ignore[untyped-decorator]
 def analyze_message(self: Any, raw_b64: str, filename: str, actor: str) -> dict[str, Any]:
     """Analyse one message and persist the case.
 
-    ``raw_b64`` because the JSON serializer cannot carry bytes, and JSON is the
-    only content type this application accepts from the broker.
-
-    The return value is deliberately a summary rather than the full
-    ``AnalysisResult``: the case is in the database by the time this returns,
-    so a client that wants the detail fetches ``/api/emails/{id}`` and gets it
-    through the same masking and serialisation as every other read.  Putting a
-    complete result in the broker would also mean unmasked PII sitting in
-    Redis for ``result_expires`` seconds.
+    ``raw_b64`` because the JSON serializer cannot carry bytes.  The return
+    value is a summary, not the full result: the case is already in the
+    database and is read back through ``/api/emails/{id}`` with masking
+    applied, and a full result would leave unmasked PII in Redis.
     """
     from .api.alerts import maybe_alert
     from .core import pipeline
@@ -273,23 +206,17 @@ class QueueUnavailable(RuntimeError):
 
 
 def enqueue(raw: bytes, filename: str, actor: str) -> str:
-    """Queue one message for analysis; returns the job id to poll.
+    """Queue one message; returns the job id.
 
-    Raises ``QueueUnavailable`` when the broker is unreachable, so the endpoint
-    can say the queue is down rather than returning a job id for work that was
-    never accepted.
+    Raises ``QueueUnavailable`` when the broker cannot be reached.
     """
     from kombu.exceptions import OperationalError
 
     payload = base64.b64encode(raw).decode("ascii")
     try:
         result = analyze_message.apply_async(args=[payload, filename, actor], queue=QUEUE_NAME)
-    # Publishing reaches both the broker and the result backend, and they fail
-    # differently: kombu raises OperationalError, while the backend exhausts its
-    # own retry loop and raises a bare RuntimeError. Both mean the same thing to
-    # a caller - nothing was accepted - so both become QueueUnavailable, with
-    # the original type kept in the message so a surprising one is still
-    # visible in the response and the log.
+    # kombu raises OperationalError; the result backend raises RuntimeError after
+    # its retry loop.  Both mean nothing was accepted.
     except (OperationalError, RuntimeError) as exc:
         log.warning("could not queue %s: %s: %s", filename, type(exc).__name__, exc)
         raise QueueUnavailable(f"{type(exc).__name__}: {exc}") from exc
@@ -299,11 +226,8 @@ def enqueue(raw: bytes, filename: str, actor: str) -> str:
 def job_state(job_id: str) -> dict[str, Any]:
     """Poll one job.
 
-    ``state`` is Celery's own vocabulary - PENDING, STARTED, SUCCESS, FAILURE,
-    RETRY, REVOKED - passed through rather than translated, because PENDING
-    genuinely means "this broker has never heard of that id", which covers both
-    "not started yet" and "wrong id".  There is no way to tell those apart, and
-    inventing a friendlier word would hide that.
+    ``state`` is Celery's own vocabulary, passed through.  PENDING covers both
+    "not started" and "unknown id"; the broker cannot tell them apart.
     """
     async_result = AsyncResult(job_id, app=celery_app)
     state = str(async_result.state)
@@ -313,22 +237,17 @@ def job_state(job_id: str) -> dict[str, Any]:
         if isinstance(value, dict):
             payload["result"] = value
     elif state == "FAILURE":
-        # str() of the exception, never the traceback: it can quote message
-        # content, and this is served over the API.
+        # str(), never the traceback: it can quote message content.
         payload["error"] = f"{type(async_result.result).__name__}: {async_result.result}"
     return payload
 
 
 def start_embedded_worker(cfg: Settings) -> bool:
-    """Run a Celery worker inside this process; True when one was started.
+    """Run a Celery worker thread in this process; True when one was started.
 
-    ``WorkController`` rather than ``celery_app.Worker``: the latter is the CLI
-    application and installs process-wide signal handlers, which fails outside
-    the main thread.  The controller is the same worker without that.
-
-    Nothing here is required for correctness - it is a deployment convenience
-    for the single-container case - so a failure to start is logged and the
-    service continues with whatever workers exist elsewhere.
+    ``WorkController`` rather than ``celery_app.Worker``: the latter installs
+    process-wide signal handlers, which fails outside the main thread.  A
+    failure to start is logged and the service continues.
     """
     global _embedded_worker
     if not cfg.redis_url.strip() or cfg.queue_workers <= 0:
@@ -348,9 +267,7 @@ def start_embedded_worker(cfg: Settings) -> bool:
                 quiet=True,
             )
             controller.start()
-        # A worker that cannot start must not take the API down with it: the
-        # service still analyses synchronously, which is what it does with no
-        # broker configured at all.
+        # A worker that cannot start must not take the API down.
         except Exception as exc:
             log.warning("embedded Celery worker stopped: %s", exc, exc_info=True)
 

@@ -31,14 +31,13 @@ are not it uses the FIPS 180-4 implementation in `src/sha256.cpp` (about 150
 lines). `mailtrace_engine.SHA256_BACKEND` reports which one a given build got,
 and `/api/health` surfaces it as `native_engine_sha256`.
 
-Both are always compiled and both are tested, because the fallback is not a
-consolation prize: a host with a missing or mismatched OpenSSL would otherwise
-lose the entire extension, and losing the C++ parser to gain a hash backend is
-a bad trade. The digests are identical either way, which matters because a
-chain-of-custody ledger written by one build has to verify under the other.
+Both are always compiled and tested. The fallback exists because a host with a
+missing or mismatched OpenSSL would otherwise lose the whole extension. The
+digests are identical either way, so a chain-of-custody ledger written by one
+build verifies under the other.
 
-`setup.py` decides by compiling and linking a probe program, not by looking for
-a header, since a header that exists is not a library that links. Three modes:
+`setup.py` decides by compiling and linking a probe program, since a header
+that exists is not a library that links. Three modes:
 
 | `MAILTRACE_OPENSSL` | Behaviour |
 |---|---|
@@ -46,9 +45,8 @@ a header, since a header that exists is not a library that links. Three modes:
 | `1` | Require OpenSSL. An unusable one fails the build instead of falling back. |
 | `0` | Skip the probe and use the built-in implementation. |
 
-The deployment image and the `engine` CI job both build with `=1`, so neither
-can quietly ship the implementation it did not intend. CI additionally asserts
-the digests match `hashlib` across every SHA-256 block boundary.
+The deployment image and the `engine` CI job both build with `=1`. CI also
+asserts the digests match `hashlib` across every SHA-256 block boundary.
 
 **It is verified against `hashlib`.** `test_extension_sha256_matches_hashlib`
 in `backend/tests/test_native_engine.py` compares this implementation with the
@@ -171,7 +169,7 @@ The rest of the file - the mirror tests, the cross-check tests and the
 self-check tests - runs against a pure-Python transcription of the dissector, so
 the *contract* is exercised even on a host with no compiler.
 
-One caveat worth knowing before you deploy. The engine reproduces CPython's own
+One caveat before you deploy. The engine reproduces CPython's own
 header handling, and `compat32`'s treatment of a value beginning on a
 continuation line changed between 3.12 and 3.13. On 3.12 the self-check
 correctly notices the mismatch and falls back, reporting
@@ -296,7 +294,7 @@ engine/
   bench.py                        Native vs Python timing
 ```
 
-Implementation notes worth knowing before editing `src/parser.cpp`:
+Implementation notes for editing `src/parser.cpp`:
 
 * Everything works on `std::string_view` slices of the caller's buffer and
   indexes only after a bounds test. There is no `new`, no `delete` and no

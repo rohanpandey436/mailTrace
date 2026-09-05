@@ -63,12 +63,9 @@ _SOURCE_TYPES = set(get_args(SourceType))
 MAX_EXPORT_ROWS = 5000
 _EXPORT_PAGE = 500
 
-# Async ingestion. The cap is on how many messages one request may enqueue, not
-# on how many the queue holds: it stops a single upload from filling the broker,
-# and the client simply submits the next batch.
+# Per-request cap on messages enqueued; the client submits the next batch.
 MAX_ASYNC_FILES = 500
-# Job ids are UUIDs the broker issued. Polling is a public endpoint, so an id is
-# checked for shape before it is used as a key in the result backend.
+# Job ids are broker-issued UUIDs; checked before use as a cache key.
 _MAX_POLL_IDS = 100
 _JOB_ID = re.compile("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
 
@@ -202,14 +199,11 @@ async def analyze_upload_async(
     files: Annotated[list[UploadFile], File(description="One or more RFC 822 messages (.eml / .txt)")],
     actor: ActorParam = DEFAULT_ACTOR,
 ) -> AsyncAnalyzeResponse:
-    """Queue messages for analysis and answer immediately with job ids.
+    """Queue messages for analysis and return job ids.
 
-    Every message is validated here rather than in the worker, so a payload
-    that is empty or too large is refused with the same status the synchronous
-    endpoint would use, before anything is enqueued.
-
-    No ``mask`` parameter: nothing analysable is returned, and the case is read
-    back through ``/api/emails/{id}``, which applies the masking policy.
+    Messages are validated here, not in the worker, so an empty or oversized
+    payload is refused before anything is enqueued.  No ``mask`` parameter:
+    the case is read back through ``/api/emails/{id}``, which masks.
     """
     if len(files) > MAX_ASYNC_FILES:
         raise HTTPException(
@@ -226,8 +220,7 @@ async def analyze_upload_async(
 
     jobs: list[JobStatus] = []
     for filename, raw in payloads:
-        # apply_async talks to the broker over a socket, and in eager mode it
-        # runs the whole analysis, so neither belongs on the event loop.
+        # apply_async does socket I/O (and in eager mode, the whole analysis).
         try:
             job_id = await run_in_threadpool(tasks.enqueue, raw, filename, actor)
         except tasks.QueueUnavailable as exc:
@@ -253,11 +246,7 @@ async def get_job(job_id: str) -> JobStatus:
 async def get_jobs(
     ids: Annotated[str, Query(max_length=_MAX_POLL_IDS * 40, description="Comma-separated job ids")],
 ) -> list[JobStatus]:
-    """Poll a whole batch in one request.
-
-    A browser watching 300 uploads would otherwise open 300 connections per
-    tick; this keeps a progress bar to one request.
-    """
+    """Poll a batch in one request instead of one connection per job."""
     job_ids = [part.strip() for part in ids.split(",") if part.strip()]
     if not job_ids:
         raise HTTPException(status_code=422, detail="ids must name at least one job")

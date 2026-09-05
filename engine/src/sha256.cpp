@@ -186,13 +186,9 @@ std::string Sha256::to_hex(const Digest& digest) {
 std::string Sha256::hex() const { return to_hex(digest()); }
 
 #ifdef MAILTRACE_USE_OPENSSL
-// Every hash the engine actually produces goes through this one-shot form, so
-// it is the whole of the OpenSSL surface: EVP_Digest is a single call with no
-// context to own or free. The from-specification implementation above stays
-// compiled and stays tested, and is what runs wherever OpenSSL's headers are
-// not present at build time - which is most Windows machines. Both paths are
-// checked against Python's hashlib by tests/test_native_engine.py, so a build
-// cannot quietly disagree with the interpreter about what SHA-256 is.
+// Every hash the engine produces goes through this one-shot form, so it is the
+// whole OpenSSL surface. The implementation above stays compiled and tested
+// for builds without OpenSSL headers.
 const char* sha256_backend() noexcept { return "openssl"; }
 
 std::string sha256_hex(const std::uint8_t* data, std::size_t len) {

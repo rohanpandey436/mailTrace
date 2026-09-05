@@ -1,20 +1,15 @@
 """
 Build the dashboard stylesheet with Tailwind CSS.
 
-MailTrace has no Node and no bundler on purpose - the frontend is a directory
-of ES modules the browser runs as written - so this uses Tailwind's standalone
-CLI, a single self-contained binary published with each release.  It is
-downloaded on demand into a cache directory and never committed: the binary is
-~50 MB and platform-specific, while its output is 30 KB of CSS that every
-deployment can serve without a toolchain.
+The frontend has no Node or bundler, so this uses Tailwind's standalone CLI: a
+single binary downloaded on demand into a cache directory outside the
+repository.  Its output, css/app.css, is committed so every deployment serves
+the dashboard without a toolchain.
 
     python frontend/build_css.py            # build css/app.css
     python frontend/build_css.py --check    # fail if the committed CSS is stale
 
-``--check`` is what CI runs.  The built file is committed because Render, the
-Docker image and a plain checkout all have to serve the dashboard without
-running this script; committing the output while checking it in CI is the same
-bargain the ONNX graph makes.
+CI runs ``--check`` so the committed file cannot drift from its source.
 """
 from __future__ import annotations
 
@@ -32,13 +27,11 @@ HERE = Path(__file__).resolve().parent
 SOURCE = HERE / "css" / "tailwind.css"
 OUTPUT = HERE / "css" / "app.css"
 
-#: Pinned, not "latest": the same source must produce the same stylesheet on
-#: every machine and in CI, or --check would fail for reasons nobody changed.
+#: Pinned so every machine and CI produce identical bytes.
 TAILWIND_VERSION = "v4.3.3"
 RELEASE = f"https://github.com/tailwindlabs/tailwindcss/releases/download/{TAILWIND_VERSION}"
 
-#: Where the downloaded CLI lives. Outside the repository, so it is never
-#: committed and is shared between checkouts.
+#: Outside the repository; shared between checkouts.
 CACHE = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache") / "mailtrace-tailwind"
 
 
@@ -66,8 +59,7 @@ def cli() -> Path:
     url = f"{RELEASE}/{name}"
     print(f"downloading Tailwind {TAILWIND_VERSION} ({name})…")
     CACHE.mkdir(parents=True, exist_ok=True)
-    # Downloaded beside the target and renamed, so an interrupted download
-    # cannot leave a truncated binary that looks cached.
+    # Temporary name first, so an interrupted download is never mistaken for a cached binary.
     partial = binary.with_suffix(binary.suffix + ".partial")
     try:
         with urllib.request.urlopen(url, timeout=300) as response, partial.open("wb") as handle:
@@ -90,9 +82,7 @@ def build(destination: Path) -> None:
         "--output", str(destination),
         "--minify",
     ]
-    # cwd is the frontend directory so the @source globs in tailwind.css - which
-    # is how Tailwind decides which utilities to emit - resolve the same way
-    # wherever this is run from.
+    # The @source globs in tailwind.css resolve relative to the frontend directory.
     result = subprocess.run(command, cwd=HERE, capture_output=True, text=True)
     if result.returncode != 0:
         sys.stderr.write(result.stdout + result.stderr)

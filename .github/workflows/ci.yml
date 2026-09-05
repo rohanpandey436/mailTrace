@@ -1,23 +1,11 @@
 # MailTrace continuous integration.
 #
-# Three jobs, each proving something the others deliberately do not.
-#
-# `test` runs WITHOUT the C++ engine and without the optional ML extras, so it
-# proves the service is correct on the pure-Python path alone. It is offline by
-# design (tests/conftest.py sets enable_network=False) and uses the bundled
-# SQLite store, so there is nothing to stand up.
-#
-# `engine` compiles the C++20 extension against OpenSSL and runs the same suite
-# WITH it, so both parsers are covered. The development machine has no OpenSSL
-# headers, so this is the only place the linked build is exercised at all.
-#
-# `queue` runs Redis and a Celery worker in a *separate process*, and proves a
-# message published by the API is analysed by that worker. The suite otherwise
-# runs Celery eagerly, which exercises the code but not the broker.
-#
-# `docker` builds and *runs* the deployment image, because a Dockerfile that has
-# never been built is a claim rather than an artefact - and this project's
-# development machine cannot run Docker (no hardware virtualisation).
+# `test` runs without the C++ engine or the optional extras: the pure-Python
+# path must be correct on its own. It is offline (tests/conftest.py sets
+# enable_network=False) and uses SQLite.
+# `engine` builds the C++20 extension against OpenSSL and runs the suite with it.
+# `queue` runs Redis and a Celery worker in a separate process.
+# `docker` builds and runs the deployment image.
 name: CI
 
 on:
@@ -99,11 +87,7 @@ jobs:
         run: python -m pytest -q
 
       - name: Check the stylesheet is not stale
-        # frontend/css/app.css is built by Tailwind and committed, because
-        # Render, the Docker image and a plain checkout all serve the dashboard
-        # with no toolchain. Committing build output is only safe if something
-        # checks it still matches its source, which is what this does: it
-        # downloads the pinned standalone CLI, rebuilds, and compares bytes.
+        # css/app.css is Tailwind's committed output; rebuild it and compare bytes.
         working-directory: .
         run: python frontend/build_css.py --check
 
@@ -120,13 +104,11 @@ jobs:
           python-version: '3.13'
 
       - name: Install OpenSSL headers
-        # Present on the GitHub runner image already; installed explicitly so
-        # this job does not silently depend on what the image happens to ship.
+        # Installed explicitly rather than relying on the runner image.
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libssl-dev
 
       - name: Build the engine, requiring OpenSSL
-        # MAILTRACE_OPENSSL=1 makes setup.py fail instead of falling back, so a
-        # broken link surfaces here rather than as a quietly different build.
+        # MAILTRACE_OPENSSL=1: an unusable OpenSSL fails the build instead of falling back.
         run: MAILTRACE_OPENSSL=1 pip install ./engine
 
       - name: Verify it really links libcrypto
@@ -138,10 +120,8 @@ jobs:
           print(f"mailtrace_engine {engine.__version__}, SHA-256 backend: {backend}")
           assert backend == "openssl", f"expected the OpenSSL backend, got {backend!r}"
 
-          # Identical digests are the whole point: the deployment may run either
-          # build, and a chain-of-custody ledger written by one must verify
-          # under the other. Block boundaries are where a hash implementation
-          # goes wrong, so they are all covered.
+          # The digests must match hashlib: a custody ledger written by one build must
+          # verify under the other. Block boundaries are covered.
           vectors = [b"", b"abc", b"a" * 63, b"a" * 64, b"a" * 65]
           vectors += [os.urandom(n) for n in (55, 56, 57, 119, 120, 121, 4096)]
           for data in vectors:
@@ -151,8 +131,7 @@ jobs:
 
       - name: Confirm the backend actually adopts it
         working-directory: backend
-        # NATIVE_ENGINE is only True after the import-time self-check passes, so
-        # this asserts the engine was accepted, not merely that it imported.
+        # NATIVE_ENGINE is True only after the import-time self-check passes.
         run: |
           pip install -r requirements-dev.txt
           python -c "
@@ -185,13 +164,9 @@ jobs:
 
     env:
       MAILTRACE_REDIS_URL: redis://127.0.0.1:6379/0
-      # 0 embedded workers, so nothing in the pytest process can run the task.
-      # The only way a job completes is the worker started below picking it up:
-      # that is the whole point of this job, and without it the assertion would
-      # pass on a thread and prove nothing about the broker.
+      # 0 embedded workers: a job can only complete via the worker started below.
       MAILTRACE_QUEUE_WORKERS: "0"
-      # The worker is a different process. It reads these same variables, which
-      # is what makes it write cases into the database the tests then read.
+      # The worker reads the same variables, so both write to one database.
       MAILTRACE_DATA_DIR: ${{ github.workspace }}/queue-data
       MAILTRACE_ENABLE_NETWORK: "false"
       MAILTRACE_ORG_DOMAINS: acme-corp.in
@@ -218,8 +193,7 @@ jobs:
           pip install -r requirements-dev.txt
 
       - name: Start a Celery worker
-        # Backgrounded rather than run as a service container, because it has to
-        # be *this* code: the same package, the same models, the same settings.
+        # Backgrounded rather than a service container: it must run this checkout.
         run: |
           celery -A app.tasks worker --queues=mailtrace.analysis --concurrency=1 --loglevel=info > worker.log 2>&1 &
           echo $! > worker.pid
@@ -243,9 +217,7 @@ jobs:
         run: python -m pytest tests/test_queue.py -q
 
       - name: Prove the worker did the work
-        # The test asserts the case exists; this asserts *where* it was
-        # analysed. Without this line a future change could quietly re-enable an
-        # in-process worker and the job would still pass.
+        # Asserts where the work ran, so an in-process worker cannot quietly return.
         run: |
           grep -q "mailtrace.analyze_message" worker.log             || { echo "the worker never received a task; log follows" >&2; cat worker.log >&2; exit 1; }
           echo "tasks executed by the external worker:"
@@ -283,8 +255,7 @@ jobs:
           exit 1
 
       - name: Analyse a sample through the running container
-        # Proves the image carries the frontend, the samples and a working
-        # engine - not merely that it starts.
+        # Proves the image carries the frontend, samples and a working engine.
         run: |
           curl -fsS -F "files=@samples/phishing_sbi_kyc.eml"             http://127.0.0.1:8000/api/analyze -o result.json
           python -c "
@@ -298,9 +269,7 @@ jobs:
           curl -fsS http://127.0.0.1:8000/ | grep -q 'id="root"' && echo "dashboard served"
 
       - name: Confirm the image ships the OpenSSL-linked engine
-        # Read from /api/health rather than from `docker exec`, so this checks
-        # what the running service reports about itself - the same field a judge
-        # or an auditor would look at.
+        # Read from /api/health: what the running service reports about itself.
         run: |
           python -c "
           import json

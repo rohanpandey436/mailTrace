@@ -101,13 +101,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             # itself if the driver or the server is missing.
             app.state.store = Store(cfg.db_path, cfg.evidence_dir, database_url=cfg.database_url)
         alerts.broadcaster.bind(asyncio.get_running_loop())
-        # Tasks run against this Store, not one of their own. That is what
-        # makes eager execution and the embedded worker see the same database
-        # as the API - decisive in zero-persistence mode, where a second Store
-        # would be a second, empty in-memory database.
+        # Tasks use this Store so eager and embedded execution share the API's
+        # database (under zero-persistence a second Store would be a separate one).
         tasks.bind_store(app.state.store, cfg)
-        # The module-level Celery application was built from the environment at
-        # import time; this is where an injected Settings takes over.
+        # The module-level Celery app was built from the environment; injected Settings take over here.
         tasks.configure(cfg)
         tasks.start_embedded_worker(cfg)
         _warm_model(cfg)

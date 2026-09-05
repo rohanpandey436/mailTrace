@@ -1,12 +1,9 @@
 """
-Reverse DNS: the three outcomes, and what each is allowed to cache.
+Reverse DNS: the three outcomes and what each may cache.
 
-This exists because the distinction is invisible until you measure it. A PTR
-lookup has three results, not two: a name, "there is no PTR", and "the resolver
-never answered". Collapsing the last two into "" meant a timeout was treated as
-a fact that could not be cached, so every message from an address without a PTR
-paid the full lookup timeout again - measured at four seconds per analysis on
-the deployed service, for a supplementary signal.
+A PTR lookup has three results: a name, "no PTR", and "the resolver never
+answered".  Treating a timeout as an uncacheable "" meant every message from an
+address without a PTR paid the full lookup timeout again.
 """
 from __future__ import annotations
 
@@ -23,11 +20,7 @@ NO_PTR_IP = "45.148.10.72"
 
 @pytest.fixture
 def net_cfg(cfg):
-    """The offline test settings, with network enabled for these two functions.
-
-    Nothing here reaches the network: socket.gethostbyaddr is always replaced.
-    The flag only gets past the guard at the top of reverse_dns.
-    """
+    """Offline settings with the network flag on; socket.gethostbyaddr is always replaced."""
     cfg.enable_network = True
     return cfg
 
@@ -58,7 +51,7 @@ def test_a_timeout_is_not_an_answer(net_cfg, monkeypatch):
     started = time.monotonic()
     assert geoip_mapper.reverse_dns(NO_PTR_IP, net_cfg) is None
     elapsed = time.monotonic() - started
-    # Capped independently of lookup_timeout, which the fixture leaves higher.
+    # Capped independently of lookup_timeout.
     assert elapsed < 3, f"waited {elapsed:.1f}s; the PTR cap is {geoip_mapper._RDNS_TIMEOUT_SECONDS}s"
 
 
@@ -72,7 +65,7 @@ def test_the_ptr_cap_ignores_a_larger_lookup_budget(net_cfg):
 
 
 def test_no_ptr_is_cached_so_it_is_looked_up_once(net_cfg, tmp_path, monkeypatch):
-    """The whole point: a second message from the same origin must not re-stall."""
+    """A second message from the same origin must not repeat the lookup."""
     store = Store(tmp_path / "cache.db", tmp_path / "evidence")
     calls = []
 
@@ -91,11 +84,7 @@ def test_no_ptr_is_cached_so_it_is_looked_up_once(net_cfg, tmp_path, monkeypatch
 
 
 def test_a_timeout_is_cached_only_briefly(net_cfg, tmp_path, monkeypatch):
-    """A timeout still gets remembered, or a burst of mail re-stalls on each message.
-
-    It is remembered for minutes rather than hours, because it records "we could
-    not find out" and not "there is no PTR".
-    """
+    """A timeout is remembered for minutes, not hours: it is not a "no PTR" answer."""
     store = Store(tmp_path / "cache.db", tmp_path / "evidence")
     written: list[tuple[str, object, int]] = []
     real_cache_set = geoip_mapper.cache_set

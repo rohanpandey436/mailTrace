@@ -702,13 +702,11 @@ class AnalyzeResponse(BaseModel):
 
 
 class JobSummary(BaseModel):
-    """What a finished analysis job reports back.
+    """What a finished analysis job reports.
 
-    A summary rather than the whole ``AnalysisResult``: the case is already in
-    the database, so a client that wants the detail reads
-    ``/api/emails/{email_id}`` and gets it through the same masking every other
-    read applies.  A full result would also mean unmasked PII sitting in the
-    result backend until it expires.
+    A summary, not the full ``AnalysisResult``: the case is read back through
+    ``/api/emails/{email_id}`` with masking, and a full result would leave
+    unmasked PII in the result backend.
     """
 
     email_id: str
@@ -727,9 +725,8 @@ class JobStatus(BaseModel):
     filename: str = Field(default="", description="Echoed from the submission; blank when the id is unknown here")
     state: str = Field(
         description=(
-            "Celery's own vocabulary: PENDING, STARTED, SUCCESS, FAILURE, RETRY, REVOKED. "
-            "PENDING means the broker has never heard of this id, which covers both "
-            "'queued, not started' and 'no such job' - they are genuinely indistinguishable."
+            "Celery state: PENDING, STARTED, SUCCESS, FAILURE, RETRY, REVOKED. "
+            "PENDING also covers an unknown id."
         )
     )
     result: JobSummary | None = None

@@ -1,28 +1,16 @@
 /*
- * Tailwind entry point. Built by frontend/build_css.py into css/app.css, which
- * is what index.html loads and what is committed - MailTrace has no Node and no
- * bundler, so the standalone Tailwind CLI runs this and every deployment serves
- * the result without a toolchain.
+ * Tailwind entry point. frontend/build_css.py compiles this into css/app.css,
+ * which index.html loads and which is committed (no Node or bundler here).
  *
- * The design tokens live in the @theme block below rather than in a separate
- * :root, which is the whole point of the integration: Tailwind emits each one
- * as a CSS variable AND generates the matching utilities from it, so
- * `var(--color-brand)` in a component and `bg-brand` in the markup are the same
- * colour by construction, and js/theme.js keeps reading them off :root for
- * Leaflet and Cytoscape exactly as before.
+ * The design tokens live in the @theme block so Tailwind emits each one as a
+ * CSS variable and generates the matching utilities: var(--color-brand) in a
+ * component and bg-brand in the markup are the same value, and js/theme.js
+ * reads them off :root for Leaflet and Cytoscape.
  *
- * Layer order is declared first so it does not depend on import order:
- *
- *   theme       the tokens
- *   base        Tailwind's preflight, then this project's own reset on top
- *   components  the hand-written component classes (.card, .btn, .table, ...)
- *   utilities   Tailwind's utilities, which therefore win over a component
- *               class - a `mt-0` in the markup beats the component's margin,
- *               which is the behaviour that makes utilities usable at all
- *
- * vendor.css is deliberately left unlayered, so it outranks every layer. It
- * exists to override Leaflet's and Cytoscape's own stylesheets, which are
- * loaded from a CDN and are themselves unlayered.
+ * Layers, in cascade order: theme (tokens), base (preflight, then this
+ * project's reset), components (the hand-written classes), utilities. A
+ * utility in the markup therefore beats a component rule. vendor.css is left
+ * unlayered so it outranks the CDN stylesheets it overrides.
  */
 @layer theme, base, components, utilities;
 
@@ -34,31 +22,15 @@
 @import "tailwindcss/utilities.css" layer(utilities);
 @import "./vendor.css";
 
-/*
- * Which files Tailwind scans for class names. Explicit because the default
- * heuristic starts from the CSS file's directory, which would be css/ and would
- * find nothing: every class name in this project is written in a JS template
- * literal under js/, or in index.html.
- */
+/* Class names live in JS template literals under js/ and in index.html. */
 @source "../index.html";
 @source "../js/**/*.js";
 
 /*
- * On the shared namespace, since it surprises people.
- *
- * Tailwind extracts candidate class names from the source text, and this
- * project's markup lives in JS template literals, so it also finds identifiers
- * that were never class names - `array.filter(` yields a `.filter` utility, and
- * the word "container" yields `.container`. It likewise regenerates names this
- * project already defines: `.grid`, `.table`, `.truncate`, `.text-ok`.
- *
- * Checked rather than assumed, in the browser across every route: no element
- * carries any of the invented names, and where a name does collide the two
- * definitions agree - `.truncate` is the same three properties either way, and
- * `.text-ok` resolves to the same var(--color-ok), because both now come from
- * the same token. A prefix (`@import "tailwindcss" prefix(tw)`) would rule the
- * overlap out by construction; it is not used here because the overlap is
- * empty in practice and the prefix would make every utility unreadable.
+ * Tailwind scans source text, so identifiers such as `array.filter(` and the
+ * word "container" also yield utilities, and it regenerates names this project
+ * defines (.grid, .table, .truncate, .text-ok). No element uses the invented
+ * names and the colliding definitions are identical, so no prefix is used.
  */
 
 /*
@@ -67,13 +39,10 @@
  * Every colour, size, radius and shadow the dashboard uses is named here once.
  * No other stylesheet, and no JavaScript module, carries a literal value:
  * components read tokens, and the map and graph libraries read them through
- * js/theme.js. The palette is a single, deliberately light theme - this is an
- * analyst's tool that is read for long stretches.
+ * js/theme.js. The palette is a single, deliberately light theme.
  *
- * `static` because Tailwind otherwise emits only the variables its utilities
- * reference. js/theme.js reads several of these at runtime with
- * getComputedStyle, and a variable that is not in the output is not there to be
- * read - the map and the graph would lose their colours.
+ * @theme static: js/theme.js reads several of these at runtime, and Tailwind
+ * otherwise emits only the variables its utilities reference.
  */
 @theme static {
   --color-paper: #f7f8fa;
@@ -140,11 +109,7 @@
   --shadow-lg: 0 12px 28px rgba(16, 24, 40, 0.12);
 }
 
-/*
- * The rest of the tokens. These have no Tailwind namespace - there is no
- * utility that would sensibly be generated from a stacking order or the width
- * of the navigation rail - so they are plain variables the stylesheets read.
- */
+/* Tokens with no Tailwind namespace: plain variables the stylesheets read. */
 :root {
   color-scheme: light;
 
@@ -181,12 +146,7 @@
 }
 
 @layer base {
-  /*
-   * Preflight removes list markers, on the reasoning that most lists in an
-   * application are navigation. The four lists this dashboard renders are all
-   * prose - the "how do I save an email?" steps, the attribution reasoning, the
-   * findings - so the markers come back. base.css already restores the padding.
-   */
+  /* Preflight removes list markers; every list this dashboard renders is prose. */
   ul {
     list-style: disc;
   }

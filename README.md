@@ -536,7 +536,7 @@ event.
 
 ## 8. Quick start
 
-Requirements: Python 3.11 or newer and internet access for the first
+Requirements: Python 3.13 or newer and internet access for the first
 `pip install`. The classifier is trained from the seed corpus on first start (a
 few seconds) and cached in `backend/data/model.joblib`.
 

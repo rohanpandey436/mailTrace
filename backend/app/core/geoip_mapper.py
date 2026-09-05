@@ -135,11 +135,9 @@ _MAIL_SERVICE_EGRESS: tuple[tuple[str, tuple[str, ...]], ...] = (
 _TOR_LOCK = threading.Lock()
 _tor_memo: tuple[float, set[str]] = (0.0, set())  # (monotonic expiry, exit IPs)
 
-#: Cap on the PTR lookup, independent of cfg.lookup_timeout. A PTR that exists
-#: answers in milliseconds; waiting seconds only prolongs the ones that do not.
+#: Cap on the PTR wait; a PTR that exists answers in milliseconds.
 _RDNS_TIMEOUT_SECONDS = 1.5
-#: How long a *timed out* PTR lookup is remembered. Deliberately minutes rather
-#: than hours: it records "we could not find out", not "there is no PTR".
+#: A timed-out PTR lookup is remembered briefly; it is not a "no PTR" answer.
 _RDNS_TIMEOUT_TTL_SECONDS = 300
 
 _MAXMIND_LOCK = threading.Lock()
@@ -250,20 +248,12 @@ def is_public_ip(ip: str) -> bool:
 def reverse_dns(ip: str, cfg: Settings) -> str | None:
     """Reverse (PTR) name of an IP, lowercase.
 
-    Three outcomes, and the caller must tell them apart: the name, ``""`` when
-    the resolver answered that there is no PTR, and ``None`` when the lookup
-    timed out - which is not an answer and must not be remembered as one.
-
-    ``socket.gethostbyaddr`` has no timeout of its own, so it runs on a worker
-    thread whose result we stop waiting for.  A stalled resolver thread may
-    linger briefly but never blocks the pipeline.
-
-    The wait is capped well below ``cfg.lookup_timeout``.  A PTR that exists
-    comes back in milliseconds - 8.8.8.8 and 1.1.1.1 both answer in about 10 ms
-    - while an address with no PTR is chased through the delegation chain and
-    can take 15 seconds to say so.  Waiting the full lookup budget therefore
-    buys almost no real names and costs seconds on every message from an origin
-    that has no PTR, which describes most of them.
+    Returns the name, ``""`` when the resolver answered that there is none, and
+    ``None`` when the lookup timed out, which must not be cached as an answer.
+    ``socket.gethostbyaddr`` has no timeout, so it runs on a worker thread that
+    is abandoned after ``_rdns_timeout``.  The wait is capped below
+    ``cfg.lookup_timeout``: an existing PTR answers in milliseconds, while an
+    address without one can take 15 seconds to say so.
     """
     ip = _normalize_ip(ip)
     if not ip or not cfg.enable_network:
@@ -672,16 +662,9 @@ def abuseipdb_check(ip: str, cfg: Settings, store: Store | None) -> int | None:
 def _cached_reverse_dns(ip: str, cfg: Settings, store: Store | None) -> str:
     """PTR name through the Store cache.
 
-    A definite answer - a name, or the resolver saying there is no PTR - is
-    cached for the usual period.  A timeout is not an answer, so it is cached
-    only briefly: long enough that a burst of messages from one origin does not
-    each stall on the same dead lookup, short enough that a resolver having a
-    bad minute is retried rather than written off for the rest of the day.
-
-    Caching the negative at all is the point.  It previously was not, on the
-    reasoning that an empty result might be a timeout - correct, but it meant
-    every message from an address with no PTR paid the full timeout again, for
-    a supplementary signal.
+    A definite answer, name or no-PTR, is cached for the usual period.  A
+    timeout is cached for ``_RDNS_TIMEOUT_TTL_SECONDS`` so a burst of mail from
+    one origin does not stall on the same lookup, and is retried after that.
     """
     key = f"rdns:{ip}"
     cached = cache_get(store, key)

@@ -58,15 +58,9 @@ services:
         sync: false
       - key: MAILTRACE_MAXMIND_DB
         value: /opt/render/project/src/backend/data/GeoLite2-City.mmdb
-      # Celery broker and result backend (app/tasks.py). Create a Render Key
-      # Value instance and paste its internal connection string here; the
-      # service then runs POST /api/analyze/async as a real queue, with a
-      # worker embedded in this process (MAILTRACE_QUEUE_WORKERS, default 1).
-      # A separate Background Worker is the shape that scales, but it is a paid
-      # service, so one container is both API and worker on the free tier.
-      #
-      # Leave it unset and the async endpoint still works: Celery executes
-      # eagerly in the request process. /api/health reports which one is
-      # running, so nobody has to infer it.
+      # Celery broker and result backend (app/tasks.py). Paste a Render Key Value
+      # instance's internal URL; the service then runs a worker in this process
+      # (MAILTRACE_QUEUE_WORKERS, default 1). Unset, the async endpoint still
+      # works: Celery executes eagerly. /api/health reports which.
       - key: MAILTRACE_REDIS_URL
         sync: false

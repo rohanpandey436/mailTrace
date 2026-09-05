@@ -151,10 +151,7 @@ NATIVE_ENGINE: bool = False
 NATIVE_ENGINE_VERSION: str = ""
 #: Human-readable explanation of the above, for logs and ``/api/health``.
 NATIVE_ENGINE_STATUS: str = "not installed"
-#: Which SHA-256 the engine was compiled against - "openssl" when it links
-#: libcrypto, "builtin" when it uses the bundled FIPS 180-4 implementation.
-#: Both produce identical digests; this only says which code computed them,
-#: which an evidence report is entitled to state precisely.
+#: Which SHA-256 the engine links: "openssl" or "builtin". Digests are identical.
 NATIVE_ENGINE_SHA256: str = ""
 
 _native: _NativeEngine | None = None
@@ -419,8 +416,7 @@ def _activate_native_engine() -> None:
     NATIVE_ENGINE = True
     NATIVE_ENGINE_VERSION = version
     NATIVE_ENGINE_STATUS = "active"
-    # Absent on an engine built before the backend was selectable at compile
-    # time; "builtin" is the honest reading of that, not a failure.
+    # Older engines have no SHA256_BACKEND attribute; they use the built-in code.
     NATIVE_ENGINE_SHA256 = str(getattr(mailtrace_engine, "SHA256_BACKEND", "builtin"))
     log.info(
         "mailtrace_engine %s active for Stage 2 MIME dissection (SHA-256: %s)",

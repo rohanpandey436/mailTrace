@@ -40,9 +40,7 @@ except ImportError:  # pragma: no cover - build-time only
 # Honour CPU count for the four translation units; harmless if unsupported.
 ParallelCompile("MAILTRACE_BUILD_JOBS", default=0).install()
 
-#: A program that fails to compile or link unless OpenSSL's EVP interface is
-#: really usable - the header alone proves nothing, since the library still has
-#: to be findable and ABI-compatible.
+#: Compiles and links, so a header without a usable library still fails.
 _OPENSSL_PROBE = """
 #include <openssl/evp.h>
 int main(void) {
@@ -54,17 +52,12 @@ int main(void) {
 
 
 def openssl_usable() -> bool:
-    """Whether this toolchain can actually build against libcrypto.
+    """Whether this toolchain can compile and link against libcrypto.
 
-    Probed by compiling and linking, the way a configure script would, because
-    a header that exists is not the same as a library that links.  Guessing
-    wrong is expensive: claiming OpenSSL when it is unusable fails the whole
-    extension build, and the backend then falls back to the pure-Python parser
-    - a far bigger loss than which SHA-256 implementation is used.
-
-    MAILTRACE_OPENSSL=0 skips the probe.  =1 turns an unusable OpenSSL into a
-    build error instead of a silent fallback, which is what CI and the Docker
-    image want: there, "no OpenSSL" is a regression, not a valid outcome.
+    A wrong guess fails the whole extension build and drops the backend to the
+    pure-Python parser, so this probes like a configure script instead of
+    checking for a header.  MAILTRACE_OPENSSL=0 skips the probe; =1 makes an
+    unusable OpenSSL a build error, which is what CI and the Docker image use.
     """
     setting = os.environ.get("MAILTRACE_OPENSSL", "").strip().lower()
     if setting in {"0", "false", "no", "off"}:
