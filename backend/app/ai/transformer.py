@@ -116,6 +116,39 @@ class TransformerClassifier:
         return max(scores.items(), key=lambda item: item[1])[0], scores
 
 
+#: Whitespace tokens occluded per message. Each is one forward pass, and they
+#: are batched, so this is the knob that decides what explanation costs.
+OCCLUSION_TOKENS = 40
+#: Named wherever these surface: they are ablation deltas, not Shapley values.
+ATTRIBUTION_METHOD = "occlusion"
+
+
+def occlusion_attributions(
+    classifier: TransformerClassifier, text: str, label: str, base_probability: float
+) -> list[tuple[str, float]]:
+    """How far p(label) falls when each token is removed, strongest first.
+
+    Honest and model-agnostic, but *not* a Shapley value: this is a single-order
+    ablation, not an average over coalitions. The linear backend gets exact SHAP
+    because a linear model has a closed form; a transformer does not, so it gets
+    this and everything that renders it says which it is.
+
+    Repeated tokens keep their strongest attribution.
+    """
+    tokens = (text or "").split()
+    head = tokens[:OCCLUSION_TOKENS]
+    if not head:
+        return []
+    best: dict[str, float] = {}
+    for index, token in enumerate(head):
+        without = " ".join(tokens[:index] + tokens[index + 1 :])
+        _, scores = classifier.predict(without)
+        delta = float(base_probability) - float(scores.get(label, 0.0))
+        if abs(delta) > abs(best.get(token, 0.0)):
+            best[token] = delta
+    return sorted(best.items(), key=lambda item: -abs(item[1]))
+
+
 def available(directory: Path = BUNDLED) -> bool:
     """Whether a usable model is present, without forcing a full load path."""
     return TransformerClassifier.load(directory) is not None

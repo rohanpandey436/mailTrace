@@ -117,9 +117,17 @@ class Settings:
     # build is picked up automatically - the build knows where it put the file,
     # so nobody has to configure the path as well as the licence key.
     maxmind_db: str = ""
-    # Stage 3A: set to a DistilRoBERTa (or other) sequence-classification model to
-    # use a transformer instead of the bundled TF-IDF classifier. Requires the
-    # optional `transformers` and `torch` packages; see requirements-ml.txt.
+    # Stage 3A: run the bundled DistilRoBERTa (app/ai/distilroberta-onnx) instead
+    # of the TF-IDF classifier. OFF by default, and the reason is measured rather
+    # than assumed: on a held-out fifth of the seed corpus the linear model
+    # scores 0.94 and the int8 transformer 0.92, while the transformer costs
+    # ~162 MB of RSS and ~24 ms a message. 249 examples is not enough to fine-tune
+    # 82M parameters, and the free tier has 512 MB. Set MAILTRACE_TRANSFORMER=1
+    # to use it anyway; app/ai/transformer_trainer.py rebuilds the model.
+    transformer_enabled: bool = False
+    # A Hugging Face model id for the older torch-backed path; needs the optional
+    # `transformers` and `torch` packages (requirements-ml.txt). Almost always
+    # left empty - the bundled ONNX model above needs neither.
     transformer_model: str = ""
     # Stage 4: the XGBoost URL/domain model that runs alongside the deterministic
     # link rules. On by default; `xgboost` is in requirements.txt (58 MB wheel,
@@ -236,6 +244,7 @@ class Settings:
             urlhaus_key=_env("URLHAUS_KEY", ""),
             virustotal_key=_env("VIRUSTOTAL_KEY", ""),
             maxmind_db=_env("MAXMIND_DB", "").strip() or _downloaded_geolite(),
+            transformer_enabled=_env_bool("TRANSFORMER", False),
             transformer_model=_env("TRANSFORMER_MODEL", ""),
             url_model_enabled=_env_bool("URL_MODEL", True),
             lime_enabled=_env_bool("LIME", True),

@@ -471,6 +471,32 @@ _ATTRIBUTION_METHOD = {"linear": "exact-shap-linear", "transformer": "occlusion"
 _ModelOutcome = tuple[str | None, dict[str, float], list[str], list[tuple[str, float]], str, str]
 
 
+def _run_bundled_transformer(text: str) -> _ModelOutcome | None:
+    """The bundled DistilRoBERTa, or None so the caller uses the linear model.
+
+    Off unless MAILTRACE_TRANSFORMER is set; see ``Settings.transformer_enabled``
+    for the measurement behind that default. Its attributions are occlusion
+    deltas rather than SHAP - a transformer has no closed form - and the backend
+    name carries that through to the UI and the report.
+    """
+    try:
+        from ..ai import transformer
+    except ImportError:  # pragma: no cover - ships with the app
+        return None
+    classifier = transformer.TransformerClassifier.load()
+    if classifier is None:
+        return None
+    try:
+        label, probabilities = classifier.predict(text)
+        attributions = transformer.occlusion_attributions(classifier, text, label, probabilities.get(label, 0.0))
+    except Exception:  # a model failure must never abort the analysis
+        log.exception("the bundled transformer failed; using the linear classifier")
+        return None
+    top_terms = [token for token, weight in attributions if weight > 0][:8]
+    name = f"distilroberta-onnx-int8 ({transformer.ATTRIBUTION_METHOD} attribution)"
+    return label, probabilities, top_terms, attributions[:_SHAP_TOP_K], name, "transformer"
+
+
 def _run_model(text: str, cfg: Settings) -> _ModelOutcome:
     """(label, probabilities, top terms, token attributions, model name, backend).
 
@@ -488,6 +514,11 @@ def _run_model(text: str, cfg: Settings) -> _ModelOutcome:
     except ImportError as exc:  # pragma: no cover - the package ships with the app
         log.warning("ML package unavailable (%s); using rule heuristics", exc)
         return None, {}, [], [], "unavailable", "unavailable"
+
+    if getattr(cfg, "transformer_enabled", False):
+        bundled = _run_bundled_transformer(text)
+        if bundled is not None:
+            return bundled
 
     model_id = (getattr(cfg, "transformer_model", "") or "").strip()
     if model_id:
