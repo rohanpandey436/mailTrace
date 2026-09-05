@@ -19,3 +19,11 @@
 *.onnx binary
 *.mmdb binary
 *.joblib binary
+
+# The Tailwind build output is byte-compared in CI (frontend/build_css.py
+# --check), and Tailwind copies the source stylesheets through verbatim - so
+# the line endings of the inputs end up in the output. Left to `text=auto`
+# these files would be CRLF in a Windows checkout and LF in a Linux one, the
+# check would compare bytes that differ for a reason nobody changed, and CI
+# would fail on a clean tree. Exactly the trap the .eml fixtures fell into.
+frontend/css/*.css -text
