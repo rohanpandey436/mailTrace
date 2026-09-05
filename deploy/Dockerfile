@@ -12,6 +12,10 @@
 #     PROJECT_DIR = /app                (frontend/, samples/*.eml)
 # Moving either directory without changing config.py will 404 the dashboard.
 #
+# Unlike a plain `pip install -r requirements.txt` deployment, this image also
+# carries the compiled C++20 engine, built against OpenSSL.  The toolchain that
+# builds it stays in the builder stage; only the .so reaches the runtime image.
+#
 # Verified by CI, not by inspection: .github/workflows/ci.yml builds this image
 # on every push, starts it, waits for /api/health, analyses a sample through it
 # and checks the dashboard is served.  The development machine has no hardware
@@ -35,6 +39,18 @@ ENV PATH="/opt/venv/bin:$PATH"
 COPY backend/requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
+# The C++20 engine.  Its toolchain is installed only now, so the claim above -
+# that requirements.txt resolves to wheels alone - keeps failing loudly if it
+# ever stops being true.  build-essential and libssl-dev never leave this
+# stage: the compiled extension travels to the runtime image inside /opt/venv.
+RUN apt-get update     && apt-get install -y --no-install-recommends build-essential libssl-dev     && rm -rf /var/lib/apt/lists/*
+
+# MAILTRACE_OPENSSL=1 turns an unusable libcrypto into a build failure instead
+# of a silent fall back to the built-in SHA-256, so the image cannot quietly
+# ship a different hash implementation than the one it claims.
+COPY engine/ /tmp/engine/
+RUN MAILTRACE_OPENSSL=1 pip install --no-cache-dir /tmp/engine     && rm -rf /tmp/engine     && python -c "import mailtrace_engine as e; assert e.SHA256_BACKEND == 'openssl', e.SHA256_BACKEND; print('engine built,', e.SHA256_BACKEND, 'SHA-256')"
+
 # --------------------------------------------------------------------------- #
 # Stage 2: runtime.
 # --------------------------------------------------------------------------- #
@@ -51,6 +67,12 @@ ENV PATH="/opt/venv/bin:$PATH" \
     MAILTRACE_HOST=0.0.0.0
 
 COPY --from=builder /opt/venv /opt/venv
+
+# python:3.13-slim ships libcrypto.so.3 for its own ssl module, so the engine's
+# only non-libc dependency resolves here without apt.  Checked rather than
+# assumed: an extension that imports in the builder and not in the runtime is
+# exactly the failure this stage exists to catch.
+RUN python -c "import hashlib, mailtrace_engine as e; assert e.SHA256_BACKEND == 'openssl', e.SHA256_BACKEND; assert e.sha256(b'mailtrace') == hashlib.sha256(b'mailtrace').hexdigest(); print('engine loads in runtime image,', e.SHA256_BACKEND, 'SHA-256')"
 
 # uid/gid are pinned so a bind-mounted data directory has predictable ownership.
 RUN groupadd --gid 10001 mailtrace \

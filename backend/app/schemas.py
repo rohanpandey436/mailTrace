@@ -739,3 +739,7 @@ class HealthStatus(BaseModel):
     native_engine: bool = Field(description="Whether the C++ dissector is doing the MIME work")
     native_engine_version: str
     native_engine_status: str
+    native_engine_sha256: str = Field(
+        default="",
+        description='Which SHA-256 the engine links: "openssl", "builtin", or "" when the engine is not in use',
+    )

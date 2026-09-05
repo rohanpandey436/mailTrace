@@ -172,6 +172,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             native_engine=parser.NATIVE_ENGINE,
             native_engine_version=parser.NATIVE_ENGINE_VERSION,
             native_engine_status=parser.NATIVE_ENGINE_STATUS,
+            native_engine_sha256=parser.NATIVE_ENGINE_SHA256,
         )
 
     _mount_dashboard(app, cfg.static_dir)

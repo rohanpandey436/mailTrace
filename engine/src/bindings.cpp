@@ -225,6 +225,8 @@ PYBIND11_MODULE(mailtrace_engine, m) {
 
     m.attr("__version__") = kVersion;
     m.attr("DISSECT_SCHEMA") = kDissectSchema;
+    // "openssl" or "builtin"; see mailtrace/sha256.hpp.
+    m.attr("SHA256_BACKEND") = mailtrace::sha256_backend();
 
     m.def("dissect", &dissect_binding, py::arg("raw"),
           "Structural dissection of a raw message.  Returns\n"
@@ -239,7 +241,8 @@ PYBIND11_MODULE(mailtrace_engine, m) {
 
     m.def(
         "sha256", [](const std::string& data) { return mailtrace::sha256_hex(data); }, py::arg("data"),
-        "Lower-case hex SHA-256 of a byte string (FIPS 180-4, no OpenSSL dependency).");
+        "Lower-case hex SHA-256 of a byte string (FIPS 180-4).  Computed by OpenSSL's "
+        "EVP_Digest or by the bundled implementation; SHA256_BACKEND says which.");
 
     m.def(
         "shannon_entropy", [](const std::string& data) { return mailtrace::shannon_entropy(data); },

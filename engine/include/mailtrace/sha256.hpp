@@ -2,13 +2,16 @@
 //
 // FIPS 180-4 SHA-256, implemented from the specification.
 //
-// The pitch deck's tech-stack slide lists OpenSSL for this.  A self-contained
-// ~150 line implementation is used instead so that the extension builds on any
-// C++20 toolchain with no external library, no headers to locate and no ABI to
-// match.  SHA-256 is a fully specified, fixed algorithm; there is no security
-// benefit to linking a large TLS library just to obtain it, and every build
-// environment that lacks a correctly configured OpenSSL would otherwise lose
-// the whole engine.  See engine/README.md for the same note in prose.
+// Two backends, chosen at build time by setup.py.  With OpenSSL's headers
+// present the one-shot `sha256_hex` - which is every hash the engine actually
+// produces - calls EVP_Digest, and `sha256_backend()` reports "openssl".
+// Without them the self-contained implementation below runs instead and reports
+// "builtin", so the extension still builds on any C++20 toolchain with no
+// external library, no headers to locate and no ABI to match.
+//
+// The from-specification code is not dead in either case: it stays compiled,
+// and both paths are checked against Python's hashlib, so a build can never
+// quietly disagree with the interpreter about what SHA-256 is.
 #ifndef MAILTRACE_SHA256_HPP
 #define MAILTRACE_SHA256_HPP
 
@@ -51,6 +54,9 @@ class Sha256 {
     std::size_t buffered_{0};
     std::uint64_t length_bits_{0};
 };
+
+/// Which implementation this build uses: "openssl" or "builtin".
+[[nodiscard]] const char* sha256_backend() noexcept;
 
 /// One-shot convenience wrapper: lower-case hex SHA-256 of a byte range.
 [[nodiscard]] std::string sha256_hex(const std::uint8_t* data, std::size_t len);

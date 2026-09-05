@@ -151,6 +151,11 @@ NATIVE_ENGINE: bool = False
 NATIVE_ENGINE_VERSION: str = ""
 #: Human-readable explanation of the above, for logs and ``/api/health``.
 NATIVE_ENGINE_STATUS: str = "not installed"
+#: Which SHA-256 the engine was compiled against - "openssl" when it links
+#: libcrypto, "builtin" when it uses the bundled FIPS 180-4 implementation.
+#: Both produce identical digests; this only says which code computed them,
+#: which an evidence report is entitled to state precisely.
+NATIVE_ENGINE_SHA256: str = ""
 
 _native: _NativeEngine | None = None
 
@@ -373,6 +378,7 @@ _SELF_CHECK_FIXTURES: tuple[tuple[bytes, bool], ...] = (
 def _activate_native_engine() -> None:
     """Import the extension and let it run only if it earns the right to."""
     global _native, NATIVE_ENGINE, NATIVE_ENGINE_VERSION, NATIVE_ENGINE_STATUS
+    global NATIVE_ENGINE_SHA256
 
     if not _native_enabled_by_env():
         NATIVE_ENGINE_STATUS = "disabled by MAILTRACE_NATIVE_ENGINE"
@@ -413,7 +419,14 @@ def _activate_native_engine() -> None:
     NATIVE_ENGINE = True
     NATIVE_ENGINE_VERSION = version
     NATIVE_ENGINE_STATUS = "active"
-    log.info("mailtrace_engine %s active for Stage 2 MIME dissection", version)
+    # Absent on an engine built before the backend was selectable at compile
+    # time; "builtin" is the honest reading of that, not a failure.
+    NATIVE_ENGINE_SHA256 = str(getattr(mailtrace_engine, "SHA256_BACKEND", "builtin"))
+    log.info(
+        "mailtrace_engine %s active for Stage 2 MIME dissection (SHA-256: %s)",
+        version,
+        NATIVE_ENGINE_SHA256,
+    )
 
 
 def engine_status() -> dict[str, object]:
@@ -422,6 +435,7 @@ def engine_status() -> dict[str, object]:
         "native_engine": NATIVE_ENGINE,
         "native_engine_version": NATIVE_ENGINE_VERSION,
         "native_engine_status": NATIVE_ENGINE_STATUS,
+        "native_engine_sha256": NATIVE_ENGINE_SHA256,
         "parsed_native": _native_stats["native"],
         "parsed_python": _native_stats["python"],
         "native_declined": _native_stats["declined"],

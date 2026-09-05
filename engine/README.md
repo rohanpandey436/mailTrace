@@ -25,13 +25,30 @@ affects you.
 
 ### On OpenSSL
 
-The deck's tech-stack slide lists OpenSSL. SHA-256 is implemented directly in
-`src/sha256.cpp` instead (about 150 lines, transcribed from FIPS 180-4). That
-is a deliberate choice, not a shortcut: SHA-256 is a fixed, fully specified
-algorithm with no security benefit to linking a large TLS library, and every
-build host with a missing or mismatched OpenSSL would otherwise lose the whole
-extension. The result is a build with **zero external library dependencies**
-beyond pybind11 and a C++20 compiler.
+`sha256()` has two backends, chosen at build time. Where OpenSSL's development
+headers are available it calls `EVP_Digest` and links `libcrypto`; where they
+are not it uses the FIPS 180-4 implementation in `src/sha256.cpp` (about 150
+lines). `mailtrace_engine.SHA256_BACKEND` reports which one a given build got,
+and `/api/health` surfaces it as `native_engine_sha256`.
+
+Both are always compiled and both are tested, because the fallback is not a
+consolation prize: a host with a missing or mismatched OpenSSL would otherwise
+lose the entire extension, and losing the C++ parser to gain a hash backend is
+a bad trade. The digests are identical either way, which matters because a
+chain-of-custody ledger written by one build has to verify under the other.
+
+`setup.py` decides by compiling and linking a probe program, not by looking for
+a header, since a header that exists is not a library that links. Three modes:
+
+| `MAILTRACE_OPENSSL` | Behaviour |
+|---|---|
+| unset | Probe; use OpenSSL if it works, the built-in implementation if not. |
+| `1` | Require OpenSSL. An unusable one fails the build instead of falling back. |
+| `0` | Skip the probe and use the built-in implementation. |
+
+The deployment image and the `engine` CI job both build with `=1`, so neither
+can quietly ship the implementation it did not intend. CI additionally asserts
+the digests match `hashlib` across every SHA-256 block boundary.
 
 **It is verified against `hashlib`.** `test_extension_sha256_matches_hashlib`
 in `backend/tests/test_native_engine.py` compares this implementation with the

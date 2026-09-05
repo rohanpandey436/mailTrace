@@ -8,6 +8,11 @@
 
 #include <cstring>
 
+#ifdef MAILTRACE_USE_OPENSSL
+#include <openssl/evp.h>
+#include <stdexcept>
+#endif
+
 namespace mailtrace {
 namespace {
 
@@ -180,11 +185,34 @@ std::string Sha256::to_hex(const Digest& digest) {
 
 std::string Sha256::hex() const { return to_hex(digest()); }
 
+#ifdef MAILTRACE_USE_OPENSSL
+// Every hash the engine actually produces goes through this one-shot form, so
+// it is the whole of the OpenSSL surface: EVP_Digest is a single call with no
+// context to own or free. The from-specification implementation above stays
+// compiled and stays tested, and is what runs wherever OpenSSL's headers are
+// not present at build time - which is most Windows machines. Both paths are
+// checked against Python's hashlib by tests/test_native_engine.py, so a build
+// cannot quietly disagree with the interpreter about what SHA-256 is.
+const char* sha256_backend() noexcept { return "openssl"; }
+
+std::string sha256_hex(const std::uint8_t* data, std::size_t len) {
+    Sha256::Digest digest{};
+    unsigned int written = 0;
+    if (EVP_Digest(data, len, digest.data(), &written, EVP_sha256(), nullptr) != 1 ||
+        written != digest.size()) {
+        throw std::runtime_error("OpenSSL EVP_Digest failed for SHA-256");
+    }
+    return Sha256::to_hex(digest);
+}
+#else
+const char* sha256_backend() noexcept { return "builtin"; }
+
 std::string sha256_hex(const std::uint8_t* data, std::size_t len) {
     Sha256 hasher;
     hasher.update(data, len);
     return hasher.hex();
 }
+#endif
 
 std::string sha256_hex(std::string_view data) {
     return sha256_hex(reinterpret_cast<const std::uint8_t*>(data.data()), data.size());
