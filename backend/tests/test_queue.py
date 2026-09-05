@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import time
+from dataclasses import replace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -51,6 +52,30 @@ def test_eager_mode_is_the_default(cfg):
     # would answer PENDING forever. Asserted because it is easy to lose.
     assert configured.conf.task_store_eager_result is True
     assert "eager" in tasks.queue_status(cfg)
+
+
+def test_reconfiguring_repoints_the_backend(cfg):
+    """configure() must move the live backend, not just the configuration.
+
+    Celery caches the result backend on first use, so setting result_expires
+    and result_backend alone left the application publishing to one place and
+    reading from another - every job stayed PENDING forever. The fix reaches
+    into Celery internals, so this asserts the effect rather than the
+    mechanism: a release that renames those attributes fails here.
+    """
+    tasks.configure(cfg)
+    assert type(tasks.celery_app.backend).__name__ == "CacheBackend"
+
+    with_broker = replace(cfg, redis_url="redis://127.0.0.1:6379/0")
+    tasks.configure(with_broker)
+    try:
+        # Constructed, not connected: nothing here talks to Redis.
+        assert type(tasks.celery_app.backend).__name__ == "RedisBackend"
+        assert tasks.celery_app.conf.task_always_eager is False
+    finally:
+        tasks.configure(cfg)
+    assert type(tasks.celery_app.backend).__name__ == "CacheBackend"
+    assert tasks.celery_app.conf.task_always_eager is True
 
 
 def test_async_upload_returns_jobs_that_resolve(client, sample):
@@ -121,6 +146,33 @@ def test_unknown_and_malformed_job_ids(client):
 
     assert client.get("/api/jobs", params={"ids": ""}).status_code == 422
     assert client.get("/api/jobs", params={"ids": ",".join(["00000000-0000-4000-8000-000000000000"] * 101)}).status_code == 422
+
+
+def test_an_unreachable_broker_is_refused_rather_than_waited_on(cfg, sample):
+    """A dead Redis must fail the upload quickly and say so.
+
+    Celery's default publish-retry policy keeps trying for minutes, which would
+    leave the request hanging and the analyst with no idea why. The endpoint
+    answers 503 instead, and points at the synchronous endpoint that still
+    works.
+    """
+    # Port 1 is reserved; nothing listens there, so the connection is refused
+    # immediately rather than timing out. queue_workers=0 keeps this test from
+    # leaving a worker thread behind retrying a broker that will never exist.
+    broken = replace(cfg, redis_url="redis://127.0.0.1:1/0", queue_workers=0)
+    app = create_app(broken)
+    started = time.monotonic()
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/analyze/async",
+            files=[("files", ("x.eml", sample("legit"), "message/rfc822"))],
+        )
+    elapsed = time.monotonic() - started
+
+    assert response.status_code == 503, response.text
+    assert "queue is unreachable" in response.text
+    assert elapsed < 30, f"took {elapsed:.1f}s; the retry policy is not bounded"
+    tasks.configure(cfg)  # leave the module pointed back at the default
 
 
 def test_health_reports_how_tasks_execute(client):

@@ -228,7 +228,16 @@ async def analyze_upload_async(
     for filename, raw in payloads:
         # apply_async talks to the broker over a socket, and in eager mode it
         # runs the whole analysis, so neither belongs on the event loop.
-        job_id = await run_in_threadpool(tasks.enqueue, raw, filename, actor)
+        try:
+            job_id = await run_in_threadpool(tasks.enqueue, raw, filename, actor)
+        except tasks.QueueUnavailable as exc:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    f"the task queue is unreachable, so nothing was accepted ({exc}). "
+                    "POST /api/analyze analyses without the queue."
+                ),
+            ) from exc
         jobs.append(JobStatus(**tasks.job_state(job_id), filename=filename))
     return AsyncAnalyzeResponse(jobs=jobs, queue=tasks.queue_status(settings))
 

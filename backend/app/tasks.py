@@ -114,6 +114,34 @@ def build_celery(cfg: Settings | None = None) -> Celery:
         # A message whose worker died is redelivered rather than lost.
         task_reject_on_worker_lost=True,
         broker_connection_retry_on_startup=True,
+        # A broker that has gone away must fail the upload quickly rather than
+        # block the thread that published to it. Two short retries and then an
+        # error the endpoint can turn into a 503; without this the default
+        # policy retries for minutes and the request simply hangs.
+        task_publish_retry_policy={
+            "max_retries": 2,
+            "interval_start": 0.0,
+            "interval_step": 0.2,
+            "interval_max": 0.5,
+        },
+        # Connection establishment only. socket_timeout is deliberately not set:
+        # it also applies to the worker's blocking read for the next message,
+        # where a timeout is normal rather than a fault.
+        broker_transport_options={"socket_connect_timeout": 5.0},
+        # The result backend keeps its own reconnect loop, and its default of 20
+        # retries with exponential backoff means a dead Redis takes over a
+        # minute to report itself - measured, not guessed. Publishing touches
+        # this backend too, so bounding only the publish policy above was not
+        # enough to stop an upload hanging.
+        result_backend_transport_options={
+            "socket_connect_timeout": 5.0,
+            "retry_policy": {
+                "max_retries": 2,
+                "interval_start": 0.0,
+                "interval_step": 0.2,
+                "interval_max": 0.5,
+            },
+        },
         # Celery's logging configuration otherwise replaces uvicorn's.
         worker_hijack_root_logger=False,
         task_always_eager=not broker,
@@ -149,6 +177,23 @@ def configure(cfg: Settings) -> None:
     celery_app.conf.result_backend = broker or _MEMORY_BACKEND
     celery_app.conf.task_always_eager = not broker
     celery_app.conf.result_expires = cfg.queue_result_ttl
+
+    # Rewriting the URLs is not enough. Celery builds the result backend on
+    # first use and caches it, and keeps a pool of broker connections, so an
+    # application that has already published or read a result goes on talking
+    # to whatever it was pointed at when it started: it would publish to Redis
+    # and then look the result up in the in-memory backend, and every job would
+    # read PENDING forever. That was an observed CI failure, not a theory.
+    #
+    # Celery offers no public way to drop either cache - `backend` is a plain
+    # property with no deleter - so this reaches into two private attributes.
+    # test_reconfiguring_repoints_the_backend asserts the effect rather than the
+    # mechanism, so a Celery release that renames them fails there loudly
+    # instead of quietly restoring the bug.
+    celery_app.close()  # returns the broker connection pool
+    celery_app._backend_cache = None
+    if getattr(celery_app._local, "backend", None) is not None:
+        celery_app._local.backend = None
 
 
 def bind_store(store: Store, cfg: Settings) -> None:
@@ -224,10 +269,32 @@ def analyze_message(self: Any, raw_b64: str, filename: str, actor: str) -> dict[
     }
 
 
+class QueueUnavailable(RuntimeError):
+    """The broker could not be reached, so nothing was queued."""
+
+
 def enqueue(raw: bytes, filename: str, actor: str) -> str:
-    """Queue one message for analysis; returns the job id to poll."""
+    """Queue one message for analysis; returns the job id to poll.
+
+    Raises ``QueueUnavailable`` when the broker is unreachable, so the endpoint
+    can say the queue is down rather than returning a job id for work that was
+    never accepted.
+    """
+    from kombu.exceptions import OperationalError
+
     payload = base64.b64encode(raw).decode("ascii")
-    return str(analyze_message.apply_async(args=[payload, filename, actor], queue=QUEUE_NAME).id)
+    try:
+        result = analyze_message.apply_async(args=[payload, filename, actor], queue=QUEUE_NAME)
+    # Publishing reaches both the broker and the result backend, and they fail
+    # differently: kombu raises OperationalError, while the backend exhausts its
+    # own retry loop and raises a bare RuntimeError. Both mean the same thing to
+    # a caller - nothing was accepted - so both become QueueUnavailable, with
+    # the original type kept in the message so a surprising one is still
+    # visible in the response and the log.
+    except (OperationalError, RuntimeError) as exc:
+        log.warning("could not queue %s: %s: %s", filename, type(exc).__name__, exc)
+        raise QueueUnavailable(f"{type(exc).__name__}: {exc}") from exc
+    return str(result.id)
 
 
 def job_state(job_id: str) -> dict[str, Any]:
