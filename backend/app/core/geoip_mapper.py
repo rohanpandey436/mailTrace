@@ -135,6 +135,13 @@ _MAIL_SERVICE_EGRESS: tuple[tuple[str, tuple[str, ...]], ...] = (
 _TOR_LOCK = threading.Lock()
 _tor_memo: tuple[float, set[str]] = (0.0, set())  # (monotonic expiry, exit IPs)
 
+#: Cap on the PTR lookup, independent of cfg.lookup_timeout. A PTR that exists
+#: answers in milliseconds; waiting seconds only prolongs the ones that do not.
+_RDNS_TIMEOUT_SECONDS = 1.5
+#: How long a *timed out* PTR lookup is remembered. Deliberately minutes rather
+#: than hours: it records "we could not find out", not "there is no PTR".
+_RDNS_TIMEOUT_TTL_SECONDS = 300
+
 _MAXMIND_LOCK = threading.Lock()
 # Opened readers keyed by absolute path.  A None value records "tried and
 # failed" so an absent package, a missing file or a corrupt database is logged
@@ -240,26 +247,46 @@ def is_public_ip(ip: str) -> bool:
     )
 
 
-def reverse_dns(ip: str, cfg: Settings) -> str:
-    """Reverse (PTR) name of an IP, lowercase; '' when there is none or on failure.
+def reverse_dns(ip: str, cfg: Settings) -> str | None:
+    """Reverse (PTR) name of an IP, lowercase.
+
+    Three outcomes, and the caller must tell them apart: the name, ``""`` when
+    the resolver answered that there is no PTR, and ``None`` when the lookup
+    timed out - which is not an answer and must not be remembered as one.
 
     ``socket.gethostbyaddr`` has no timeout of its own, so it runs on a worker
-    thread whose result we stop waiting for after ``cfg.lookup_timeout``.  A
-    stalled resolver thread may linger briefly but never blocks the pipeline.
+    thread whose result we stop waiting for.  A stalled resolver thread may
+    linger briefly but never blocks the pipeline.
+
+    The wait is capped well below ``cfg.lookup_timeout``.  A PTR that exists
+    comes back in milliseconds - 8.8.8.8 and 1.1.1.1 both answer in about 10 ms
+    - while an address with no PTR is chased through the delegation chain and
+    can take 15 seconds to say so.  Waiting the full lookup budget therefore
+    buys almost no real names and costs seconds on every message from an origin
+    that has no PTR, which describes most of them.
     """
     ip = _normalize_ip(ip)
     if not ip or not cfg.enable_network:
         return ""
     executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="mt-rdns")
     try:
-        host = executor.submit(socket.gethostbyaddr, ip).result(timeout=_timeout(cfg))[0]
-    except (OSError, TimeoutError):  # herror/gaierror (no PTR), or the lookup timed out
-        log.debug("reverse DNS for %s failed or timed out", ip)
+        host = executor.submit(socket.gethostbyaddr, ip).result(timeout=_rdns_timeout(cfg))[0]
+    except TimeoutError:  # inconclusive: the resolver never answered
+        log.debug("reverse DNS for %s timed out", ip)
+        return None
+    except OSError:  # herror/gaierror: the resolver answered, there is no PTR
+        log.debug("reverse DNS for %s: no PTR record", ip)
         return ""
     finally:
         executor.shutdown(wait=False)
     host = host.strip().rstrip(".").lower()
     return "" if host == ip else host
+
+
+def _rdns_timeout(cfg: Settings) -> float:
+    """The PTR wait: the cap above, or the lookup budget when that is smaller."""
+    budget = _timeout(cfg)
+    return min(_RDNS_TIMEOUT_SECONDS, budget) if budget > 0 else _RDNS_TIMEOUT_SECONDS
 
 
 def _split_as(value: Any) -> tuple[str, str]:
@@ -643,15 +670,28 @@ def abuseipdb_check(ip: str, cfg: Settings, store: Store | None) -> int | None:
 
 
 def _cached_reverse_dns(ip: str, cfg: Settings, store: Store | None) -> str:
-    """PTR name through the Store cache.  Only real names are cached: an empty
-    result may be a resolver timeout rather than a missing PTR."""
+    """PTR name through the Store cache.
+
+    A definite answer - a name, or the resolver saying there is no PTR - is
+    cached for the usual period.  A timeout is not an answer, so it is cached
+    only briefly: long enough that a burst of messages from one origin does not
+    each stall on the same dead lookup, short enough that a resolver having a
+    bad minute is retried rather than written off for the rest of the day.
+
+    Caching the negative at all is the point.  It previously was not, on the
+    reasoning that an empty result might be a timeout - correct, but it meant
+    every message from an address with no PTR paid the full timeout again, for
+    a supplementary signal.
+    """
     key = f"rdns:{ip}"
     cached = cache_get(store, key)
-    if isinstance(cached, str) and cached:
+    if isinstance(cached, str):  # "" is a real cached answer: this IP has no PTR
         return cached
     host = reverse_dns(ip, cfg)
-    if host:
-        cache_set(store, key, host, cfg.cache_ttl_seconds)
+    if host is None:  # timed out
+        cache_set(store, key, "", _RDNS_TIMEOUT_TTL_SECONDS)
+        return ""
+    cache_set(store, key, host, cfg.cache_ttl_seconds)
     return host
 
 
