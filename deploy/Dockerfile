@@ -12,8 +12,10 @@
 #     PROJECT_DIR = /app                (frontend/, samples/*.eml)
 # Moving either directory without changing config.py will 404 the dashboard.
 #
-# UNVERIFIED: this file has not been built or run - no Docker daemon was
-# available where it was written.  It is believed correct by inspection only.
+# Verified by CI, not by inspection: .github/workflows/ci.yml builds this image
+# on every push, starts it, waits for /api/health, analyses a sample through it
+# and checks the dashboard is served.  The development machine has no hardware
+# virtualisation, so CI is where that happens.
 
 # --------------------------------------------------------------------------- #
 # Stage 1: build the virtualenv.  Wheels are resolved here so that pip, its

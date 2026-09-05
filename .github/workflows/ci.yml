@@ -1,9 +1,11 @@
 # MailTrace continuous integration.
 #
-# One job, one Python, no services: the test-suite is offline by design
-# (tests/conftest.py sets enable_network=False) and the store it exercises is
-# the bundled SQLite file, so there is nothing to stand up.  Typical run is
-# well under two minutes, almost all of it pip install.
+# Two jobs. `test` is offline by design (tests/conftest.py sets
+# enable_network=False) and exercises the bundled SQLite store, so there is
+# nothing to stand up. `docker` builds and *runs* the deployment image, because
+# a Dockerfile that has never been built is a claim rather than an artefact -
+# and the machine this project is developed on cannot run Docker at all (no
+# hardware virtualisation), so CI is the only place that check can happen.
 name: CI
 
 on:
@@ -83,3 +85,49 @@ jobs:
 
       - name: Run tests
         run: python -m pytest -q
+
+  docker:
+    name: build and run the deployment image
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the image
+        # From the repository root, not deploy/: the image needs backend/,
+        # frontend/ and samples/ together, exactly as deploy/Dockerfile says.
+        run: docker build -f deploy/Dockerfile -t mailtrace:ci .
+
+      - name: Run it and wait for the health check
+        run: |
+          docker run -d --name mailtrace -p 8000:8000             -e MAILTRACE_ENABLE_NETWORK=false mailtrace:ci
+          for attempt in $(seq 1 40); do
+            if curl -fsS http://127.0.0.1:8000/api/health > health.json; then
+              echo "healthy after ${attempt}s"
+              cat health.json
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "the container never became healthy; logs follow" >&2
+          docker logs mailtrace >&2
+          exit 1
+
+      - name: Analyse a sample through the running container
+        # Proves the image carries the frontend, the samples and a working
+        # engine - not merely that it starts.
+        run: |
+          curl -fsS -F "files=@samples/phishing_sbi_kyc.eml"             http://127.0.0.1:8000/api/analyze -o result.json
+          python -c "
+          import json
+          result = json.load(open('result.json'))['results'][0]
+          verdict = result['verdict']
+          print(f\"{verdict['category']} {verdict['risk_score']} in {result['processing_ms']} ms\")
+          assert verdict['category'] == 'Phishing', verdict
+          assert verdict['risk_score'] >= 70, verdict
+          "
+          curl -fsS http://127.0.0.1:8000/ | grep -q 'id="root"' && echo "dashboard served"
+
+      - name: Container logs
+        if: always()
+        run: docker logs mailtrace || true

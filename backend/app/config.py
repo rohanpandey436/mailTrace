@@ -69,6 +69,12 @@ def _env_float(name: str, default: float) -> float:
         return default
 
 
+def _downloaded_geolite() -> str:
+    """The GeoLite2 database ``scripts/fetch_geolite2.py`` writes, when it is there."""
+    path = BASE_DIR / "data" / "GeoLite2-City.mmdb"
+    return str(path) if path.is_file() else ""
+
+
 def _env_list(name: str, default: list[str]) -> list[str]:
     raw = os.environ.get(ENV_PREFIX + name)
     if raw is None:
@@ -107,6 +113,9 @@ class Settings:
     virustotal_key: str = ""
     # Stage 3B: a local MaxMind GeoLite2-City database is used first when present;
     # the ip-api.com service is the fallback so the tool works with no database.
+    # Left unset, the database scripts/fetch_geolite2.py downloads during the
+    # build is picked up automatically - the build knows where it put the file,
+    # so nobody has to configure the path as well as the licence key.
     maxmind_db: str = ""
     # Stage 3A: set to a DistilRoBERTa (or other) sequence-classification model to
     # use a transformer instead of the bundled TF-IDF classifier. Requires the
@@ -226,7 +235,7 @@ class Settings:
             abuseipdb_key=_env("ABUSEIPDB_KEY", ""),
             urlhaus_key=_env("URLHAUS_KEY", ""),
             virustotal_key=_env("VIRUSTOTAL_KEY", ""),
-            maxmind_db=_env("MAXMIND_DB", ""),
+            maxmind_db=_env("MAXMIND_DB", "").strip() or _downloaded_geolite(),
             transformer_model=_env("TRANSFORMER_MODEL", ""),
             url_model_enabled=_env_bool("URL_MODEL", True),
             lime_enabled=_env_bool("LIME", True),

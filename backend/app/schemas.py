@@ -733,6 +733,9 @@ class HealthStatus(BaseModel):
         default="", description="Why the configured database is not the one in use; empty when it is"
     )
     url_model: str = Field(description="Which backend is serving the URL model: onnx, xgboost or not loaded")
+    geoip_source: str = Field(
+        description="Where geolocation comes from: a MaxMind database path, or ip-api.com"
+    )
     native_engine: bool = Field(description="Whether the C++ dissector is doing the MIME work")
     native_engine_version: str
     native_engine_status: str

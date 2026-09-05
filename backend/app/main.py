@@ -166,6 +166,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             # Stage 4: onnxruntime serves the URL model from the graph committed
             # at app/ai/url_model.onnx; xgboost fits it and is the fallback.
             url_model=url_model.loaded_backend(),
+            # Stage 3B: a local GeoLite2 database when the build downloaded one,
+            # otherwise ip-api.com, which is rate-limited and city-level at best.
+            geoip_source=cfg.maxmind_db or "ip-api.com",
             native_engine=parser.NATIVE_ENGINE,
             native_engine_version=parser.NATIVE_ENGINE_VERSION,
             native_engine_status=parser.NATIVE_ENGINE_STATUS,
