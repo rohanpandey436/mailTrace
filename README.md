@@ -375,13 +375,13 @@ mailtrace/
         lime_text.py        from-scratch LIME for the text classifier
         url_model.py        XGBoost URL/domain model (optional at runtime)
         seed_corpus.json    249 labelled seed messages (five classes)
-    tests/                  pytest suite (offline); 139 tests, 6 skipped without the C++ engine
+    tests/                  pytest suite (offline); 140 tests, 6 of them skipped without the C++ engine
     data/                   runtime, git-ignored: mailtrace.db, evidence/, model.joblib,
                             url_model.joblib  (the default MAILTRACE_DATA_DIR)
   frontend/
     index.html              single-file analyst UI (Tailwind, Leaflet, d3 - all from CDNs)
   samples/                  five demo messages and their README
-  engine/                   OPTIONAL C++20 parse extension - never compiled here, see engine/README.md
+  engine/                   OPTIONAL C++20 parse extension - built and benchmarked, see engine/README.md
   deploy/
     Dockerfile              build from the repository root
     .env.example            every configuration key, with demo values
@@ -623,7 +623,7 @@ follow the quick start.
 
 | Capability | Why it is off | What switches it on |
 |---|---|---|
-| **C++20 parse engine** (`engine/`) | Never compiled - there is no C++ compiler on this machine, and no build of it has ever been produced. `/api/health` reports `"native_engine": false, "native_engine_status": "not installed (pure-Python parser in use)"` | A C++20 compiler plus `pip install pybind11 && pip install ./engine`. See [`engine/README.md`](engine/README.md). `MAILTRACE_NATIVE_ENGINE=0` forces the Python parser back |
+| **C++20 parse engine** (`engine/`) | Built and active on the development machine since 2026-09-05; whether it is active anywhere else depends on that host having a compiler at install time. `/api/health` reports `native_engine`, its version and its status, so you never have to guess which parser answered | A C++20 compiler plus `pip install pybind11 && pip install ./engine`. See [`engine/README.md`](engine/README.md). `MAILTRACE_NATIVE_ENGINE=0` forces the Python parser back |
 | **DistilRoBERTa NLP backend** | `torch` and `transformers` are not installed and are deliberately absent from `requirements.txt` (torch alone is roughly 1 GB; the free tier has 512 MB) | `pip install -r backend/requirements-ml.txt` and `MAILTRACE_TRANSFORMER_MODEL=<hf-model-id>` |
 | **MaxMind GeoLite2** | The `maxminddb` reader is installed, but no `.mmdb` database file ships with the repository | Download GeoLite2-City and set `MAILTRACE_MAXMIND_DB=/path/to/GeoLite2-City.mmdb` |
 | **TLSH fuzzy digest** | `py-tlsh` is not installed; only SimHash digests are produced today. `campaigns.py` stores `tlsh:` indicators when they exist | `pip install py-tlsh`; tune with `MAILTRACE_TLSH_MAX_DISTANCE` |
@@ -825,13 +825,17 @@ pytest -q
 
 `pytest.ini` sets `testpaths = tests`, so plain `pytest` finds the suite.
 
-Measured in this pass: **133 passed, 6 skipped**, in 41.6 s (two runs, 42.0 s and
-41.6 s). The suite runs
-offline (`enable_network=False`) against a temporary data directory. The six
-skips are all in `tests/test_native_engine.py` and all report
-`mailtrace_engine is not built` - they are the parity tests that only run once
-the optional C++ extension has been compiled, which has never happened in this
-repository (see section 9 and `engine/README.md`).
+Measured on 2026-09-05: **140 passed, 0 skipped**. The suite runs offline
+(`enable_network=False`) against a temporary data directory.
+
+The count depends on whether the optional C++ extension is built. Without it,
+six parity tests in `tests/test_native_engine.py` skip with `mailtrace_engine is
+not built` and the run reads `134 passed, 6 skipped`. The engine was compiled on
+2026-09-05 (Visual Studio Build Tools, MSVC, CPython 3.13) and those six now
+run, comparing the C++ against `hashlib`, against the Python entropy function,
+node-for-node against `email.feedparser`, and for byte-identical `ParsedEmail`
+output on all five demo messages. See section 9 and
+[`engine/README.md`](engine/README.md).
 
 ## 15. Limitations and honest notes
 

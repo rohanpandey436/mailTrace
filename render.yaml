@@ -9,7 +9,11 @@ services:
     # The Python service lives in backend/; the dashboard and demo messages sit
     # beside it and are found relative to the package.
     rootDir: backend
-    buildCommand: pip install -r requirements.txt
+    # The second command compiles the optional C++20 parse engine. It is
+    # deliberately non-fatal: if this builder has no usable toolchain the
+    # backend falls back to the pure-Python parser, which produces identical
+    # results, rather than failing the deploy. /api/health reports which one won.
+    buildCommand: pip install -r requirements.txt && { pip install ../engine || echo "native engine unavailable on this builder; using the Python parser"; }
     # Render sets PORT; app/config.py picks it up and binds every interface.
     startCommand: python run.py
     healthCheckPath: /api/health

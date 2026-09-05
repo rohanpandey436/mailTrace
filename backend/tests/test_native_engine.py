@@ -374,6 +374,20 @@ HOSTILE: tuple[bytes, ...] = (
 )
 
 
+@pytest.fixture(autouse=True)
+def _neutral_kill_switch(monkeypatch):
+    """Keep the ambient MAILTRACE_NATIVE_ENGINE out of this module.
+
+    Every test here asserts on the activation path, and the kill-switch short
+    circuits it with its own status string. Left alone, running the suite with
+    MAILTRACE_NATIVE_ENGINE=0 - the obvious way to check the Python fallback
+    still works - breaks a third of this file for reasons unrelated to what the
+    tests are about. ``test_env_switch_blocks_activation`` sets the variable
+    itself, so the switch is still covered.
+    """
+    monkeypatch.delenv("MAILTRACE_NATIVE_ENGINE", raising=False)
+
+
 @pytest.fixture
 def restore_engine():
     """Save and restore every module-level flag the activation path touches."""
@@ -621,12 +635,20 @@ def test_self_check_rejects_an_engine_that_declines_everything(restore_engine):
 
 
 def test_unimportable_engine_is_simply_absent(restore_engine, monkeypatch):
-    sys.modules.pop("mailtrace_engine", None)
+    """A missing extension must leave the parser on its Python path, quietly.
+
+    Popping the module out of ``sys.modules`` is not enough to simulate this:
+    once the extension is genuinely installed the import simply succeeds again.
+    Binding the name to ``None`` is what makes the import statement itself
+    raise ImportError, so this holds whether or not the engine is built.
+    """
+    monkeypatch.setitem(sys.modules, "mailtrace_engine", None)
     monkeypatch.setattr(parser, "_native", None)
     parser.NATIVE_ENGINE = False
     parser._activate_native_engine()
     assert parser.NATIVE_ENGINE is False
     assert parser._native is None
+    assert "not installed" in parser.NATIVE_ENGINE_STATUS
 
 
 # --------------------------------------------------------------------------- #

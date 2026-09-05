@@ -33,15 +33,19 @@ build host with a missing or mismatched OpenSSL would otherwise lose the whole
 extension. The result is a build with **zero external library dependencies**
 beyond pybind11 and a C++20 compiler.
 
-**It has never been verified against anything.** A parity test comparing this
-SHA-256 to `hashlib` is written - `test_extension_sha256_matches_hashlib` in
-`backend/tests/test_native_engine.py` - but it is guarded by
-`@requires_extension` and it has been skipped on every run this repository has
-ever had, because no C++ in this repository has ever been compiled. There is no
-compiler on the machine MailTrace was developed on. Confirmed by running the
-suite on 2026-09-05: `133 passed, 6 skipped`, all six skips reporting
-`mailtrace_engine is not built`. Treat `src/sha256.cpp` as unexercised code
-until you build the extension and the test actually runs.
+**It is verified against `hashlib`.** `test_extension_sha256_matches_hashlib`
+in `backend/tests/test_native_engine.py` compares this implementation with the
+standard library's over the demo corpus and a set of edge-case buffers. That
+test, and the five other parity tests guarded by `@requires_extension`, were
+skipped for as long as the repository had no compiler; they run now.
+
+Built and measured on 2026-09-05 with Visual Studio Build Tools on Windows
+(MSVC, CPython 3.13, `pip install ./engine`): the extension compiled on the
+first attempt and the suite went from `133 passed, 6 skipped` to **`140 passed,
+0 skipped`**. The parity tests check SHA-256 against `hashlib`, entropy against
+the Python implementation, the dissection tree node-for-node against
+`email.feedparser`, and byte-identical `ParsedEmail` output on all five demo
+messages.
 
 ---
 
@@ -213,39 +217,41 @@ the pipeline would add a divergence risk for no measurable gain.
 
 ## Performance, honestly
 
-Re-measured 2026-09-05 on the five demo messages with `python engine/bench.py`
-(200 iterations each), **without** the extension — there is no C++ compiler on
-the machine this was written on, so no native number has ever been produced and
-the `native ms` and `speedup` columns print `-`:
+Measured 2026-09-05 with the extension built (MSVC, CPython 3.13),
+`python engine/bench.py`, 200 iterations each:
 
 ```
-message                                    size   python ms (median)
-bec_payment_diversion.eml                  5087       0.140
-fraud_lottery_advance_fee.eml             10151       0.259
-impersonation_ceo_gift_cards.eml           3162       0.115
-legit_transactional.eml                    5686       0.186
-phishing_sbi_kyc.eml                       4823       0.135
+message                                    size   python ms   native ms   speedup
+bec_payment_diversion.eml                  5087       0.140       0.043     3.22x
+fraud_lottery_advance_fee.eml             10151       0.257       0.067     3.81x
+impersonation_ceo_gift_cards.eml           3162       0.114       0.040     2.82x
+legit_transactional.eml                    5686       0.186       0.063     2.96x
+phishing_sbi_kyc.eml                       4823       0.135       0.043     3.15x
 ```
 
-Two things follow. The deck's "MIME dissection < 5 ms" is **already met by the
-pure-Python parser** on messages of this size — the native engine is not what
-makes that claim true. And the MIME parse is a small slice of `parse_email`,
-which the same run measures at 1.21–3.07 ms median on these messages; most of
-the rest is the SimHash body digest and the raw hashing.
+Two things follow, and the second is the honest one. The deck's "MIME
+dissection < 5 ms" is **already met by the pure-Python parser** at this size, so
+the native engine is not what makes that claim true. And the MIME parse is a
+small slice of `parse_email`, which the same run measures at 1.08–2.74 ms
+median; most of the remainder is the SimHash body digest and the raw hashing,
+neither of which the native path touches.
 
-Where the pure-Python parser genuinely hurts is size. Same machine, same day,
-synthetic multipart messages of base64 attachments, timing
-`parser._python_message` over seven repeats:
+Where the pure-Python parser genuinely hurts is size, and that is what this
+engine is for. Synthetic multipart messages of base64 attachments, median of
+five repeats, `parser._python_message` against `mailtrace_engine.dissect`:
 
 ```
-1.4 MB, 10 parts     python MIME parse median   19.7 ms
-13.7 MB, 40 parts    python MIME parse median  184.5 ms
+message               python ms   native ms   speedup
+0.2 MB,  2 parts            2.3         0.1      21.6x
+1.4 MB,  4 parts           19.2         2.4       7.9x
+7.0 MB, 10 parts           92.7        10.9       8.5x
+28  MB, 20 parts          399.0        56.8       7.0x
 ```
 
-That is the case the native engine is for: a mailbox import or a bulk API
-caller, not the demo. Run `python engine/bench.py` after building to get the
-real speedup on your hardware, and please replace the numbers above with
-measured ones rather than quoting a ratio nobody has observed.
+So: roughly **3x on ordinary mail and 7–8x once messages reach megabytes**, which
+is the mailbox-import and bulk-API case rather than the demo. Re-run
+`python engine/bench.py` on your own hardware; these are one machine's numbers,
+not a guarantee.
 
 ---
 
