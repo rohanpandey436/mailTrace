@@ -1,18 +1,19 @@
 """
 Tests for the optional C++ dissector integration (engine/, Stage 2 PARSE-C++).
 
-There is no C++ compiler in this environment, so ``mailtrace_engine`` itself
-cannot be built or executed here.  What *can* be tested - and is, below - is
-everything that decides whether shipping it is safe:
+The extension is optional, so this file is written to be useful either way: six
+parity tests run only when ``mailtrace_engine`` is importable and skip
+otherwise, while everything else exercises the contract on any host, compiler
+or not.  What is tested is everything that decides whether shipping it is safe:
 
 * ``_MirrorEngine`` is a pure-Python transcription of the algorithm in
-  engine/src/mime.cpp: the same line splitting, the same header-block rule, the
+  engine/src/parser.cpp: the same line splitting, the same header-block rule, the
   same boundary grammar, the same "the newline before a boundary belongs to the
   boundary" rule, the same decline conditions.  Running it against CPython's own
   ``email`` parser on the real samples and on hostile input checks that the
   algorithm the C++ implements is the right one.  It does *not* check that the
-  C++ implements it correctly - only a build can do that, and engine/README.md
-  says how.
+  C++ implements it correctly; that is what the six ``@requires_extension``
+  parity tests at the end of this file are for, and they need a build.
 * The adapter in ``app.engine.parser`` - tree rebuilding, structural
   cross-checking, the import-time self-check and every fallback path - is the
   code that will actually run in production, and it is tested directly.
@@ -30,7 +31,7 @@ import pytest
 from app.engine import parser
 
 # --------------------------------------------------------------------------- #
-# Pure-Python mirror of engine/src/mime.cpp
+# Pure-Python mirror of engine/src/parser.cpp
 # --------------------------------------------------------------------------- #
 _MAX_DEPTH = 30
 _MAX_NODES = 2000

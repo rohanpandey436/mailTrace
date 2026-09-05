@@ -46,7 +46,7 @@ endif()
 pybind11_add_module(mailtrace_engine
   src/sha256.cpp
   src/entropy.cpp
-  src/mime.cpp
+  src/parser.cpp
   src/bindings.cpp
 )
 

@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
 //
-// See include/mailtrace/mime.hpp for the scope and the compatibility contract.
+// See include/mailtrace/parser.hpp for the scope and the compatibility contract.
 //
 // Every function here works on std::string_view slices of the caller's buffer
 // and indexes only after a bounds test, so a truncated or hostile message can
 // terminate the walk early but cannot read out of range.  There is no `new`,
 // no `delete` and no owning raw pointer anywhere in this file.
-#include "mailtrace/mime.hpp"
+#include "mailtrace/parser.hpp"
 
 #include <algorithm>
 #include <cstdint>

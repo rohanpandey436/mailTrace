@@ -29,7 +29,7 @@
 #include <vector>
 
 #include "mailtrace/entropy.hpp"
-#include "mailtrace/mime.hpp"
+#include "mailtrace/parser.hpp"
 #include "mailtrace/sha256.hpp"
 
 namespace py = pybind11;

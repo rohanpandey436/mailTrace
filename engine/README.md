@@ -120,12 +120,12 @@ print(parser.engine_status())
 #  'parsed_python': 0, 'native_declined': 0}
 ```
 
-Those snippets show what a **successful build** looks like. What this repository
-actually reports today, measured on 2026-09-05 against a locally started server:
+That is what this repository reports today. Measured on 2026-09-05 against the
+deployed instance at `https://mailtrace-t9vo.onrender.com/api/health`:
 
 ```json
-{"status":"ok","engine_version":"1.0.0","native_engine":false,
- "native_engine_version":"","native_engine_status":"not installed (pure-Python parser in use)"}
+{"status":"ok","engine_version":"1.0.0","native_engine":true,
+ "native_engine_version":"1.0.0","native_engine_status":"active"}
 ```
 
 If `native_engine_status` is anything other than `"active"` it says why:
@@ -143,17 +143,23 @@ python -m pytest tests/test_native_engine.py -v
 ```
 
 **Six** tests in that file are skipped while the extension is missing and run
-automatically once it is built. Verified on 2026-09-05 with
-`cd backend && python -m pytest -o addopts="" -q -rs`, which reported
-`133 passed, 6 skipped` with all six skips in this file. They compare the
-extension against `hashlib`, against the Python entropy implementation, and
+automatically once it is built. With the engine built the suite reports
+**`140 passed, 0 skipped`**; without it, `134 passed, 6 skipped`. They compare
+the extension against `hashlib`, against the Python entropy implementation, and
 node-for-node against a transcription of the same algorithm, and they assert
 that all five sample messages produce byte-identical `ParsedEmail` objects with
 and without it.
 
 The rest of the file - the mirror tests, the cross-check tests and the
-self-check tests - runs today against a pure-Python transcription of the
-dissector, so the *contract* is exercised even though the C++ is not.
+self-check tests - runs against a pure-Python transcription of the dissector, so
+the *contract* is exercised even on a host with no compiler.
+
+One caveat worth knowing before you deploy. The engine reproduces CPython's own
+header handling, and `compat32`'s treatment of a value beginning on a
+continuation line changed between 3.12 and 3.13. On 3.12 the self-check
+correctly notices the mismatch and falls back, reporting
+`self-check failed: engine produced a different tree for self-check fixture 4`.
+That is the guard working, not a bug; `render.yaml` therefore pins Python 3.13.
 
 ---
 
@@ -261,10 +267,10 @@ not a guarantee.
 engine/
   include/mailtrace/sha256.hpp    FIPS 180-4 SHA-256, streaming, no allocation
   include/mailtrace/entropy.hpp   Shannon entropy over bytes
-  include/mailtrace/mime.hpp      Dissection API + the compatibility contract
+  include/mailtrace/parser.hpp      Dissection API + the compatibility contract
   src/sha256.cpp
   src/entropy.cpp
-  src/mime.cpp                    The dissector; every CPython rule it mirrors
+  src/parser.cpp                    The dissector; every CPython rule it mirrors
                                   is cited in the comments
   src/bindings.cpp                pybind11 surface
   setup.py                        Supported build
@@ -273,7 +279,7 @@ engine/
   bench.py                        Native vs Python timing
 ```
 
-Implementation notes worth knowing before editing `src/mime.cpp`:
+Implementation notes worth knowing before editing `src/parser.cpp`:
 
 * Everything works on `std::string_view` slices of the caller's buffer and
   indexes only after a bounds test. There is no `new`, no `delete` and no

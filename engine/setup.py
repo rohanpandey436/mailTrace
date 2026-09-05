@@ -42,7 +42,7 @@ ParallelCompile("MAILTRACE_BUILD_JOBS", default=0).install()
 SOURCES = [
     "src/sha256.cpp",
     "src/entropy.cpp",
-    "src/mime.cpp",
+    "src/parser.cpp",
     "src/bindings.cpp",
 ]
 
