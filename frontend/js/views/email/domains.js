@@ -1,8 +1,8 @@
 // @ts-check
 /** "Domains & servers": the originating computer, prior related cases, every domain. */
-import { html } from "../../dom.js";
 import { flag, place, truncate } from "../../format.js";
 import { DOMAIN_ROLE } from "../../labels.js";
+import { Fragment, html } from "../../react.js";
 import { chip, kv, section } from "../../ui/primitives.js";
 
 /** @typedef {import('../../types.js').AnalysisResult} AnalysisResult */
@@ -24,7 +24,7 @@ function originComputer(result) {
     "The computer that sent it",
     kv([
       ["IP address", result.headers.originating_ip && html`<span class="mono strong">${result.headers.originating_ip}</span>`],
-      ["Location", geo?.country && html`${flag(geo.country_code)} ${place([geo.city, geo.region, geo.country])}`],
+      ["Location", geo?.country && html`<${Fragment}>${flag(geo.country_code)} ${place([geo.city, geo.region, geo.country])}</>`],
       ["Who owns it", geo && [geo.isp, geo.org].filter(Boolean).join(" / ")],
       ["Network (ASN)", geo?.asn],
       [
@@ -52,9 +52,14 @@ function seenBefore(result) {
     "Seen before",
     html`<ul class="stack">
       ${incidents.map(
-        (incident) => html`<li>
-          <a class="link" href="#/email/${encodeURIComponent(incident.email_id)}">${truncate(incident.subject, MAX_SUBJECT_CHARS) || incident.email_id}</a>
-          <div class="hint">from ${incident.sender} · risk ${incident.risk_score} · shares ${incident.shared_indicators.slice(0, MAX_SHARED_INDICATORS).join(", ")}</div>
+        (incident) => html`<li key=${incident.email_id}>
+          <a class="link" href=${`#/email/${encodeURIComponent(incident.email_id)}`}>
+            ${truncate(incident.subject, MAX_SUBJECT_CHARS) || incident.email_id}
+          </a>
+          <div class="hint">
+            from ${incident.sender} · risk ${incident.risk_score} · shares
+            ${incident.shared_indicators.slice(0, MAX_SHARED_INDICATORS).join(", ")}
+          </div>
         </li>`,
       )}
     </ul>`,
@@ -72,22 +77,27 @@ function age(domain) {
 }
 
 /**
- * @param {DomainIntel} domain
+ * @param {{ domain: DomainIntel }} props
  */
-function domainCard(domain) {
+function DomainCard({ domain }) {
   return html`<div class="card card--tight">
-    <div class="domain-card__head"><span class="domain-card__name">${domain.domain}</span>${chip(DOMAIN_ROLE[domain.role] ?? domain.role, "teal")}</div>
+    <div class="domain-card__head">
+      <span class="domain-card__name">${domain.domain}</span>${chip(DOMAIN_ROLE[domain.role] ?? domain.role, "teal")}
+    </div>
     ${kv([
       ["How old", age(domain)],
       ["Registered with", domain.registrar],
       ["Can receive mail", domain.source === "offline" ? "" : domain.has_mx ? "yes" : "no — unusual for a real company"],
-      ["Copycat of", domain.lookalike_of && html`<span class="text-bad strong">${domain.lookalike_of} (${domain.lookalike_technique})</span>`],
+      [
+        "Copycat of",
+        domain.lookalike_of && html`<span class="text-bad strong">${domain.lookalike_of} (${domain.lookalike_technique})</span>`,
+      ],
       [
         "Notes",
         html`<span class="cluster">
           ${domain.is_free_mail && chip("free mailbox (Gmail etc.)")}
           ${domain.is_disposable && chip("throwaway address", "bad")}
-          ${domain.reputation.map((tag) => chip(tag, "bad"))}
+          ${domain.reputation.map((tag, index) => chip(tag, "bad", { key: index }))}
         </span>`,
       ],
     ])}
@@ -98,11 +108,14 @@ function domainCard(domain) {
  * @param {AnalysisResult} result
  */
 export function domainsTab(result) {
-  return html`${originComputer(result)}
-    ${seenBefore(result)}
+  return html`<${Fragment}>
+    ${originComputer(result)} ${seenBefore(result)}
     <h3 class="domains-title">The domains involved</h3>
     <p class="hint section__note">A domain registered days ago is one of the strongest signs of an attack.</p>
     ${result.domains.length > 0
-      ? html`<div class="grid grid--cards">${result.domains.map(domainCard)}</div>`
-      : html`<div class="hint">No domains were checked.</div>`}`;
+      ? html`<div class="grid grid--cards">
+          ${result.domains.map((domain, index) => html`<${DomainCard} key=${domain.domain + index} domain=${domain} />`)}
+        </div>`
+      : html`<div class="hint">No domains were checked.</div>`}
+  </>`;
 }

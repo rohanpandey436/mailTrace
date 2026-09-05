@@ -1,102 +1,115 @@
 // @ts-check
 /** The case list: search, filter, page, and export the same selection as CSV. */
-import { api, errorMessage, urls } from "../api.js";
-import { $, attr, html, mount, must } from "../dom.js";
+import { api, urls } from "../api.js";
 import { plural } from "../format.js";
+import { useAsync } from "../hooks.js";
 import { CATEGORY } from "../labels.js";
+import { Fragment, html, useState } from "../react.js";
 import { session } from "../state.js";
-import { casesTable } from "../ui/cases-table.js";
+import { CasesTable } from "../ui/cases-table.js";
 import { emptyState, errorState, pageHead, skeleton } from "../ui/primitives.js";
 
 const PAGE_SIZE = 25;
 
-/** @type {import('../router.js').View} */
-export async function casesView(container) {
-  const filters = session.listFilters;
-  mount(
-    container,
-    html`${pageHead("Checked emails", "Every email you have run through MailTrace. Click any row to open the full report.")}
-      <form class="card card--tight section grid grid--filters" id="filters">
-        <label class="field">Search<input id="f-q" class="input" value="${filters.q}" placeholder="subject, sender, IP, domain" autocomplete="off"></label>
-        <label class="field">Type
-          <select id="f-cat" class="input">
-            <option value="">Show all</option>
-            ${Object.entries(CATEGORY).map(
-              ([value, label]) => html`<option value="${value}"${attr("selected", filters.category === value)}>${label.label}</option>`,
-            )}
-          </select>
-        </label>
-        <label class="field">Only show risk above <b class="strong" id="f-risk-val">${filters.minRisk}</b>
-          <input id="f-risk" class="range" type="range" min="0" max="100" step="5" value="${filters.minRisk}">
-        </label>
-        <div class="field">Bulk analysis
-          <a class="btn btn--block" id="export-csv" href="${urls.exportCsv(filters)}"
-             title="Downloads every email matching the filters on the left as a spreadsheet">Download as CSV</a>
-        </div>
-      </form>
-      <div id="cases-body">${skeleton(3)}</div>`,
+export function CasesView() {
+  // Seeded from the session so a search typed in the top bar, or a filter set
+  // before opening a case, survives coming back to the list.
+  const [filters, setFilters] = useState(session.listFilters);
+  // The range input updates as it is dragged; the query only follows on release.
+  const [riskDraft, setRiskDraft] = useState(session.listFilters.minRisk);
+  const [draftQuery, setDraftQuery] = useState(session.listFilters.q);
+
+  /** @param {Partial<typeof filters>} patch */
+  const apply = (patch) => {
+    const next = { ...filters, ...patch, page: patch.page ?? 0 };
+    session.listFilters = next;
+    setFilters(next);
+  };
+
+  const query = { q: filters.q, category: filters.category, minRisk: filters.minRisk };
+  const { data, error, loading, reload } = useAsync(
+    () => api.listEmails({ ...query, limit: PAGE_SIZE, offset: filters.page * PAGE_SIZE }),
+    [filters.q, filters.category, filters.minRisk, filters.page],
   );
 
-  const search = /** @type {HTMLInputElement} */ (must("#f-q", container));
-  const category = /** @type {HTMLSelectElement} */ (must("#f-cat", container));
-  const risk = /** @type {HTMLInputElement} */ (must("#f-risk", container));
-  const riskLabel = must("#f-risk-val", container);
-  const exportLink = /** @type {HTMLAnchorElement} */ (must("#export-csv", container));
-  const body = must("#cases-body", container);
-
-  const apply = () => {
-    filters.q = search.value.trim();
-    filters.category = category.value;
-    filters.minRisk = Number(risk.value);
-    filters.page = 0;
-    void load();
+  const results = () => {
+    if (error) return errorState(error, reload);
+    if (loading || !data) return skeleton(3);
+    if (data.items.length === 0) return emptyState("Nothing matches", "Try clearing the search box or lowering the risk filter.");
+    const pages = Math.max(1, Math.ceil(data.total / PAGE_SIZE));
+    return html`<${Fragment}>
+      <div class="card card--table"><${CasesTable} items=${data.items} /></div>
+      <div class="pager">
+        <span>${plural(data.total, "email")}</span>
+        <div class="pager__controls">
+          <button class="btn" type="button" disabled=${filters.page === 0} onClick=${() => apply({ page: filters.page - 1 })}>
+            ← Back
+          </button>
+          <span>Page ${filters.page + 1} of ${pages}</span>
+          <button class="btn" type="button" disabled=${filters.page + 1 >= pages} onClick=${() => apply({ page: filters.page + 1 })}>
+            Next →
+          </button>
+        </div>
+      </div>
+    </>`;
   };
-  must("#filters", container).addEventListener("submit", (event) => {
-    event.preventDefault();
-    apply();
-  });
-  category.addEventListener("change", apply);
-  risk.addEventListener("input", () => {
-    riskLabel.textContent = risk.value;
-  });
-  risk.addEventListener("change", apply);
 
-  async function load() {
-    const query = { q: filters.q, category: filters.category, minRisk: filters.minRisk };
-    // The CSV export takes the same filters as the listing, minus the paging.
-    exportLink.href = urls.exportCsv(query);
-    mount(body, skeleton(3));
-    try {
-      const data = await api.listEmails({ ...query, limit: PAGE_SIZE, offset: filters.page * PAGE_SIZE });
-      const pages = Math.max(1, Math.ceil(data.total / PAGE_SIZE));
-      if (data.items.length === 0) {
-        mount(body, emptyState("Nothing matches", "Try clearing the search box or lowering the risk filter."));
-        return;
-      }
-      mount(
-        body,
-        html`<div class="card card--table">${casesTable(data.items)}</div>
-          <div class="pager">
-            <span>${plural(data.total, "email")}</span>
-            <div class="pager__controls">
-              <button class="btn" type="button" id="pg-prev"${attr("disabled", filters.page === 0)}>← Back</button>
-              <span>Page ${filters.page + 1} of ${pages}</span>
-              <button class="btn" type="button" id="pg-next"${attr("disabled", filters.page + 1 >= pages)}>Next →</button>
-            </div>
-          </div>`,
-      );
-      $("#pg-prev", body)?.addEventListener("click", () => {
-        filters.page -= 1;
-        void load();
-      });
-      $("#pg-next", body)?.addEventListener("click", () => {
-        filters.page += 1;
-        void load();
-      });
-    } catch (error) {
-      mount(body, errorState(errorMessage(error)));
-      $("[data-retry]", body)?.addEventListener("click", () => void load());
-    }
-  }
-  await load();
+  return html`<${Fragment}>
+    ${pageHead("Checked emails", "Every email you have run through MailTrace. Click any row to open the full report.")}
+    <form
+      class="card card--tight section grid grid--filters"
+      onSubmit=${(/** @type {SubmitEvent} */ event) => {
+        event.preventDefault();
+        apply({ q: draftQuery.trim() });
+      }}
+    >
+      <label class="field">
+        Search
+        <input
+          class="input"
+          value=${draftQuery}
+          placeholder="subject, sender, IP, domain"
+          autoComplete="off"
+          onChange=${(/** @type {{ target: HTMLInputElement }} */ event) => setDraftQuery(event.target.value)}
+        />
+      </label>
+      <label class="field">
+        Type
+        <select
+          class="input"
+          value=${filters.category}
+          onChange=${(/** @type {{ target: HTMLSelectElement }} */ event) => apply({ category: event.target.value })}
+        >
+          <option value="">Show all</option>
+          ${Object.entries(CATEGORY).map(([value, label]) => html`<option key=${value} value=${value}>${label.label}</option>`)}
+        </select>
+      </label>
+      <label class="field">
+        Only show risk above <b class="strong">${riskDraft}</b>
+        <input
+          class="range"
+          type="range"
+          min="0"
+          max="100"
+          step="5"
+          value=${riskDraft}
+          onChange=${(/** @type {{ target: HTMLInputElement }} */ event) => setRiskDraft(Number(event.target.value))}
+          onMouseUp=${() => apply({ minRisk: riskDraft })}
+          onTouchEnd=${() => apply({ minRisk: riskDraft })}
+          onKeyUp=${() => apply({ minRisk: riskDraft })}
+        />
+      </label>
+      <div class="field">
+        Bulk analysis
+        <a
+          class="btn btn--block"
+          href=${urls.exportCsv(query)}
+          title="Downloads every email matching the filters on the left as a spreadsheet"
+        >
+          Download as CSV
+        </a>
+      </div>
+    </form>
+    ${results()}
+  </>`;
 }

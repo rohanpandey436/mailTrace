@@ -17,7 +17,7 @@ services:
     # Supabase. It stays a separate file because the service must also start
     # with nothing but the SQLite file, and it does: an unset or unreachable
     # URL logs the reason and falls back. /api/health reports which one won.
-    buildCommand: pip install -r requirements.txt -r requirements-pg.txt && { pip install ../engine || echo "native engine unavailable on this builder; using the Python parser"; }
+    buildCommand: pip install -r requirements.txt -r requirements-pg.txt && python scripts/fetch_geolite2.py && { pip install ../engine || echo "native engine unavailable on this builder; using the Python parser"; }
     # Render sets PORT; app/config.py picks it up and binds every interface.
     startCommand: python run.py
     healthCheckPath: /api/health
@@ -49,3 +49,12 @@ services:
       # wipes data/ on every deploy - which is the reason to set it.
       - key: MAILTRACE_DATABASE_URL
         sync: false
+      # MaxMind GeoLite2. The licence forbids redistributing the database, so it
+      # is not in the repository: the build downloads a copy with this key (see
+      # scripts/fetch_geolite2.py) and the service prefers it over ip-api.com,
+      # which is rate-limited to 45 requests a minute. Leave the key unset and
+      # geolocation works exactly as before, on ip-api.
+      - key: MAXMIND_LICENSE_KEY
+        sync: false
+      - key: MAILTRACE_MAXMIND_DB
+        value: /opt/render/project/src/backend/data/GeoLite2-City.mmdb

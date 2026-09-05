@@ -8,9 +8,9 @@
  * was moved, deleted or blocked anywhere.
  */
 import { api, errorMessage, urls } from "../api.js";
-import { $$, html, mount } from "../dom.js";
 import { formatDate, plural } from "../format.js";
 import { DECISION } from "../labels.js";
+import { html, useEffect, useState } from "../react.js";
 import { chip } from "./primitives.js";
 import { toast } from "./toast.js";
 
@@ -32,66 +32,70 @@ const ACTIONS = [
 ];
 
 /**
- * @param {string} emailId
- * @param {CaseDecision} decision
+ * @param {{ emailId: string }} props
  */
-function template(emailId, decision) {
+export function DecisionBar({ emailId }) {
+  const [decision, setDecision] = useState(/** @type {CaseDecision | null} */ (null));
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .getDecision(emailId)
+      .then((current) => {
+        if (!cancelled) setDecision(current);
+      })
+      .catch(() => {
+        // A case the server cannot report a decision for simply shows no bar.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [emailId]);
+
+  if (!decision) return null;
+
   const state = DECISION[decision.status] ?? DECISION.open;
   const last = decision.history[decision.history.length - 1];
+
+  /** @param {DecisionAction} action */
+  async function record(action) {
+    setBusy(true);
+    try {
+      setDecision(await api.recordDecision(emailId, action));
+      toast("Decision saved to the evidence log. Nothing was sent to your mail system — pass the indicators to whoever enforces.");
+    } catch (error) {
+      toast(html`Could not record that: ${errorMessage(error)}`, "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return html`<div class="card card--tight cluster cluster--top cluster--loose">
     <div class="spread">
       <div class="decision__title">Your decision ${chip(state.label, state.tone)}</div>
-      <p class="hint">These buttons <b>record what you decided</b> in the evidence log and gather the
-        ${plural(decision.indicators.length, "indicator")} from this case so you can hand them to your mail gateway,
-        firewall or SOC team. <b class="strong">MailTrace is not connected to your mail system</b>, so nothing here
-        moves, deletes or blocks a message on its own.</p>
+      <p class="hint">
+        These buttons <b>record what you decided</b> in the evidence log and gather the
+        ${plural(decision.indicators.length, "indicator")} from this case so you can hand them to your mail gateway, firewall or SOC
+        team. <b class="strong">MailTrace is not connected to your mail system</b>, so nothing here moves, deletes or blocks a message
+        on its own.
+      </p>
       ${last && html`<p class="hint">Last recorded by <b class="strong">${last.actor}</b> on ${formatDate(last.timestamp)}.</p>`}
     </div>
     <div class="cluster">
       ${ACTIONS.map(
-        (item) => html`<button class="btn" type="button" data-decision="${item.action}" title="${item.hint}">${item.label}</button>`,
+        (item) => html`<button
+          key=${item.action}
+          class="btn"
+          type="button"
+          title=${item.hint}
+          disabled=${busy}
+          onClick=${() => void record(item.action)}
+        >
+          ${item.label}
+        </button>`,
       )}
-      <a class="btn" href="${urls.report(emailId, "csv")}" title="The indicators and every finding as a spreadsheet">Export indicators</a>
+      <a class="btn" href=${urls.report(emailId, "csv")} title="The indicators and every finding as a spreadsheet">Export indicators</a>
     </div>
   </div>`;
-}
-
-/**
- * Render the decision bar into `container` and wire its buttons.  A case the
- * server cannot report a decision for simply shows no bar.
- * @param {HTMLElement} container
- * @param {string} emailId
- */
-export async function mountDecisionBar(container, emailId) {
-  /** @type {CaseDecision} */
-  let decision;
-  try {
-    decision = await api.getDecision(emailId);
-  } catch {
-    container.hidden = true;
-    return;
-  }
-  render(decision);
-
-  /** @param {CaseDecision} current */
-  function render(current) {
-    mount(container, template(emailId, current));
-    for (const button of $$("[data-decision]", container)) {
-      const action = button.dataset.decision;
-      if (action === "quarantine" || action === "block") button.addEventListener("click", () => void record(action));
-    }
-  }
-
-  /** @param {DecisionAction} action */
-  async function record(action) {
-    const buttons = /** @type {HTMLButtonElement[]} */ ($$("[data-decision]", container));
-    buttons.forEach((button) => (button.disabled = true));
-    try {
-      render(await api.recordDecision(emailId, action));
-      toast("Decision saved to the evidence log. Nothing was sent to your mail system — pass the indicators to whoever enforces.");
-    } catch (error) {
-      buttons.forEach((button) => (button.disabled = false));
-      toast(html`Could not record that: ${errorMessage(error)}`, "error");
-    }
-  }
 }

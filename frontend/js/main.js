@@ -1,109 +1,209 @@
 // @ts-check
-/** Entry point: register the views, wire the shell, start the router and the feed. */
+/** Entry point: the app shell, the route switch, and the live alert feed. */
 import { api } from "./api.js";
-import { $$, activatable, html, mount, must } from "./dom.js";
 import { truncate } from "./format.js";
+import { useStore } from "./hooks.js";
 import { categoryOf } from "./labels.js";
-import { startLiveFeed } from "./live-feed.js";
-import { currentRoute, defineView, navigate, refresh, startRouter } from "./router.js";
-import { preferences, session, setPreference } from "./state.js";
-import { bindCaseRows } from "./ui/cases-table.js";
-import { toast } from "./ui/toast.js";
-import { alertsView, bindAlertActions, prependAlert, refreshUnreadCount, setUnreadCount } from "./views/alerts.js";
-import { campaignView, campaignsView } from "./views/campaigns.js";
-import { casesView } from "./views/cases.js";
-import { dashboardView } from "./views/dashboard.js";
-import { emailView } from "./views/email/index.js";
+import { resyncMask, subscribeToAlerts } from "./live-feed.js";
+import { Fragment, html, useEffect, useState } from "./react.js";
+import { navigate, useRoute } from "./router.js";
+import { preferences, session, setPreference, unreadAlerts } from "./state.js";
+import { Toasts, toast } from "./ui/toast.js";
+import { AlertsView, refreshUnreadCount } from "./views/alerts.js";
+import { CampaignView, CampaignsView } from "./views/campaigns.js";
+import { CasesView } from "./views/cases.js";
+import { DashboardView } from "./views/dashboard.js";
+import { EmailView } from "./views/email/index.js";
 
-/** @typedef {import('./types.js').Alert} Alert */
+/** @typedef {import('./types.js').Health} Health */
 
 const MAX_TOAST_SUBJECT = 60;
 
-defineView("dashboard", dashboardView);
-defineView("cases", casesView);
-defineView("email", emailView);
-defineView("campaigns", (container, id) => (id ? campaignView(container, id) : campaignsView(container, id)));
-defineView("alerts", alertsView);
+const NAV = [
+  ["dashboard", "🏠", "Home", "#/dashboard"],
+  ["cases", "📥", "Checked emails", "#/cases"],
+  ["campaigns", "🔗", "Linked attacks", "#/campaigns"],
+  ["alerts", "🔔", "Alerts", "#/alerts"],
+];
 
 /**
- * @param {import('./router.js').Route} route
+ * @param {{ count: number }} props
  */
-function highlightNav(route) {
-  $$(".rail__link").forEach((link) => link.classList.toggle("is-active", link.dataset.route === route.name));
+function UnreadBadge({ count }) {
+  if (count <= 0) return null;
+  return html`<span class="chip chip--count">${count}</span>`;
 }
 
-function bindSearch() {
-  const input = /** @type {HTMLInputElement} */ (must("#search"));
-  must("#search-form").addEventListener("submit", (event) => {
-    event.preventDefault();
-    session.listFilters.q = input.value.trim();
-    session.listFilters.page = 0;
-    navigate("#/cases");
-  });
+/**
+ * @param {{ route: string, unread: number }} props
+ */
+function Rail({ route, unread }) {
+  return html`<nav class="rail" aria-label="Main">
+    <a class="rail__brand" href="#/dashboard">
+      <span class="brand-mark">M</span>
+      <span><span class="brand-name">MailTrace</span><span class="brand-sub">Email threat forensics</span></span>
+    </a>
+    ${NAV.map(
+      ([name, icon, label, href]) => html`<a key=${name} class=${`rail__link${route === name ? " is-active" : ""}`} href=${href}>
+        <span>${icon}</span><span>${label}</span>${name === "alerts" && html`<${UnreadBadge} count=${unread} />`}
+      </a>`,
+    )}
+    <div class="rail__footer">SIH PS 26106<br />AI email threat detection, geolocation &amp; forensics</div>
+  </nav>`;
 }
 
-/** @type {(() => void) | null} */
-let stopLiveFeed = null;
-
-function connectLiveFeed() {
-  stopLiveFeed?.();
-  stopLiveFeed = startLiveFeed(onAlert);
-}
-
-function bindMaskSwitch() {
-  const control = must("#mask-switch");
-  const render = () => {
-    control.classList.toggle("is-on", preferences.mask);
-    control.setAttribute("aria-checked", String(preferences.mask));
-  };
-  render();
-  activatable(control, () => {
-    setPreference("mask", !preferences.mask);
-    render();
-    toast(preferences.mask ? "Personal details are now hidden everywhere." : "Personal details are shown again.");
-    connectLiveFeed(); // the feed is masked at connection time
-    void refresh();
-  });
-}
-
-async function loadHealth() {
-  const badge = must("#net-badge");
-  try {
-    const health = await api.health();
-    session.health = health;
-    mount(
-      badge,
-      health.network
-        ? html`<span class="status-dot tone-ok"></span>Internet lookups on`
-        : html`<span class="status-dot tone-warn"></span>Offline mode`,
-    );
-    badge.title = health.network
+/**
+ * @param {{ health: Health | null }} props
+ */
+function NetworkBadge({ health }) {
+  if (!health) return html`<span class="chip">Server not reachable</span>`;
+  return html`<span
+    class="chip"
+    title=${health.network
       ? "Location, domain age and blocklist checks are working"
-      : "No location or domain-age data will be collected";
-  } catch {
-    badge.textContent = "Server not reachable";
+      : "No location or domain-age data will be collected"}
+  >
+    <span class=${`status-dot tone-${health.network ? "ok" : "warn"}`}></span>
+    ${health.network ? "Internet lookups on" : "Offline mode"}
+  </span>`;
+}
+
+/**
+ * @param {{ health: Health | null, unread: number, onMaskChange: () => void }} props
+ */
+function TopBar({ health, unread, onMaskChange }) {
+  const [query, setQuery] = useState(session.listFilters.q);
+  const [mask, setMask] = useState(preferences.mask);
+
+  const toggleMask = () => {
+    const next = !mask;
+    setPreference("mask", next);
+    setMask(next);
+    toast(next ? "Personal details are now hidden everywhere." : "Personal details are shown again.");
+    onMaskChange();
+  };
+
+  return html`<header class="topbar">
+    <form
+      class="topbar__search"
+      role="search"
+      onSubmit=${(/** @type {SubmitEvent} */ event) => {
+        event.preventDefault();
+        session.listFilters = { ...session.listFilters, q: query.trim(), page: 0 };
+        navigate("#/cases");
+      }}
+    >
+      <input
+        class="input"
+        value=${query}
+        placeholder="Search by subject, sender, IP address or domain…"
+        autoComplete="off"
+        aria-label="Search checked emails"
+        onChange=${(/** @type {{ target: HTMLInputElement }} */ event) => setQuery(event.target.value)}
+      />
+    </form>
+    <div class="topbar__tools">
+      <${NetworkBadge} health=${health} />
+      <label
+        class="switch-label topbar__mask"
+        title="Hides names, email addresses, phone numbers and ID numbers everywhere on screen"
+      >
+        <span>Hide personal info</span>
+        <span
+          class=${`switch${mask ? " is-on" : ""}`}
+          role="switch"
+          tabIndex=${0}
+          aria-checked=${String(mask)}
+          aria-label="Hide personal information"
+          onClick=${toggleMask}
+          onKeyDown=${(/** @type {KeyboardEvent} */ event) => {
+            if (event.key === " " || event.key === "Enter") {
+              event.preventDefault();
+              toggleMask();
+            }
+          }}
+        ></span>
+      </label>
+      <a href="#/alerts" class="btn btn--icon topbar__bell" title="Alerts">🔔<${UnreadBadge} count=${unread} /></a>
+    </div>
+  </header>`;
+}
+
+/**
+ * @param {{ route: { name: string, param: string } }} props
+ */
+function CurrentView({ route }) {
+  switch (route.name) {
+    case "cases":
+      return html`<${CasesView} />`;
+    case "email":
+      return html`<${EmailView} emailId=${route.param} />`;
+    case "campaigns":
+      return route.param ? html`<${CampaignView} campaignId=${route.param} />` : html`<${CampaignsView} />`;
+    case "alerts":
+      return html`<${AlertsView} />`;
+    default:
+      return html`<${DashboardView} />`;
   }
 }
 
-/**
- * @param {Alert} alert
- */
-function onAlert(alert) {
-  setUnreadCount(session.unreadAlerts + 1);
-  toast(
-    html`<b>${categoryOf(alert.category).label}</b> · risk ${alert.risk_score}<br>
-      <a class="link" href="#/email/${encodeURIComponent(alert.email_id)}">${truncate(alert.subject, MAX_TOAST_SUBJECT) || "Open it"}</a>`,
-    "alert",
+function App() {
+  const route = useRoute();
+  const unread = useStore(unreadAlerts);
+  const [health, setHealth] = useState(/** @type {Health | null} */ (null));
+  // Re-mounts every view when PII masking changes, because the masking is
+  // applied by the server and every response in hand is now the wrong one.
+  const [maskEpoch, setMaskEpoch] = useState(0);
+
+  useEffect(() => {
+    api
+      .health()
+      .then((current) => {
+        session.health = current;
+        setHealth(current);
+      })
+      .catch(() => setHealth(null));
+    void refreshUnreadCount();
+  }, []);
+
+  useEffect(
+    () =>
+      subscribeToAlerts((alert) => {
+        unreadAlerts.set((count) => count + 1);
+        toast(
+          html`<${Fragment}>
+            <b>${categoryOf(alert.category).label}</b> · risk ${alert.risk_score}<br />
+            <a class="link" href=${`#/email/${encodeURIComponent(alert.email_id)}`}>
+              ${truncate(alert.subject, MAX_TOAST_SUBJECT) || "Open it"}
+            </a>
+          </>`,
+          "alert",
+        );
+      }),
+    [],
   );
-  if (currentRoute().name === "alerts") prependAlert(alert);
+
+  return html`<${Fragment}>
+    <div class="app">
+      <${Rail} route=${route.name} unread=${unread} />
+      <div class="app__main">
+        <${TopBar}
+          health=${health}
+          unread=${unread}
+          onMaskChange=${() => {
+            resyncMask();
+            setMaskEpoch((value) => value + 1);
+          }}
+        />
+        <main class="view">
+          <${CurrentView} key=${`${route.name}/${route.param}/${maskEpoch}`} route=${route} />
+        </main>
+      </div>
+    </div>
+    <${Toasts} />
+  </>`;
 }
 
-bindCaseRows(document);
-bindAlertActions(document);
-bindSearch();
-bindMaskSwitch();
-void loadHealth().then(() => {
-  startRouter(must("#view"), highlightNav);
-  void refreshUnreadCount();
-  connectLiveFeed();
-});
+const container = document.getElementById("root");
+if (!container) throw new Error("#root is missing from index.html");
+ReactDOM.createRoot(container).render(html`<${App} />`);

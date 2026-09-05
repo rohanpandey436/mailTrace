@@ -3,7 +3,9 @@
  * `preferences` survive a reload (localStorage); `session` lives for the page.
  *
  * Both are plain objects the views read directly: at this size a store with
- * subscriptions would be ceremony, not clarity.
+ * subscriptions would be ceremony, not clarity. The one exception is the unread
+ * alert count, which the live feed writes and three parts of the shell display,
+ * so it is a tiny observable store instead.
  */
 
 /** @typedef {import('./types.js').Health} Health */
@@ -51,10 +53,36 @@ export function setPreference(key, value) {
   writeFlag(key, value);
 }
 
-/** @type {{ health: Health | null, unreadAlerts: number, listFilters: ListFilters, emailTab: EmailTab }} */
+/** @type {{ health: Health | null, listFilters: ListFilters, emailTab: EmailTab }} */
 export const session = {
   health: null,
-  unreadAlerts: 0,
   listFilters: { q: "", category: "", minRisk: 0, page: 0 },
   emailTab: "findings",
 };
+
+/**
+ * The unread alert count: written by the live feed and by the alerts view,
+ * read by the bell, the rail badge and the alerts view itself.
+ */
+function createUnreadStore() {
+  let count = 0;
+  /** @type {Set<() => void>} */
+  const listeners = new Set();
+  return {
+    get: () => count,
+    /** @param {number | ((previous: number) => number)} next */
+    set(next) {
+      const value = typeof next === "function" ? next(count) : next;
+      if (value === count) return;
+      count = value;
+      for (const listener of listeners) listener();
+    },
+    /** @param {() => void} listener */
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+  };
+}
+
+export const unreadAlerts = createUnreadStore();
