@@ -1,0 +1,19 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": null,
+  "outputDirectory": "frontend",
+  "framework": null,
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "https://mailtrace-t9vo.onrender.com/api/:path*" }
+  ],
+  "headers": [
+    {
+      "source": "/css/app.css",
+      "headers": [{ "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }]
+    },
+    {
+      "source": "/js/:path*",
+      "headers": [{ "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }]
+    }
+  ]
+}
