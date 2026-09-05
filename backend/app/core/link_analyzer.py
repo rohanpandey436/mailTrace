@@ -330,6 +330,10 @@ def normalize_url(url: str) -> str:
 
 
 # Lookalike detection
+#: The largest edit distance ``is_lookalike`` will call a typosquat.
+_MAX_TYPOSQUAT_DISTANCE = 2
+
+
 def damerau_levenshtein(a: str, b: str) -> int:
     """Optimal-string-alignment distance (insert, delete, substitute, transpose)."""
     if a == b:
@@ -456,10 +460,17 @@ def is_lookalike(host: str, cfg: Settings) -> tuple[str, str]:
             continue
         if multichar == key:
             return result(name, "typosquat")
+        # Both accepted distances below require a shared first character, and an
+        # edit distance is never smaller than the length difference. Checking
+        # those first skips the O(len(sld) * len(key)) matrix for the brands that
+        # could not match anyway - which, across a few hundred brand domains, is
+        # nearly all of them. Neither test changes which domains are flagged.
+        if sld[0] != key[0] or abs(len(sld) - len(key)) > _MAX_TYPOSQUAT_DISTANCE:
+            continue
         distance = damerau_levenshtein(sld, key)
-        if distance == 1 and sld[0] == key[0]:
+        if distance == 1:
             return result(name, "typosquat")
-        if distance == 2 and len(key) >= 8 and sld[0] == key[0]:
+        if distance == 2 and len(key) >= 8:
             return result(name, "typosquat")
 
     # 4. tld swap --------------------------------------------------------

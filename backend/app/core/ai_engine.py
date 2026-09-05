@@ -25,14 +25,10 @@ Approach
 
    When scikit-learn is unavailable the module degrades to a documented
    heuristic probability estimate, ``ml_backend="unavailable"`` and no weights.
-3b. On the linear backend a **second, independent explanation** is fitted:
-   LIME (``app/ai/lime_explainer.py``, a from-scratch implementation - see that
-   module for why the ``lime`` package is not used).  Where SHAP reads the
-   model's coefficients in closed form, LIME perturbs the message, watches what
-   the whole pipeline actually does, and fits a local weighted surrogate to that
-   behaviour; ``lime_fidelity`` carries the surrogate's R^2 so a reader can tell
-   when not to trust it.  Off with ``MAILTRACE_LIME=0``; skipped entirely on the
-   transformer backend, where the neighbourhood would cost 160 forward passes.
+3b. A second, independent explanation - LIME - is available for the linear
+   backend, but is **not** computed here: it costs several times the whole rest
+   of the analysis, so ``app/core/explanations.py`` builds it on demand.  This
+   module produces only what is free, which is exact SHAP.
 4. ``score`` blends the model's non-legitimate mass, urgency, the strongest
    BEC pattern and cue diversity into one 0-1 content score.
 """
@@ -41,7 +37,6 @@ from __future__ import annotations
 import logging
 import re
 import unicodedata
-from typing import TYPE_CHECKING
 
 from ..config import Settings
 from ..schemas import (
@@ -49,7 +44,6 @@ from ..schemas import (
     AttachmentAnalysis,
     BecPattern,
     Finding,
-    LimeWeight,
     NlpAnalysis,
     ParsedEmail,
     Severity,
@@ -59,11 +53,6 @@ from ..schemas import (
 )
 from .knowledge import EXEC_TITLES, FREEMAIL_DOMAINS
 from .link_analyzer import registrable_domain
-
-if TYPE_CHECKING:  # pragma: no cover - annotations only; the model packages are imported lazily at runtime
-    from sklearn.pipeline import Pipeline
-
-    from ..ai.lime_explainer import LimeExplanation
 
 log = logging.getLogger("mailtrace.nlp")
 
@@ -233,6 +222,11 @@ def normalize_text(subject: str, body: str) -> str:
     combined = re.sub(r" *\n *", "\n", combined)
     combined = re.sub(r"\n{2,}", "\n", combined)
     return combined.strip().lower()[:200000]
+
+
+def model_input(parsed: ParsedEmail) -> str:
+    """The exact text the classifier sees, so an explanation explains the same input."""
+    return normalize_text(parsed.subject, _body_text(parsed))
 
 
 def _hits(name: str, text: str) -> list[str]:
@@ -474,48 +468,26 @@ _SHAP_TOP_K = 12
 #: leave-one-token-out deltas, not Shapley values.
 _ATTRIBUTION_METHOD = {"linear": "exact-shap-linear", "transformer": "occlusion", "unavailable": "none"}
 
-#: How many LIME surrogate coefficients are carried on the report.
-_LIME_TOP_K = 12
-
-_ModelOutcome = tuple[str | None, dict[str, float], list[str], list[tuple[str, float]], str, str, "LimeExplanation | None"]
-
-
-def _run_lime(pipeline: Pipeline, text: str, label: str, cfg: Settings) -> LimeExplanation | None:
-    """LIME for the linear backend, or None.
-
-    Skipped when ``Settings.lime_enabled`` is off.  Measured cost on the bundled
-    samples at the default 160 perturbations: 28-136 ms per message (median
-    ~70 ms) on top of a ~20 ms analysis, so it is on by default; the setting
-    exists for hosts where even that is too much.  Only the linear backend is
-    supported: with a transformer the neighbourhood would be 160 forward passes,
-    which is minutes, not milliseconds.
-    """
-    if not getattr(cfg, "lime_enabled", True):
-        return None
-    try:
-        from ..ai import lime_explainer as lime_text
-    except ImportError:  # pragma: no cover - ships with the app
-        log.debug("LIME module unavailable", exc_info=True)
-        return None
-    explanation = lime_text.explain_pipeline(
-        pipeline, text, label, n_samples=lime_text.resolve_samples(cfg), top_k=_LIME_TOP_K
-    )
-    return explanation or None
+_ModelOutcome = tuple[str | None, dict[str, float], list[str], list[tuple[str, float]], str, str]
 
 
 def _run_model(text: str, cfg: Settings) -> _ModelOutcome:
-    """(label, probabilities, top terms, token attributions, model name, backend, lime).
+    """(label, probabilities, top terms, token attributions, model name, backend).
 
     The optional transformer is tried first and falls back silently; the linear
     model is the default.  ``label`` is None only when neither backend ran, and
-    the caller then uses the rule heuristic.  ``lime`` is a
-    ``ml.lime_text.LimeExplanation`` or None.
+    the caller then uses the rule heuristic.
+
+    Exact SHAP is computed here because it is a closed-form read of the model's
+    own coefficients and costs microseconds.  LIME is not: it fits a surrogate
+    over ~160 perturbations, so it is built on demand by
+    ``app/core/explanations.py`` instead.
     """
     try:
         from ..ai import model_trainer as train
     except ImportError as exc:  # pragma: no cover - the package ships with the app
         log.warning("ML package unavailable (%s); using rule heuristics", exc)
-        return None, {}, [], [], "unavailable", "unavailable", None
+        return None, {}, [], [], "unavailable", "unavailable"
 
     model_id = (getattr(cfg, "transformer_model", "") or "").strip()
     if model_id:
@@ -527,19 +499,18 @@ def _run_model(text: str, cfg: Settings) -> _ModelOutcome:
             top_terms = [token for token, weight in attributions if weight > 0][:8]
             name = f"{model_id} ({train.TRANSFORMER_ATTRIBUTION} attribution)"
             # No LIME here on purpose: 160 transformer forward passes per message.
-            return label, probs, top_terms, attributions[:_SHAP_TOP_K], name, "transformer", None
+            return label, probs, top_terms, attributions[:_SHAP_TOP_K], name, "transformer"
 
     try:
         pipeline = train.load_or_train(cfg)
         label, probs = train.predict(pipeline, text)
         weights = train.shap_values(pipeline, text, label, top_k=_SHAP_TOP_K)
-        lime = _run_lime(pipeline, text, label, cfg)
-        return label, probs, train.explain(pipeline, text, label), weights, train.MODEL_VERSION, "linear", lime
+        return label, probs, train.explain(pipeline, text, label), weights, train.MODEL_VERSION, "linear"
     except ImportError as exc:
         log.warning("ML classifier unavailable (%s); using rule heuristics", exc)
     except Exception:  # model failure must never abort analysis
         log.exception("ML classification failed; using rule heuristics")
-    return None, {}, [], [], "unavailable", "unavailable", None
+    return None, {}, [], [], "unavailable", "unavailable"
 
 
 # Entry point
@@ -606,7 +577,7 @@ def analyze_content(
     max_bec = max((p.confidence for p in bec), default=0.0)
     exec_conf = max((p.confidence for p in bec if p.pattern == "executive_impersonation"), default=0.0)
 
-    label, probs, top_terms, attributions, model_name, backend, lime = _run_model(text, cfg)
+    label, probs, top_terms, attributions, model_name, backend = _run_model(text, cfg)
     if label is None:
         probs = _heuristic_probabilities(
             len(credential), len(financial), len(threat), len(reward), len(secrecy), len(authority),
@@ -620,10 +591,6 @@ def analyze_content(
     analysis.ml_probabilities = {k: round(float(v), 4) for k, v in probs.items()}
     analysis.ml_top_terms = top_terms
     analysis.shap_weights = [ShapWeight(token=str(token), weight=round(float(weight), 6)) for token, weight in attributions]
-    if lime is not None:
-        analysis.lime_weights = [LimeWeight(token=str(token), weight=round(float(weight), 6)) for token, weight in lime.weights]
-        analysis.lime_fidelity = round(float(lime.local_r2), 4)
-        analysis.lime_method = lime.method
     analysis.ml_model = model_name
     analysis.ml_backend = backend
 
@@ -710,28 +677,5 @@ def analyze_content(
             "top_terms": top_terms, "shap_weights": shap_evidence,
         },
     ))
-    if lime is not None and analysis.lime_weights:
-        # The two explanations are independent: SHAP reads the linear model's
-        # coefficients exactly, LIME fits a fresh surrogate to what the whole
-        # pipeline does when words are removed. Overlap is corroboration, so it
-        # is reported as a number rather than implied.
-        shap_tokens = {w.token for w in analysis.shap_weights}
-        agree = [w.token for w in analysis.lime_weights if w.token in shap_tokens]
-        lime_summary = ", ".join(f"{w.token} {w.weight:+.3f}" for w in analysis.lime_weights[:5])
-        findings.append(_finding(
-            "lime_explanation", Severity.INFO, "LIME local explanation",
-            f"A weighted linear surrogate fitted to {lime.n_samples} perturbations of this message "
-            f"(R^2 {analysis.lime_fidelity:.2f} against the real model) attributes {analysis.ml_category.value} to: "
-            f"{lime_summary or 'n/a'}. {len(agree)} of its top {len(analysis.lime_weights)} token(s) also appear in the SHAP list.",
-            {
-                "method": analysis.lime_method,
-                "local_r2": analysis.lime_fidelity,
-                "n_samples": lime.n_samples,
-                "n_interpretable_features": lime.n_features,
-                "category": analysis.ml_category.value,
-                "lime_weights": [{"token": w.token, "weight": round(w.weight, 4)} for w in analysis.lime_weights[:8]],
-                "agreement_with_shap": agree,
-            },
-        ))
     analysis.findings = findings
     return analysis

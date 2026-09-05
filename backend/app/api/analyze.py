@@ -22,7 +22,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import Response
 
 from ..config import Settings
-from ..core import decisions, pipeline
+from ..core import decisions, explanations, pipeline
 from ..core.errors import NotFound
 from ..database.case_manager import Store
 from ..schemas import (
@@ -33,6 +33,7 @@ from ..schemas import (
     CaseListResponse,
     CaseSummary,
     DashboardStats,
+    LimeReport,
     RawSubmission,
     SourceType,
     ThreatCategory,
@@ -285,6 +286,18 @@ def block_email(email_id: str, store: StoreDep, actor: ActorParam = DEFAULT_ACTO
 def get_decision(email_id: str, store: StoreDep) -> CaseDecision:
     """The decision currently recorded against a case, with its ledger history."""
     return decisions.current(store, decisions.load_case(store, email_id))
+
+
+@router.get("/emails/{email_id}/explanation")
+async def get_explanation(email_id: str, store: StoreDep, settings: SettingsDep) -> LimeReport:
+    """The LIME explanation for a case, fitted on the first request and cached.
+
+    Kept off the ingest path deliberately: the surrogate costs several times the
+    rest of the analysis and changes no verdict, so it is built when a person
+    actually opens the case.  See ``app/core/explanations.py``.
+    """
+    result = decisions.load_case(store, email_id)
+    return await run_in_threadpool(explanations.lime_report, result, settings, store)
 
 
 @router.get("/stats")

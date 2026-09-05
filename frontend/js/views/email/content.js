@@ -1,6 +1,7 @@
 // @ts-check
 /** "How it tries to trick you": pressure tactics, BEC patterns, SHAP and LIME. */
-import { html } from "../../dom.js";
+import { api } from "../../api.js";
+import { $, html, mount } from "../../dom.js";
 import { percent, signed } from "../../format.js";
 import { BEC_PATTERN, categoryOf } from "../../labels.js";
 import { bar, chip, section } from "../../ui/primitives.js";
@@ -9,6 +10,8 @@ import { bar, chip, section } from "../../ui/primitives.js";
 /** @typedef {import('../../types.js').BecPattern} BecPattern */
 /** @typedef {import('../../types.js').NlpAnalysis} NlpAnalysis */
 /** @typedef {import('../../types.js').TokenWeight} TokenWeight */
+/** @typedef {import('../../types.js').LimeReport} LimeReport */
+/** @typedef {import('../../types.js').ThreatCategory} ThreatCategory */
 
 const MAX_TERMS = 8;
 const MAX_EVIDENCE = 5;
@@ -125,16 +128,58 @@ function modelView(nlp) {
           <p class="hint subsection">Red pushes toward <b>${predicted}</b>, green pushes away from it.</p>
         </div>`
       : html`<p class="hint subsection">Words that pushed the decision: ${nlp.ml_top_terms.length > 0 ? nlp.ml_top_terms.slice(0, MAX_TOP_TERMS).map((term) => chip(term, "info")) : "—"}</p>`}
-    ${nlp.lime_weights.length > 0 &&
-    html`<div class="subsection subsection--divided">
-      <div class="subsection__title">Second opinion (LIME) — how the answer changes when words are removed</div>
-      <div class="cluster">
-        ${nlp.lime_weights.slice(0, MAX_WEIGHTS).map((entry) => chip(`${entry.token} ${signed(entry.weight)}`, entry.weight >= 0 ? "bad" : "ok"))}
-      </div>
-      <p class="hint subsection">SHAP reads the model's own weights. LIME instead rewrites this email many times with words taken out, watches
-        what changes, and fits a simple local model to that — here it matches the real model with R² ${nlp.lime_fidelity.toFixed(2)}.
-        Red pushed toward <b>${predicted}</b>, green pushed away.</p>
-    </div>`}`;
+    <div id="lime" class="subsection subsection--divided">
+      <div class="subsection__title">Second opinion (LIME)</div>
+      <div class="skeleton"></div>
+    </div>`;
+}
+
+/**
+ * LIME is fitted when the case is opened, not during ingest: it costs several
+ * times the rest of the analysis and changes no verdict, so the ingest pipeline
+ * stays inside its budget and this arrives a moment later.
+ * @param {LimeReport} report
+ * @param {ThreatCategory} predicted
+ */
+function limeSection(report, predicted) {
+  if (!report.available || report.weights.length === 0) {
+    return html`<div class="subsection__title">Second opinion (LIME)</div>
+      <p class="hint">Not available for this message.</p>`;
+  }
+  return html`<div class="subsection__title">Second opinion (LIME) — how the answer changes when words are removed</div>
+    <div class="cluster">
+      ${report.weights.slice(0, MAX_WEIGHTS).map((entry) => chip(`${entry.token} ${signed(entry.weight)}`, entry.weight >= 0 ? "bad" : "ok"))}
+    </div>
+    <p class="hint subsection">SHAP reads the model's own weights. LIME instead rewrites this email many times with words taken out, watches
+      what changes, and fits a simple local model to that — here it matches the real model with R² ${report.fidelity.toFixed(2)}.
+      Red pushed toward <b>${categoryOf(predicted).label}</b>, green pushed away.
+      ${report.agreement_with_shap.length > 0 &&
+      html`${report.agreement_with_shap.length} of its top ${report.weights.length} words also appear in the SHAP list, which is corroboration.`}</p>`;
+}
+
+/**
+ * Fetch the explanation and fill in the placeholder `contentTab` left.
+ * Returns a cleanup that abandons the render if the tab changes first.
+ * @param {HTMLElement} panel
+ * @param {AnalysisResult} result
+ * @returns {() => void}
+ */
+export function mountExplanation(panel, result) {
+  let cancelled = false;
+  const box = $("#lime", panel);
+  if (box) {
+    api
+      .getExplanation(result.id)
+      .then((report) => {
+        if (!cancelled) mount(box, limeSection(report, result.nlp.ml_category));
+      })
+      .catch(() => {
+        if (!cancelled) mount(box, html`<p class="hint">The explanation could not be loaded.</p>`);
+      });
+  }
+  return () => {
+    cancelled = true;
+  };
 }
 
 /**

@@ -120,11 +120,12 @@ def test_report_csv_has_header_block_and_findings_table(client, sample):
     assert ("Origin", "IP") in fields
     assert [row[2] for row in rows if row and row[0] == "IOC"]
 
-    # The findings table follows the header block, one row per finding.
+    # The findings table follows the header block, one row per finding. A report
+    # carries one more than ingest produced: the LIME explanation, which is
+    # fitted on the report path rather than during analysis (core/explanations.py).
     header_index = rows.index(list(csvexport.FINDING_COLUMNS))
     finding_rows = [row for row in rows[header_index + 1:] if row]
-    assert len(finding_rows) == len(result["findings"])
-    assert finding_rows[0][2] == result["findings"][0]["id"]
+    assert [row[2] for row in finding_rows] == [f["id"] for f in result["findings"]] + ["lime_explanation"]
 
 
 def test_report_csv_respects_mask(client, sample):

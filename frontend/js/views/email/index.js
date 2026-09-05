@@ -11,7 +11,7 @@ import { preferences, session, setPreference } from "../../state.js";
 import { mountDecisionBar } from "../../ui/decision-bar.js";
 import { createGraph, graphLegend } from "../../ui/graph.js";
 import { categoryChip, check, chip, emptyState, gauge, section, skeleton } from "../../ui/primitives.js";
-import { contentTab } from "./content.js";
+import { contentTab, mountExplanation } from "./content.js";
 import { mountCustodyTab } from "./custody.js";
 import { domainsTab } from "./domains.js";
 import { findingsTab } from "./findings.js";
@@ -179,7 +179,7 @@ function renderTab(panel, result, tab) {
       return mountRouteMap(panel, result);
     case "content":
       mount(panel, contentTab(result));
-      return undefined;
+      return mountExplanation(panel, result);
     case "links":
       mount(panel, linksTab(result));
       return undefined;

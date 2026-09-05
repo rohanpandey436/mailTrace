@@ -304,6 +304,27 @@ class LimeWeight(BaseModel):
     weight: float = Field(description="Local surrogate coefficient in probability units; sign carries the direction")
 
 
+class LimeReport(BaseModel):
+    """A case's LIME explanation, built on request rather than during ingest.
+
+    ``available`` is False when LIME is switched off, when the transformer
+    backend produced the verdict (its neighbourhood would be 160 forward
+    passes), or when the surrogate could not be fitted.
+    """
+
+    email_id: str
+    available: bool = False
+    method: str = ""
+    weights: list[LimeWeight] = Field(default_factory=list)
+    fidelity: float = Field(default=0.0, description="Local R^2 of the surrogate against the real model")
+    n_samples: int = 0
+    n_features: int = 0
+    category: ThreatCategory = ThreatCategory.LEGITIMATE
+    agreement_with_shap: list[str] = Field(
+        default_factory=list, description="Tokens this explanation shares with the exact SHAP list"
+    )
+
+
 class NlpAnalysis(BaseModel):
     language: str = "en"
     word_count: int = 0
@@ -321,6 +342,8 @@ class NlpAnalysis(BaseModel):
     shap_weights: list[ShapWeight] = Field(
         default_factory=list, description="Token-level SHAP attributions for ml_category, strongest first",
     )
+    # Filled in by app/core/explanations.py on the report path; empty on a
+    # freshly ingested case, which is what keeps ingest inside its budget.
     lime_weights: list[LimeWeight] = Field(
         default_factory=list,
         description="LIME local-surrogate coefficients for ml_category, strongest first; empty when LIME is off or unavailable",

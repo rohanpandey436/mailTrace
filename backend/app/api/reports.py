@@ -17,13 +17,13 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 
-from ..core import decisions
+from ..core import decisions, explanations
 from ..core.errors import NotFound
 from ..schemas import CustodyChain, CustodyVerification
 from ..utils.csv_exporter import UTF8_BOM, render_report_csv
 from ..utils.pdf_generator import PdfUnavailable, build_report, render_html, render_pdf
 from ..utils.pii_masker import mask_report_fields, mask_result
-from .deps import DEFAULT_ACTOR, MaskDep, StoreDep
+from .deps import DEFAULT_ACTOR, MaskDep, SettingsDep, StoreDep
 
 router = APIRouter(prefix="/api", tags=["reports"])
 
@@ -42,10 +42,14 @@ def _report_filename(report_id: str, extension: str) -> str:
 def get_report(
     email_id: str,
     store: StoreDep,
+    settings: SettingsDep,
     mask: MaskDep,
     fmt: Annotated[ReportFormat, Query(alias="format")] = "json",
 ) -> Response:
     result = decisions.load_case(store, email_id)
+    # A report is a record, so it carries both explanations even though only
+    # SHAP is cheap enough to compute during ingest.
+    result = explanations.attach(result, settings, store)
     if mask:
         result = mask_result(result)
     store.record_custody(

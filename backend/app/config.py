@@ -119,8 +119,9 @@ class Settings:
     # URL pillar to rules only.
     url_model_enabled: bool = True
     # Stage 3A: LIME, the sampling-based second explanation beside exact SHAP.
-    # It costs one batched predict_proba over `lime_samples` perturbations per
-    # message, so it is switchable; see app/ai/lime_explainer.py for the measured cost.
+    # It costs 26-130 ms per message against ~20 ms for the whole rest of the
+    # analysis, so it is built on demand by app/core/explanations.py rather than
+    # during ingest. This switch turns it off everywhere.
     lime_enabled: bool = True
     lime_samples: int = 160
     entropy_threshold: float = 7.0

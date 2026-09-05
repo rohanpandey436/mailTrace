@@ -19,6 +19,7 @@ import { preferences } from "./state.js";
 /** @typedef {import('./types.js').DashboardStats} DashboardStats */
 /** @typedef {import('./types.js').EmailListResponse} EmailListResponse */
 /** @typedef {import('./types.js').Health} Health */
+/** @typedef {import('./types.js').LimeReport} LimeReport */
 
 /** @typedef {{ q?: string, category?: string, minRisk?: number, limit?: number, offset?: number }} ListQuery */
 /** @typedef {'pdf' | 'html' | 'csv' | 'json'} ReportFormat */
@@ -133,6 +134,15 @@ export const api = {
    * @returns {Promise<AnalyzeResponse>}
    */
   analyzeRaw: (raw) => /** @type {Promise<AnalyzeResponse>} */ (postJson("/api/analyze/raw", { raw, filename: "pasted.eml" })),
+
+  /**
+   * The LIME explanation. Fitted on the first request for a case, then cached
+   * server-side, so this is slow once and instant afterwards.
+   * @param {string} id
+   * @returns {Promise<LimeReport>}
+   */
+  getExplanation: (id) =>
+    /** @type {Promise<LimeReport>} */ (request(`/api/emails/${encodeURIComponent(id)}/explanation`)),
 
   /**
    * @param {string} id

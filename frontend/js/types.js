@@ -225,6 +225,18 @@
  */
 
 /**
+ * The LIME explanation, fitted when a case is opened rather than during ingest.
+ * @typedef {object} LimeReport
+ * @property {boolean} available
+ * @property {string} method
+ * @property {TokenWeight[]} weights
+ * @property {number} fidelity
+ * @property {number} n_samples
+ * @property {ThreatCategory} category
+ * @property {string[]} agreement_with_shap
+ */
+
+/**
  * @typedef {object} CustodyEvent
  * @property {number} seq
  * @property {string} timestamp
