@@ -158,6 +158,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             # that was configured: a PostgreSQL URL whose driver or server is
             # missing degrades to SQLite, and that must be visible, not guessed.
             database=store.backend if store is not None else "sqlite",
+            database_note=store.backend_note if store is not None else "store not initialised",
             # Stage 2 PARSE-C++: whether the optional native dissector
             # (engine/) is doing the MIME work, or the pure-Python fallback.
             # Both produce identical results - this only says which is
