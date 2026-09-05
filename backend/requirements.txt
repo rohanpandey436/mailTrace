@@ -17,3 +17,8 @@ maxminddb>=2.6
 # optional at runtime: uninstall it, or set MAILTRACE_URL_MODEL=0, and the URL
 # pillar returns to the deterministic rules with identical output.
 xgboost>=2.1,<4
+# ONNX Runtime serves the URL model from the graph committed at
+# app/ai/url_model.onnx (25 KB), so a deployment scores links without training
+# anything. 13 MB wheel. xgboost above still fits the model and remains the
+# fallback whenever the graph does not match the running configuration.
+onnxruntime>=1.20

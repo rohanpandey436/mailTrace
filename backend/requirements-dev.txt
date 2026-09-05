@@ -2,3 +2,6 @@
 pytest>=8.0
 ruff>=0.16
 mypy>=2.0
+# Exporting the URL model to ONNX (python -m app.ai.url_model --bundle).
+onnxmltools>=1.12
+onnx>=1.16

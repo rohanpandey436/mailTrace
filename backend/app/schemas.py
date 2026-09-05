@@ -729,6 +729,7 @@ class HealthStatus(BaseModel):
     zero_persistence: bool
     webhooks: int
     database: str = Field(description="The store engine actually in use: sqlite or postgresql")
+    url_model: str = Field(description="Which backend is serving the URL model: onnx, xgboost or not loaded")
     native_engine: bool = Field(description="Whether the C++ dissector is doing the MIME work")
     native_engine_version: str
     native_engine_status: str

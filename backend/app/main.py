@@ -144,6 +144,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # Imported inside the handler so the reported state is always the
         # parser's live state and main.py keeps no import-time dependency on
         # the analysis engine.
+        from .ai import url_model
         from .core import parser
 
         store: Store | None = getattr(app.state, "store", None)
@@ -161,6 +162,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             # (engine/) is doing the MIME work, or the pure-Python fallback.
             # Both produce identical results - this only says which is
             # installed and healthy.  See engine/README.md.
+            # Stage 4: onnxruntime serves the URL model from the graph committed
+            # at app/ai/url_model.onnx; xgboost fits it and is the fallback.
+            url_model=url_model.loaded_backend(),
             native_engine=parser.NATIVE_ENGINE,
             native_engine_version=parser.NATIVE_ENGINE_VERSION,
             native_engine_status=parser.NATIVE_ENGINE_STATUS,

@@ -118,6 +118,7 @@ from ..core.link_analyzer import (
     registrable_domain,
 )
 from ..schemas import DomainIntel, UrlInfo
+from . import onnx_url
 
 if TYPE_CHECKING:  # pragma: no cover - annotations only; xgboost is imported lazily at runtime
     from xgboost import XGBClassifier
@@ -696,10 +697,18 @@ def train(cfg: Settings | None = None, model_path: Path | None = None, with_metr
         raise ValueError("URL dataset needs both classes")
     metrics = _holdout_metrics(x, y) if with_metrics else {}
     model = build_classifier().fit(x, y)
-    bundle = _bundle(model, meta, dataset_fingerprint(cfg), metrics)
+    fingerprint = dataset_fingerprint(cfg)
+    bundle = _bundle(model, meta, fingerprint, metrics)
     path.parent.mkdir(parents=True, exist_ok=True)
     joblib.dump(bundle, path)
     log.info("trained %s on %d URLs (%d malicious) -> %s", MODEL_VERSION, meta["n_rows"], meta["n_malicious"], path)
+    # Beside the joblib, never over the committed graph: a test that trains
+    # must not replace the artefact the deployment serves. `--bundle` on the
+    # CLI is the only thing that writes there.
+    try:
+        onnx_url.export(model, fingerprint, path.with_suffix(".onnx"))
+    except ImportError:
+        log.info("onnxmltools is not installed, so no ONNX graph was written (pip install -r requirements-dev.txt)")
     return model
 
 
@@ -739,12 +748,13 @@ def available() -> bool:
     return True
 
 
-def load_or_train(cfg: Settings | None = None) -> XGBClassifier | None:
+def load_or_train(cfg: Settings | None = None) -> XGBClassifier | onnx_url.OnnxUrlScorer | None:
     """The fitted model, training it once if needed; ``None`` if unavailable.
 
     Never raises.  Keyed on the dataset fingerprint, not on the file path, so
     every ``Settings`` pointing at the same knowledge base shares one fitted
-    model in this process.
+    model in this process, and so a graph exported for a different knowledge
+    base is never served.
     """
     cfg = cfg or default_settings
     if not getattr(cfg, "url_model_enabled", True):
@@ -761,7 +771,13 @@ def load_or_train(cfg: Settings | None = None) -> XGBClassifier | None:
         if fingerprint in _failed:
             return None
         try:
-            model = _load_bundle(Path(cfg.url_model_path), fingerprint)
+            # The committed ONNX graph first: it needs no xgboost, no training
+            # step and no writable directory. See app/ai/onnx_url.py.
+            model: Any = onnx_url.load(fingerprint)
+            if model is None:
+                model = onnx_url.load(fingerprint, Path(cfg.url_model_path).with_suffix(".onnx"))
+            if model is None:
+                model = _load_bundle(Path(cfg.url_model_path), fingerprint)
             if model is None:
                 model = train(cfg, with_metrics=False)
         except ImportError as exc:
@@ -773,7 +789,22 @@ def load_or_train(cfg: Settings | None = None) -> XGBClassifier | None:
             log.exception("URL model could not be trained; the URL pillar stays rule-only")
             return None
         _models[fingerprint] = model
-        return model
+        scorer: XGBClassifier | onnx_url.OnnxUrlScorer = model
+        return scorer
+
+
+def loaded_backend() -> str:
+    """Which backend is serving, without forcing a load.
+
+    ``/api/health`` reports this: if the committed ONNX graph stops matching the
+    configuration - a changed knowledge base, samples, or MAILTRACE_ORG_DOMAINS -
+    the service keeps working on the booster, and this is where that shows.
+    """
+    with _lock:
+        models = list(_models.values())
+    if not models:
+        return "not loaded"
+    return "onnx" if isinstance(models[0], onnx_url.OnnxUrlScorer) else "xgboost"
 
 
 # Scoring
@@ -844,6 +875,12 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Train the MailTrace URL/domain risk model.")
     parser.add_argument("--out", type=Path, default=None, help="model output path")
     parser.add_argument("--report", action="store_true", help="print gain-ranked feature importances")
+    parser.add_argument(
+        "--bundle",
+        action="store_true",
+        help=f"also write the ONNX graph the deployment serves ({onnx_url.BUNDLED.name}); "
+        "do this whenever the knowledge base, the samples or MAILTRACE_ORG_DOMAINS change",
+    )
     args = parser.parse_args(argv)
 
     cfg = default_settings
@@ -863,6 +900,9 @@ def main(argv: list[str] | None = None) -> int:
         )
     model = train(cfg, args.out)
     print(f"Saved model to {args.out or cfg.url_model_path}")
+    if args.bundle:
+        path = onnx_url.export(model, dataset_fingerprint(cfg), onnx_url.BUNDLED)
+        print(f"Exported the served ONNX graph to {path} ({path.stat().st_size / 1024:.0f} KB)")
     if args.report:
         importances = sorted(zip(FEATURE_NAMES, model.feature_importances_), key=lambda item: -item[1])
         print("\nFeature importance (gain-normalised):")
