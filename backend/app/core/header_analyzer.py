@@ -29,9 +29,9 @@ import ipaddress
 import logging
 import re
 from collections.abc import Iterable
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
-from typing import Any, Optional
+from typing import Any
 
 from ..config import Settings
 from ..schemas import Finding, HeaderAnalysis, Hop, ParsedEmail, Severity
@@ -287,17 +287,17 @@ def _protocol_from(with_text: str) -> str:
     return token.upper() if _SMTP_PROTOCOL_RE.match(token) else token
 
 
-def _parse_timestamp(value: str) -> Optional[datetime]:
+def _parse_timestamp(value: str) -> datetime | None:
     text = _strip_comments(value)
     if not text:
         return None
     try:
         parsed = parsedate_to_datetime(text)
-    except Exception:  # noqa: BLE001 - malformed dates are data, not errors
+    except (TypeError, ValueError, IndexError, OverflowError):  # malformed dates are data, not errors
         return None
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 def _parse_received_full(value: str) -> dict[str, Any]:
@@ -348,11 +348,11 @@ def parse_received(value: str) -> dict[str, Any]:
 def _build_hops(infos: list[dict[str, Any]], cfg: Settings) -> list[Hop]:
     """Turn chronologically ordered parses into Hop models with per-hop anomalies."""
     hops: list[Hop] = []
-    previous_ts: Optional[datetime] = None
+    previous_ts: datetime | None = None
     for index, info in enumerate(infos):
         from_ip: str = info["from_ip"]
         from_host: str = info["from_host"]
-        timestamp: Optional[datetime] = info["timestamp"]
+        timestamp: datetime | None = info["timestamp"]
         private = bool(from_ip) and is_private_ip(from_ip)
         anomalies: list[str] = []
         if not info["parsed"] and timestamp is None:
@@ -361,7 +361,7 @@ def _build_hops(infos: list[dict[str, Any]], cfg: Settings) -> list[Hop]:
             anomalies.append("missing_timestamp")
         if private:
             anomalies.append("private_ip")
-        delay: Optional[float] = None
+        delay: float | None = None
         if timestamp is not None and previous_ts is not None:
             delay = (timestamp - previous_ts).total_seconds()
             if delay < -60:
@@ -425,7 +425,7 @@ def _x_originating_ip(parsed: ParsedEmail) -> str:
 
 def _select_origin(
     hops: list[Hop], infos: list[dict[str, Any]], x_originating_ip: str, cfg: Settings
-) -> tuple[str, Optional[int], float, str]:
+) -> tuple[str, int | None, float, str]:
     """Return (originating_ip, hop_index, confidence, reasoning)."""
     if not hops:
         if x_originating_ip:

@@ -34,12 +34,12 @@ a genuine offline mode: with `MAILTRACE_ENABLE_NETWORK=false` every network
 enrichment degrades to a valid result marked `source="offline"` and no lookup is
 attempted.
 
-**The dashboard is not offline.** `frontend/index.html` loads Tailwind from
-`cdn.tailwindcss.com`, Leaflet 1.9.4 and d3 7.9.0 from `cdnjs.cloudflare.com`,
-the Inter font from Google Fonts and map tiles from `tile.openstreetmap.org`.
-Without internet in the *browser* the page still loads and the API still answers,
-but it renders unstyled and the map and graph views do not draw. Plan for that if
-the venue Wi-Fi is unreliable, or use the API directly.
+**The dashboard is not fully offline.** `frontend/` loads Leaflet 1.9.4 and
+Cytoscape 3.30.4 from `cdnjs.cloudflare.com`, the Inter font from Google Fonts
+and map tiles from `tile.openstreetmap.org`. Its own stylesheets and scripts are
+local, so without internet in the *browser* the page still loads, styled, and the
+API still answers, but the map and graph views do not draw. Plan for that if the
+venue Wi-Fi is unreliable, or use the API directly.
 
 Section 9 lists exactly which capabilities are live by default and which are
 written but dormant. Read it before demoing.
@@ -134,7 +134,7 @@ folded into the network term and the AI signal into the text term.)
 
 ```
                  .eml files / pasted source                    analyst browser
-                          |                                  (frontend/index.html)
+                          |                                  (frontend/)
                           v                                     ^           ^
    +----------------------+-------------------------------------+-----------+------+
    |  FastAPI  backend/app/main.py + app/api/*    JSON / HTML    | WS + SSE alerts  |
@@ -332,54 +332,61 @@ mailtrace/
   README.md
   render.yaml               Render Blueprint (must live at the root)
   .dockerignore
-  .github/workflows/ci.yml  Python 3.12, import check, pytest
+  .github/workflows/ci.yml  Python 3.13: ruff, mypy --strict, import check, pytest
   backend/                  the FastAPI service - run everything from here
     run.py                  uvicorn entry point (python run.py)
-    pytest.ini              testpaths = tests, addopts = -q
+    pyproject.toml          ruff, mypy (strict) and pytest configuration
     requirements.txt        runtime dependencies
-    requirements-dev.txt    runtime + pytest
+    requirements-dev.txt    runtime + pytest, ruff, mypy
     requirements-ml.txt     OPTIONAL transformers + torch (DistilRoBERTa)
     requirements-pg.txt     OPTIONAL psycopg (PostgreSQL backend)
     app/
       config.py             Settings dataclass; MAILTRACE_* environment / .env loader
-      schemas.py            pydantic v2 data contracts (ENGINE_VERSION lives here)
-      db.py                 Store: SQLite/PostgreSQL persistence, custody ledger, alerts, cache
-      main.py               FastAPI app factory, lifespan, error handlers, index route
-      api/
-        deps.py             get_store / get_settings / mask_param dependencies
-        analyze.py          upload, raw paste, case list, case detail, CSV, raw export,
-                            quarantine / block decisions, stats
+      schemas.py            pydantic v2 data contracts, request/response envelopes (ENGINE_VERSION lives here)
+      main.py               FastAPI app factory, lifespan, error handlers, static dashboard mount
+      api/                  the HTTP layer: thin handlers, typed responses, nothing else
+        deps.py             StoreDep / SettingsDep / MaskDep dependencies; PII masking at the boundary
+        analyze.py          upload, raw paste, case list + CSV, case detail, raw export, decisions, stats
         cases.py            campaigns and relationship graphs
         reports.py          forensic report (JSON / HTML / PDF / CSV) and custody chain
-        alerts.py           alert list / ack, WebSocket + SSE streams, Broadcaster, maybe_alert
-      engine/
+        alerts.py           alert list / ack, WebSocket + SSE streams, Broadcaster, webhooks
+      core/                 the analysis engine, one job per file
         pipeline.py         orchestration (order above)
-        knowledge.py        brands, free-mail, shorteners, risky extensions, DNSBLs, confusables
         parser.py           RFC 822 / MIME parsing, hashes, SimHash/TLSH, native-engine adapter
-        attachments.py      magic sniffing, macro / archive inspection, entropy, attachment risk
-        headers.py          Received chain, origin selection, forged-field checks
-        auth.py             SPF / DKIM / DMARC (Authentication-Results + live)
-        urls.py             URL extraction, lookalike engine, registrable_domain
-        domains.py          WHOIS, DNS and reputation per domain
-        nlp.py              lexicons, BEC patterns, ML inference, SHAP + LIME wiring
-        geoip.py            ip-api, MaxMind, reverse DNS, Tor, DNSBL, AbuseIPDB
-        virustotal.py       OPTIONAL VirusTotal v3 hash reputation for attachments
-        scoring.py          component scores, rule policy, dual validation, attribution
-        graph.py            relationship graph build and merge
-        campaigns.py        indicators, correlation, campaign assignment
-        privacy.py          PII masking
-        reporting.py        forensic report builder, HTML and Section 65B PDF renderers
-        csvexport.py        CSV export with formula-injection guards
-      ml/
-        train.py            build / train / load / predict / explain + CLI
-        lime_text.py        from-scratch LIME for the text classifier
+        header_analyzer.py  Received chain, origin selection, forged-field checks
+        auth_checker.py     SPF / DKIM / DMARC (Authentication-Results + live)
+        link_analyzer.py    URL extraction, lookalike engine, registrable_domain
+        file_analyzer.py    magic sniffing, macro / archive inspection, Shannon entropy
+        ai_engine.py        lexicons, BEC patterns, ML inference, SHAP + LIME wiring
+        geoip_mapper.py     ip-api, MaxMind, reverse DNS, Tor, DNSBL, AbuseIPDB
+        domain_intel.py     WHOIS, DNS and reputation per domain
+        threat_intel.py     indicators, correlation, campaign assignment
+        scoring.py          the five pillars, rule policy, dual validation, attribution
+        graph_builder.py    relationship graph build and merge
+        decisions.py        analyst quarantine / block decisions (evidence log only; no mail system)
+        errors.py           NotFound, which main.py turns into a 404
+        knowledge.py        brands, free-mail, shorteners, risky extensions, DNSBLs, confusables
+      ai/
+        model_trainer.py    build / train / load / predict / exact SHAP + CLI
+        lime_explainer.py   from-scratch LIME for the text classifier
         url_model.py        XGBoost URL/domain model (optional at runtime)
         seed_corpus.json    249 labelled seed messages (five classes)
+      utils/
+        pdf_generator.py    forensic report builder, HTML and Section 65B PDF renderers
+        pii_masker.py       PII masking
+        csv_exporter.py     CSV export with formula-injection guards
+        virustotal.py       OPTIONAL VirusTotal v3 hash reputation for attachments
+        cache.py            the lookup cache every enrichment engine shares
+      database/
+        case_manager.py     Store: SQLite/PostgreSQL persistence, custody ledger, alerts, cache
     tests/                  pytest suite (offline); 140 tests, 6 of them skipped without the C++ engine
     data/                   runtime, git-ignored: mailtrace.db, evidence/, model.joblib,
                             url_model.joblib  (the default MAILTRACE_DATA_DIR)
-  frontend/
-    index.html              single-file analyst UI (Tailwind, Leaflet, d3 - all from CDNs)
+  frontend/                 the analyst UI: no build step, no framework, served by FastAPI as static files
+    index.html              the page shell - navigation, top bar and the <main> the views render into
+    css/                    tokens.css (every colour, size and radius), base, layout, components, vendor
+    js/                     ES modules: api.js, router.js, state.js, labels.js, ui/ (Leaflet map, Cytoscape graph), views/
+    jsconfig.json           the JavaScript is type-checked (strict) against the contracts in js/types.js
   samples/                  five demo messages and their README
   engine/                   OPTIONAL C++20 parse extension - built and benchmarked, see engine/README.md
   deploy/
@@ -626,7 +633,7 @@ follow the quick start.
 | **C++20 parse engine** (`engine/`) | Built and active on the development machine since 2026-09-05; whether it is active anywhere else depends on that host having a compiler at install time. `/api/health` reports `native_engine`, its version and its status, so you never have to guess which parser answered | A C++20 compiler plus `pip install pybind11 && pip install ./engine`. See [`engine/README.md`](engine/README.md). `MAILTRACE_NATIVE_ENGINE=0` forces the Python parser back |
 | **DistilRoBERTa NLP backend** | `torch` and `transformers` are not installed and are deliberately absent from `requirements.txt` (torch alone is roughly 1 GB; the free tier has 512 MB) | `pip install -r backend/requirements-ml.txt` and `MAILTRACE_TRANSFORMER_MODEL=<hf-model-id>` |
 | **MaxMind GeoLite2** | The `maxminddb` reader is installed, but no `.mmdb` database file ships with the repository | Download GeoLite2-City and set `MAILTRACE_MAXMIND_DB=/path/to/GeoLite2-City.mmdb` |
-| **TLSH fuzzy digest** | `py-tlsh` is not installed; only SimHash digests are produced today. `campaigns.py` stores `tlsh:` indicators when they exist | `pip install py-tlsh`; tune with `MAILTRACE_TLSH_MAX_DISTANCE` |
+| **TLSH fuzzy digest** | `py-tlsh` is not installed; only SimHash digests are produced today. `threat_intel.py` stores `tlsh:` indicators when they exist | `pip install py-tlsh`; tune with `MAILTRACE_TLSH_MAX_DISTANCE` |
 | **PostgreSQL / Supabase store** | `psycopg` is not installed and no URL is set, so the store is the SQLite file. Untested against a real server | `pip install -r backend/requirements-pg.txt` and `MAILTRACE_DATABASE_URL=postgresql://...`. `/api/health` reports which backend won |
 | **VirusTotal attachment reputation** | Needs an API key; with none set `virustotal.enrich` makes no request at all | `MAILTRACE_VIRUSTOTAL_KEY=<key>`. Only SHA-256 digests are ever sent |
 | **AbuseIPDB IP reputation** | Needs an API key | `MAILTRACE_ABUSEIPDB_KEY=<key>` |
@@ -758,7 +765,7 @@ On Windows PowerShell use `curl.exe`; plain `curl` is an alias of `Invoke-WebReq
 
 | Method | Path | Parameters | Returns |
 |---|---|---|---|
-| GET | `/` | - | the analyst UI (`frontend/index.html`) |
+| GET | `/` | - | the analyst UI (`frontend/`, served as static files) |
 | GET | `/api/health` | - | `{"status", "engine_version", "network", "pii_mask_default", "zero_persistence", "webhooks", "database", "native_engine", "native_engine_version", "native_engine_status"}` |
 | POST | `/api/analyze` | multipart `files` (one or more), query `actor`, `mask` | `{"results": [AnalysisResult], "alerts": [Alert]}` |
 | POST | `/api/analyze/raw` | JSON `{"raw", "filename"}`, query `actor`, `mask` | same shape with one result |
@@ -823,7 +830,13 @@ pip install -r requirements-dev.txt
 pytest -q
 ```
 
-`pytest.ini` sets `testpaths = tests`, so plain `pytest` finds the suite.
+`pyproject.toml` sets `testpaths = tests`, so plain `pytest` finds the suite. The
+same file configures the two other checks the code is held to, both clean:
+
+```bash
+ruff check app tests     # lint, import order, no undocumented catch-all excepts
+mypy app                 # strict mode
+```
 
 Measured on 2026-09-05: **140 passed, 0 skipped**. The suite runs offline
 (`enable_network=False`) against a temporary data directory.
@@ -843,9 +856,9 @@ output on all five demo messages. See section 9 and
   `backend/app/ai/seed_corpus.json`. It is a corroborating signal and an
   explainability aid, not a production model; retrain it on real labelled mail
   before relying on its probabilities.
-- **The dashboard needs internet.** Tailwind, Leaflet, d3, the Inter font and the
-  OpenStreetMap tiles are all fetched from CDNs. The engine's offline mode does
-  not extend to the browser.
+- **The map and graph need internet.** Leaflet, Cytoscape, the Inter font and the
+  OpenStreetMap tiles are fetched from CDNs; the dashboard's own CSS and
+  JavaScript are local. The engine's offline mode does not extend to the browser.
 - **Free geolocation API.** `ip-api.com` is free and needs no key, but is HTTP only,
   rate-limited (45 requests per minute), city-level at best, and places mobile or
   CGNAT addresses at the carrier's region rather than the device. Results are

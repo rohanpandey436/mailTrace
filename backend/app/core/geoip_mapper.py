@@ -47,12 +47,14 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 import httpx
+from pydantic import ValidationError
 
 from ..config import Settings
 from ..schemas import Finding, GeoInfo, HeaderAnalysis, Hop, InfraAnalysis, Severity
+from ..utils.cache import cache_get, cache_set
 from .knowledge import DNSBL_ZONES
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -179,7 +181,7 @@ def _text(value: Any) -> str:
     return "" if value is None else str(value).strip()
 
 
-def _number(value: Any) -> Optional[float]:
+def _number(value: Any) -> float | None:
     if value is None or isinstance(value, bool):
         return None
     try:
@@ -189,31 +191,12 @@ def _number(value: Any) -> Optional[float]:
     return number if math.isfinite(number) else None
 
 
-def _cache_get(store: Optional["Store"], key: str) -> Any:
-    if store is None:
-        return None
-    try:
-        return store.cache_get(key)
-    except Exception:  # noqa: BLE001 - a cache problem must never block enrichment
-        log.debug("cache read failed for %s", key, exc_info=True)
-        return None
-
-
-def _cache_set(store: Optional["Store"], key: str, value: Any, ttl_seconds: int) -> None:
-    if store is None:
-        return
-    try:
-        store.cache_set(key, value, int(ttl_seconds))
-    except Exception:  # noqa: BLE001
-        log.debug("cache write failed for %s", key, exc_info=True)
-
-
 def _http_get(
     url: str,
     cfg: Settings,
-    params: Optional[dict[str, str]] = None,
-    headers: Optional[dict[str, str]] = None,
-) -> Optional[httpx.Response]:
+    params: dict[str, str] | None = None,
+    headers: dict[str, str] | None = None,
+) -> httpx.Response | None:
     """One bounded GET; None on any transport error."""
     merged = dict(HTTP_HEADERS)
     if headers:
@@ -221,7 +204,7 @@ def _http_get(
     try:
         with httpx.Client(timeout=_timeout(cfg), headers=merged, follow_redirects=True) as client:
             return client.get(url, params=params)
-    except Exception:  # noqa: BLE001 - timeouts, DNS failures, TLS errors, ...
+    except (httpx.HTTPError, httpx.InvalidURL):  # timeouts, DNS failures, TLS errors, ...
         log.debug("GET %s failed", url, exc_info=True)
         return None
 
@@ -239,7 +222,7 @@ def _registrable(host: str) -> str:
         from .link_analyzer import registrable_domain  # sibling module; degrade to a heuristic if unavailable
 
         return registrable_domain(text)
-    except Exception:  # noqa: BLE001
+    except ImportError:
         return ".".join(text.split(".")[-2:])
 
 
@@ -274,7 +257,7 @@ def reverse_dns(ip: str, cfg: Settings) -> str:
     executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="mt-rdns")
     try:
         host = executor.submit(socket.gethostbyaddr, ip).result(timeout=_timeout(cfg))[0]
-    except Exception:  # noqa: BLE001 - herror/gaierror (no PTR), timeout, resolver errors
+    except (OSError, TimeoutError):  # herror/gaierror (no PTR), or the lookup timed out
         log.debug("reverse DNS for %s failed or timed out", ip)
         return ""
     finally:
@@ -320,7 +303,7 @@ def _db_key(path: str) -> str:
     """Cache key for a database path: absolute, case-folded on Windows."""
     try:
         return os.path.normcase(os.path.abspath(os.path.expanduser(path)))
-    except Exception:  # noqa: BLE001 - exotic path (null bytes, bad surrogate)
+    except (TypeError, ValueError, OSError):  # exotic path (null bytes, bad surrogate)
         return path
 
 
@@ -339,19 +322,16 @@ def _maxmind_reader(path: str) -> Any:
         reader: Any = None
         try:
             import maxminddb  # lazy: an absent package only disables this source
-        except Exception:  # noqa: BLE001 - ImportError, broken C extension, ...
+        except (ImportError, OSError):  # absent, or a broken C extension
             log.warning("maxminddb is not installed; using ip-api.com (pip install maxminddb)")
         else:
             try:
                 reader = maxminddb.open_database(path)
-            except Exception as exc:  # noqa: BLE001 - missing file, InvalidDatabaseError, permissions
+            except (OSError, ValueError, RuntimeError) as exc:  # missing file, permissions, InvalidDatabaseError
                 log.warning("MaxMind database %s is unusable (%s); using ip-api.com", path, exc)
                 reader = None
             else:
-                try:
-                    kind = reader.metadata().database_type
-                except Exception:  # noqa: BLE001
-                    kind = "unknown"
+                kind = getattr(reader.metadata(), "database_type", "unknown")
                 log.info("opened MaxMind database %s (%s)", path, kind)
         _maxmind_readers[key] = reader
         return reader
@@ -375,7 +355,7 @@ def _asn_sibling_path(path: str) -> str:
             if "asn" in candidate.name.lower() and _db_key(str(candidate)) != key:
                 sibling = str(candidate)
                 break
-    except Exception:  # noqa: BLE001 - unreadable directory
+    except OSError:  # unreadable directory
         sibling = ""
     with _MAXMIND_LOCK:
         _maxmind_asn_siblings[key] = sibling
@@ -388,7 +368,7 @@ def _maxmind_get(reader: Any, ip: str) -> dict[str, Any]:
         return {}
     try:
         record = reader.get(ip)
-    except Exception:  # noqa: BLE001 - unsupported address family, corrupt node, closed reader
+    except (ValueError, OSError, RuntimeError):  # unsupported address family, closed reader, InvalidDatabaseError
         log.debug("MaxMind lookup for %s failed", ip, exc_info=True)
         return {}
     return record if isinstance(record, dict) else {}
@@ -441,7 +421,7 @@ def _apply_city_record(geo: GeoInfo, record: dict[str, Any]) -> None:
     # DNS, the ISP/org regexes and the Tor bulk exit list.
 
 
-def maxmind_lookup(ip: str, cfg: Settings) -> Optional[GeoInfo]:
+def maxmind_lookup(ip: str, cfg: Settings) -> GeoInfo | None:
     """Geolocate one IP from the local GeoLite2 database at ``cfg.maxmind_db``.
 
     Needs no network access and never raises.  None - so the caller falls back
@@ -475,7 +455,7 @@ def maxmind_lookup(ip: str, cfg: Settings) -> Optional[GeoInfo]:
     return geo
 
 
-def geolocate(ip: str, cfg: Settings, store: Optional["Store"]) -> GeoInfo:
+def geolocate(ip: str, cfg: Settings, store: Store | None) -> GeoInfo:
     """Geolocate one IP: the local MaxMind database first when ``cfg.maxmind_db``
     points at one, else ip-api.com (cached as ``geo:<ip>``).
 
@@ -495,11 +475,11 @@ def geolocate(ip: str, cfg: Settings, store: Optional["Store"]) -> GeoInfo:
         return GeoInfo(ip=ip, source="offline")
 
     key = f"geo:{ip}"
-    cached = _cache_get(store, key)
+    cached = cache_get(store, key)
     if isinstance(cached, dict):
         try:
             geo = GeoInfo.model_validate(cached)
-        except Exception:  # noqa: BLE001 - corrupt cache entry: fall through to a live lookup
+        except ValidationError:  # corrupt cache entry: fall through to a live lookup
             log.debug("ignoring malformed cache entry %s", key)
         else:
             geo.source = "cache"
@@ -507,9 +487,9 @@ def geolocate(ip: str, cfg: Settings, store: Optional["Store"]) -> GeoInfo:
 
     # Local database beats the network service: no rate limit, no round trip.
     # The answer is a memory-mapped read, so it earns no row in the Store cache.
-    geo = maxmind_lookup(ip, cfg)
-    if geo is not None:
-        return geo
+    local = maxmind_lookup(ip, cfg)
+    if local is not None:
+        return local
 
     response = _http_get(IP_API_URL.format(ip=ip), cfg)
     if response is None:
@@ -519,7 +499,7 @@ def geolocate(ip: str, cfg: Settings, store: Optional["Store"]) -> GeoInfo:
         return GeoInfo(ip=ip, source="unavailable")
     try:
         payload = response.json()
-    except Exception:  # noqa: BLE001
+    except ValueError:
         log.debug("ip-api returned a non-JSON body for %s", ip)
         return GeoInfo(ip=ip, source="unavailable")
     if not isinstance(payload, dict) or payload.get("status") != "success":
@@ -527,7 +507,7 @@ def geolocate(ip: str, cfg: Settings, store: Optional["Store"]) -> GeoInfo:
         return GeoInfo(ip=ip, source="unavailable")
 
     geo = _geo_from_ip_api(ip, payload)
-    _cache_set(store, key, geo.model_dump(mode="json"), cfg.cache_ttl_seconds)
+    cache_set(store, key, geo.model_dump(mode="json"), cfg.cache_ttl_seconds)
     return geo
 
 
@@ -544,7 +524,7 @@ def _download_tor_exit_list(cfg: Settings) -> set[str]:
     return exits
 
 
-def tor_exit_ips(cfg: Settings, store: Optional["Store"]) -> set[str]:
+def tor_exit_ips(cfg: Settings, store: Store | None) -> set[str]:
     """Current Tor exit addresses: module memo -> Store cache (``tor:list``, 1 h)
     -> download.  Empty offline or when the list cannot be fetched (retried
     after a short back-off).  Callers must not mutate the returned set."""
@@ -556,14 +536,14 @@ def tor_exit_ips(cfg: Settings, store: Optional["Store"]) -> set[str]:
         now = time.monotonic()
         if now < expires:
             return exits
-        cached = _cache_get(store, "tor:list")
+        cached = cache_get(store, "tor:list")
         if isinstance(cached, list) and cached:
             exits = {str(item) for item in cached}
             _tor_memo = (now + TOR_LIST_TTL_SECONDS, exits)
             return exits
         exits = _download_tor_exit_list(cfg)
         if exits:
-            _cache_set(store, "tor:list", sorted(exits), TOR_LIST_TTL_SECONDS)
+            cache_set(store, "tor:list", sorted(exits), TOR_LIST_TTL_SECONDS)
             _tor_memo = (now + TOR_LIST_TTL_SECONDS, exits)
         else:
             _tor_memo = (now + TOR_RETRY_SECONDS, set())
@@ -575,7 +555,7 @@ def _dnsbl_hit(answer_text: str) -> bool:
     return addr is not None and addr in _DNSBL_ANSWER_SPACE and addr not in _DNSBL_ERROR_SPACE
 
 
-def dnsbl_check(ip: str, cfg: Settings, store: Optional["Store"]) -> list[str]:
+def dnsbl_check(ip: str, cfg: Settings, store: Store | None) -> list[str]:
     """Zones of knowledge.DNSBL_ZONES that list this IPv4 address (cached as
     ``dnsbl:<ip>``).  NXDOMAIN means "not listed"; any other DNS problem is
     treated the same way."""
@@ -583,14 +563,18 @@ def dnsbl_check(ip: str, cfg: Settings, store: Optional["Store"]) -> list[str]:
     if not ip or ":" in ip or not is_public_ip(ip) or not cfg.enable_network or not DNSBL_ZONES:
         return []
     key = f"dnsbl:{ip}"
-    cached = _cache_get(store, key)
+    cached = cache_get(store, key)
     if isinstance(cached, list):
         return [str(zone) for zone in cached]
     try:
+        import dns.exception
         import dns.resolver  # dnspython; lazy so a missing package only disables DNSBL checks
-
+    except ImportError:
+        log.debug("DNSBL checks unavailable: dnspython is not installed")
+        return []
+    try:
         resolver = dns.resolver.Resolver(configure=True)
-    except Exception:  # noqa: BLE001 - ImportError or no usable resolver configuration
+    except dns.exception.DNSException:  # no usable resolver configuration on this host
         log.debug("DNSBL checks unavailable", exc_info=True)
         return []
     lifetime = _timeout(cfg)
@@ -601,25 +585,25 @@ def dnsbl_check(ip: str, cfg: Settings, store: Optional["Store"]) -> list[str]:
     def listed_in(zone: str) -> bool:
         try:
             answer = resolver.resolve(f"{reversed_octets}.{zone}", "A", lifetime=lifetime)
-        except Exception:  # noqa: BLE001 - NXDOMAIN (not listed), timeout, SERVFAIL, ...
+        except dns.exception.DNSException:  # NXDOMAIN (not listed), timeout, SERVFAIL, ...
             return False
         return any(_dnsbl_hit(rdata.to_text()) for rdata in answer)
 
     with ThreadPoolExecutor(max_workers=len(DNSBL_ZONES), thread_name_prefix="mt-dnsbl") as pool:
         hits = list(pool.map(listed_in, DNSBL_ZONES))
     listed = [zone for zone, hit in zip(DNSBL_ZONES, hits) if hit]
-    _cache_set(store, key, listed, cfg.cache_ttl_seconds)
+    cache_set(store, key, listed, cfg.cache_ttl_seconds)
     return listed
 
 
-def abuseipdb_check(ip: str, cfg: Settings, store: Optional["Store"]) -> Optional[int]:
+def abuseipdb_check(ip: str, cfg: Settings, store: Store | None) -> int | None:
     """AbuseIPDB abuse-confidence score (0-100) when ``cfg.abuseipdb_key`` is
     set (cached as ``abuse:<ip>``); None otherwise or on any failure."""
     ip = _normalize_ip(ip)
     if not ip or not cfg.abuseipdb_key or not cfg.enable_network or not is_public_ip(ip):
         return None
     key = f"abuse:{ip}"
-    cached = _cache_get(store, key)
+    cached = cache_get(store, key)
     if isinstance(cached, int) and not isinstance(cached, bool):
         return cached
     response = _http_get(
@@ -632,27 +616,27 @@ def abuseipdb_check(ip: str, cfg: Settings, store: Optional["Store"]) -> Optiona
         return None
     try:
         score = int(response.json()["data"]["abuseConfidenceScore"])
-    except Exception:  # noqa: BLE001 - non-JSON body or unexpected shape
+    except (ValueError, KeyError, TypeError):  # non-JSON body or unexpected shape
         return None
     score = max(0, min(100, score))
-    _cache_set(store, key, score, cfg.cache_ttl_seconds)
+    cache_set(store, key, score, cfg.cache_ttl_seconds)
     return score
 
 
-def _cached_reverse_dns(ip: str, cfg: Settings, store: Optional["Store"]) -> str:
+def _cached_reverse_dns(ip: str, cfg: Settings, store: Store | None) -> str:
     """PTR name through the Store cache.  Only real names are cached: an empty
     result may be a resolver timeout rather than a missing PTR."""
     key = f"rdns:{ip}"
-    cached = _cache_get(store, key)
+    cached = cache_get(store, key)
     if isinstance(cached, str) and cached:
         return cached
     host = reverse_dns(ip, cfg)
     if host:
-        _cache_set(store, key, host, cfg.cache_ttl_seconds)
+        cache_set(store, key, host, cfg.cache_ttl_seconds)
     return host
 
 
-def enrich_ip(ip: str, cfg: Settings, store: Optional["Store"], full: bool) -> GeoInfo:
+def enrich_ip(ip: str, cfg: Settings, store: Store | None, full: bool) -> GeoInfo:
     """geolocate + reverse DNS + Tor check; ``full`` adds DNSBL and AbuseIPDB
     (used for the originating IP only).  Private IPs come back untouched."""
     geo = geolocate(ip, cfg, store)
@@ -682,7 +666,7 @@ def _public_ips_in_order(header_analysis: HeaderAnalysis, origin: str) -> list[s
     return ordered
 
 
-def _enrich_many(targets: list[str], origin: str, cfg: Settings, store: Optional["Store"]) -> dict[str, GeoInfo]:
+def _enrich_many(targets: list[str], origin: str, cfg: Settings, store: Store | None) -> dict[str, GeoInfo]:
     if not targets:
         return {}
     results: dict[str, GeoInfo] = {}
@@ -691,7 +675,7 @@ def _enrich_many(targets: list[str], origin: str, cfg: Settings, store: Optional
         for ip, future in futures.items():
             try:
                 results[ip] = future.result()
-            except Exception:  # noqa: BLE001 - one failed lookup must not sink the others
+            except Exception:  # one failed lookup must not sink the others
                 log.exception("enrichment of %s failed", ip)
                 results[ip] = GeoInfo(ip=ip, source="unavailable")
     return results
@@ -765,7 +749,7 @@ def _residential_origin(geo: GeoInfo) -> bool:
     )
 
 
-def _delivered_direct_to_mx(hops: list[Hop], origin_index: Optional[int]) -> bool:
+def _delivered_direct_to_mx(hops: list[Hop], origin_index: int | None) -> bool:
     """From the origin hop onward every receiving server is on the recipient
     side (internal, or in the final MX's registrable domain): the sender spoke
     to the destination MX itself instead of submitting through a mail provider."""
@@ -782,7 +766,7 @@ def _delivered_direct_to_mx(hops: list[Hop], origin_index: Optional[int]) -> boo
     return True
 
 
-def _botnet_indicators(header_analysis: HeaderAnalysis, origin_geo: Optional[GeoInfo]) -> list[str]:
+def _botnet_indicators(header_analysis: HeaderAnalysis, origin_geo: GeoInfo | None) -> list[str]:
     if origin_geo is None or origin_geo.is_private:
         return []
     hops = header_analysis.hops
@@ -844,7 +828,7 @@ def _origin_finding(geo: GeoInfo) -> Finding:
     return _finding("origin_geolocated", Severity.INFO, "Origin IP geolocated", detail, _geo_evidence(geo))
 
 
-def _geo_unavailable_finding(origin: str, origin_geo: Optional[GeoInfo], hops: list[Hop]) -> Finding:
+def _geo_unavailable_finding(origin: str, origin_geo: GeoInfo | None, hops: list[Hop]) -> Finding:
     if not origin:
         detail = (
             "No public originating IP could be identified from the Received chain, so the sender could not be "
@@ -899,7 +883,7 @@ def _relay_finding(relay_hops: list[Hop]) -> Finding:
     )
 
 
-def _trail_finding(hops: list[Hop]) -> Optional[Finding]:
+def _trail_finding(hops: list[Hop]) -> Finding | None:
     trail: list[dict[str, Any]] = []
     for hop in hops:
         geo = hop.geo
@@ -925,7 +909,7 @@ def _trail_finding(hops: list[Hop]) -> Optional[Finding]:
 # --------------------------------------------------------------------------- #
 # Entry point
 # --------------------------------------------------------------------------- #
-def analyze_infrastructure(header_analysis: HeaderAnalysis, cfg: Settings, store: Optional["Store"]) -> InfraAnalysis:
+def analyze_infrastructure(header_analysis: HeaderAnalysis, cfg: Settings, store: Store | None) -> InfraAnalysis:
     """Enrich the public IPs of the Received chain (``hop.geo`` is set in
     place), then derive infrastructure flags, score and findings."""
     hops = header_analysis.hops
@@ -941,7 +925,7 @@ def analyze_infrastructure(header_analysis: HeaderAnalysis, cfg: Settings, store
             hop.geo = _private_geo(ip)
         # a public hop beyond the lookup budget keeps geo=None
 
-    origin_geo: Optional[GeoInfo] = None
+    origin_geo: GeoInfo | None = None
     if origin in enriched:
         origin_geo = enriched[origin]
     elif origin and not is_public_ip(origin):

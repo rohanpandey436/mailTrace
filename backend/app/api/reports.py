@@ -12,19 +12,22 @@ structured data hides.
 from __future__ import annotations
 
 import re
-from typing import Any, Literal
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 
-from ..database.case_manager import Store
+from ..core import decisions
+from ..core.errors import NotFound
+from ..schemas import CustodyChain, CustodyVerification
 from ..utils.csv_exporter import UTF8_BOM, render_report_csv
-from ..utils.pii_masker import mask_report_fields, mask_result
 from ..utils.pdf_generator import PdfUnavailable, build_report, render_html, render_pdf
-from ..schemas import CustodyChain
-from .deps import DEFAULT_ACTOR, get_store, mask_param
+from ..utils.pii_masker import mask_report_fields, mask_result
+from .deps import DEFAULT_ACTOR, MaskDep, StoreDep
 
 router = APIRouter(prefix="/api", tags=["reports"])
+
+ReportFormat = Literal["json", "html", "pdf", "csv"]
 
 # Content-Disposition is a header: keep the filename to characters that need no
 # quoting or encoding, whatever the report id happens to contain.
@@ -35,20 +38,14 @@ def _report_filename(report_id: str, extension: str) -> str:
     return "MailTrace-" + (_UNSAFE_FILENAME.sub("-", report_id).strip("-") or "report") + "." + extension
 
 
-def _pdf_filename(report_id: str) -> str:
-    return _report_filename(report_id, "pdf")
-
-
 @router.get("/reports/{email_id}")
 def get_report(
     email_id: str,
-    fmt: Literal["json", "html", "pdf", "csv"] = Query("json", alias="format"),
-    mask: bool = Depends(mask_param),
-    store: Store = Depends(get_store),
+    store: StoreDep,
+    mask: MaskDep,
+    fmt: Annotated[ReportFormat, Query(alias="format")] = "json",
 ) -> Response:
-    result = store.get_analysis(email_id)
-    if result is None:
-        raise HTTPException(status_code=404, detail=f"email {email_id} not found")
+    result = decisions.load_case(store, email_id)
     if mask:
         result = mask_result(result)
     store.record_custody(
@@ -76,20 +73,20 @@ def get_report(
         return Response(
             content=pdf,
             media_type="application/pdf",
-            headers={"Content-Disposition": f'attachment; filename="{_pdf_filename(report.report_id)}"'},
+            headers={"Content-Disposition": f'attachment; filename="{_report_filename(report.report_id, "pdf")}"'},
         )
     return JSONResponse(content=report.model_dump(mode="json"))
 
 
 @router.get("/custody/verify")
-def verify_custody(store: Store = Depends(get_store)) -> dict[str, Any]:
+def verify_custody(store: StoreDep) -> CustodyVerification:
     valid, head_hash = store.verify_chain()
-    return {"valid": valid, "head_hash": head_hash}
+    return CustodyVerification(valid=valid, head_hash=head_hash)
 
 
 @router.get("/custody/{email_id}")
-def get_custody(email_id: str, store: Store = Depends(get_store)) -> CustodyChain:
+def get_custody(email_id: str, store: StoreDep) -> CustodyChain:
     chain = store.get_custody(email_id)
     if not chain.events:
-        raise HTTPException(status_code=404, detail=f"no custody records for email {email_id}")
+        raise NotFound(f"no custody records for email {email_id}")
     return chain

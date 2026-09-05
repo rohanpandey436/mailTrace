@@ -28,9 +28,9 @@ import binascii
 import ipaddress
 import logging
 import re
+from collections.abc import Callable
 from html import unescape
 from html.parser import HTMLParser
-from typing import Optional
 from urllib.parse import parse_qsl, unquote, urlsplit, urlunsplit
 
 from ..config import Settings
@@ -69,7 +69,7 @@ try:  # tldextract ships a bundled public-suffix snapshot; never touch the netwo
     import tldextract
 
     _EXTRACTOR = tldextract.TLDExtract(suffix_list_urls=(), cache_dir=None)
-except Exception:  # noqa: BLE001 - optional dependency / bad install
+except ImportError:
     log.warning("tldextract unavailable; using built-in public-suffix fallback")
 
 
@@ -101,7 +101,7 @@ def registrable_domain(host: str) -> str:
                 return f"{ext.domain}.{ext.suffix}"
             if ext.domain:
                 return ext.domain
-        except Exception:  # noqa: BLE001
+        except (ValueError, TypeError):  # a label tldextract cannot split
             pass
     labels = [label for label in host.split(".") if label]
     if len(labels) >= 3 and ".".join(labels[-2:]) in _FALLBACK_SUFFIXES:
@@ -173,11 +173,11 @@ class _LinkParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self.links: list[tuple[str, str]] = []
-        self._href: Optional[str] = None
+        self._href: str | None = None
         self._text: list[str] = []
         self._skip_depth = 0
 
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, Optional[str]]]) -> None:
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         attributes = {name.lower(): (value or "") for name, value in attrs}
         if tag in ("script", "style"):
             self._skip_depth += 1
@@ -260,7 +260,7 @@ def extract_urls(text: str, html: str) -> list[tuple[str, str]]:
         try:
             parser.feed(html)
             parser.close()
-        except Exception:  # noqa: BLE001 - malformed HTML must not abort
+        except Exception:  # malformed HTML must not abort
             log.debug("HTML link parsing stopped early", exc_info=True)
         parser.finish()
         for href, anchor in parser.links:
@@ -289,7 +289,7 @@ _PCT_RE = re.compile(r"%([0-9A-Fa-f]{2})")
 
 
 def _unquote_unreserved(value: str) -> str:
-    def repl(match: re.Match) -> str:
+    def repl(match: re.Match[str]) -> str:
         char = chr(int(match.group(1), 16))
         return char if char in _UNRESERVED else match.group(0).upper()
 
@@ -707,7 +707,7 @@ def analyze_url(url: str, anchor_text: str, cfg: Settings) -> UrlInfo:
 # --------------------------------------------------------------------------- #
 # Whole-message analysis
 # --------------------------------------------------------------------------- #
-def _finding(fid: str, severity: Severity, title: str, detail: str, evidence: dict) -> Finding:
+def _finding(fid: str, severity: Severity, title: str, detail: str, evidence: dict[str, object]) -> Finding:
     return Finding(id=fid, module="urls", severity=severity, title=title, detail=detail, evidence=evidence)
 
 
@@ -718,7 +718,7 @@ def analyze_urls(parsed: ParsedEmail, cfg: Settings) -> UrlAnalysis:
     for url, anchor in pairs:
         try:
             urls.append(analyze_url(url, anchor, cfg))
-        except Exception:  # noqa: BLE001 - one bad link must not abort the analysis
+        except Exception:  # one bad link must not abort the analysis
             log.exception("failed to analyse url %r", url[:200])
     unique_domains: list[str] = []
     for u in urls:
@@ -732,10 +732,10 @@ def analyze_urls(parsed: ParsedEmail, cfg: Settings) -> UrlAnalysis:
     findings: list[Finding] = []
     org_domains = {registrable_domain(d) for d in cfg.org_domains if d}
 
-    def urls_where(predicate) -> list[UrlInfo]:  # type: ignore[no-untyped-def]
+    def urls_where(predicate: Callable[[UrlInfo], bool]) -> list[UrlInfo]:
         return [u for u in urls if predicate(u)]
 
-    def evidence_for(items: list[UrlInfo]) -> dict:
+    def evidence_for(items: list[UrlInfo]) -> dict[str, object]:
         return {"urls": [u.url[:300] for u in items[:8]], "count": len(items)}
 
     harvest = urls_where(
@@ -825,7 +825,10 @@ def analyze_urls(parsed: ParsedEmail, cfg: Settings) -> UrlAnalysis:
             evidence_for(data_uris),
         ))
     other_obfuscated = urls_where(
-        lambda u: [o for o in u.obfuscation if o not in ("redirect_parameter", "file_extension_executable", "suspicious_tld", "data_uri", "javascript_uri")]
+        lambda u: any(
+            o not in ("redirect_parameter", "file_extension_executable", "suspicious_tld", "data_uri", "javascript_uri")
+            for o in u.obfuscation
+        )
     )
     if other_obfuscated:
         techniques = sorted({o for u in other_obfuscated for o in u.obfuscation})

@@ -20,23 +20,23 @@ permissions:
 
 jobs:
   test:
-    name: pytest + import check (Python 3.12)
+    name: ruff + mypy + import check + pytest (Python 3.13)
     runs-on: ubuntu-latest
     timeout-minutes: 5
     defaults:
       run:
-        # Everything happens from backend/: pytest.ini lives there and
+        # Everything happens from backend/: pyproject.toml lives there and
         # tests/conftest.py resolves samples/ relative to it.
         working-directory: backend
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python 3.12
+      - name: Set up Python 3.13
         uses: actions/setup-python@v5
         with:
-          # 3.12 matches render.yaml's PYTHON_VERSION and the Dockerfile base.
-          python-version: '3.12'
+          # 3.13 matches render.yaml's PYTHON_VERSION and the Dockerfile base.
+          python-version: '3.13'
           cache: pip
           cache-dependency-path: backend/requirements-dev.txt
 
@@ -47,6 +47,15 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
+
+      - name: Lint
+        # Style, import order, modern syntax and - via BLE001 - the rule that a
+        # catch-everything except is allowed only at a fault-isolation boundary.
+        run: python -m ruff check app tests
+
+      - name: Type-check
+        # Strict mode; the configuration is in pyproject.toml.
+        run: python -m mypy app
 
       - name: Import every module
         # Catches a syntax error, a circular import or a missing guard around an

@@ -28,12 +28,12 @@ import logging
 import time
 import uuid
 from concurrent.futures import Future, ThreadPoolExecutor
-from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Optional
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from ..config import Settings
 from ..config import settings as default_settings
-from ..schemas import ENGINE_VERSION, AnalysisResult, AttachmentAnalysis, InfraAnalysis, NlpAnalysis
+from ..schemas import ENGINE_VERSION, AnalysisResult, AttachmentAnalysis, DomainIntel, InfraAnalysis, NlpAnalysis
 
 if TYPE_CHECKING:  # pragma: no cover
     from ..database.case_manager import Store
@@ -45,10 +45,10 @@ def new_email_id() -> str:
     return uuid.uuid4().hex[:12]
 
 
-def _safe_result(fut: Future, default: Any, name: str) -> Any:
+def _safe_result[T](fut: Future[T], default: T, name: str) -> T:
     try:
         return fut.result()
-    except Exception:  # noqa: BLE001 - enrichment must never abort analysis
+    except Exception:  # enrichment must never abort analysis
         log.exception("enrichment stage '%s' failed; continuing with defaults", name)
         return default
 
@@ -56,8 +56,8 @@ def _safe_result(fut: Future, default: Any, name: str) -> Any:
 def analyze_bytes(
     raw: bytes,
     filename: str,
-    store: Optional["Store"] = None,
-    cfg: Optional[Settings] = None,
+    store: Store | None = None,
+    cfg: Settings | None = None,
     actor: str = "system",
 ) -> AnalysisResult:
     """Run the full analysis on one RFC 822 message.
@@ -67,8 +67,17 @@ def analyze_bytes(
     """
     from ..utils import virustotal
     from . import (
-        ai_engine, auth_checker, domain_intel, file_analyzer, geoip_mapper, graph_builder,
-        header_analyzer, link_analyzer, parser, scoring, threat_intel,
+        ai_engine,
+        auth_checker,
+        domain_intel,
+        file_analyzer,
+        geoip_mapper,
+        graph_builder,
+        header_analyzer,
+        link_analyzer,
+        parser,
+        scoring,
+        threat_intel,
     )
 
     cfg = cfg or default_settings
@@ -93,7 +102,7 @@ def analyze_bytes(
     url_analysis = link_analyzer.analyze_urls(parsed, cfg)
     domain_targets = domain_intel.collect_domains(parsed, header_analysis, url_analysis, cfg)
 
-    def run_ai_core() -> tuple[Any, Any]:
+    def run_ai_core() -> tuple[AttachmentAnalysis, NlpAnalysis]:
         """Engine 3A: attachment inspection (including Shannon entropy) and the
         NLP/ML intent analysis that consumes it.
 
@@ -116,37 +125,31 @@ def analyze_bytes(
         fut_ai = pool.submit(run_ai_core)          # 3A - AI core
         fut_infra = pool.submit(geoip_mapper.analyze_infrastructure, header_analysis, cfg, store)  # 3B - GeoIP/route
         fut_domains = pool.submit(domain_intel.analyze_domains, domain_targets, cfg, store)      # 3C - domain intel
-        att_analysis, nlp_analysis = _safe_result(fut_ai, (None, None), "ai_core")
-        infra = _safe_result(fut_infra, None, "geoip")
-        domain_intel = _safe_result(fut_domains, [], "domains")
-    if att_analysis is None:
-        att_analysis = AttachmentAnalysis()
-    if nlp_analysis is None:
-        nlp_analysis = NlpAnalysis()
-    if infra is None:
-        infra = InfraAnalysis()
+        att_analysis, nlp_analysis = _safe_result(fut_ai, (AttachmentAnalysis(), NlpAnalysis()), "ai_core")
+        infra = _safe_result(fut_infra, InfraAnalysis(), "geoip")
+        domain_results: list[DomainIntel] = _safe_result(fut_domains, [], "domains")
 
     # 6. Threat-intel / prior-incident correlation ------------------------
     # cfg is passed explicitly so the fuzzy-matching thresholds come from this
     # analysis's settings rather than the module-level singleton.
     intel = threat_intel.correlate(
-        email_id, parsed, header_analysis, url_analysis, att_analysis, domain_intel, infra, store, cfg
+        email_id, parsed, header_analysis, url_analysis, att_analysis, domain_results, infra, store, cfg
     )
 
     # 7. Fusion -----------------------------------------------------------
     verdict, attribution, all_findings = scoring.evaluate(
-        parsed, header_analysis, url_analysis, att_analysis, nlp_analysis, domain_intel, infra, intel, cfg
+        parsed, header_analysis, url_analysis, att_analysis, nlp_analysis, domain_results, infra, intel, cfg
     )
 
     # 8. Relationship graph -----------------------------------------------
     relationship_graph = graph_builder.build_graph(
-        email_id, parsed, header_analysis, url_analysis, att_analysis, domain_intel, infra, intel, verdict
+        email_id, parsed, header_analysis, url_analysis, att_analysis, domain_results, infra, intel, verdict
     )
 
     result = AnalysisResult(
         id=email_id,
         filename=filename,
-        analyzed_at=datetime.now(timezone.utc),
+        analyzed_at=datetime.now(UTC),
         engine_version=ENGINE_VERSION,
         processing_ms=int((time.perf_counter() - t0) * 1000),
         email=parsed,
@@ -154,7 +157,7 @@ def analyze_bytes(
         urls=url_analysis,
         attachments=att_analysis,
         nlp=nlp_analysis,
-        domains=domain_intel,
+        domains=domain_results,
         infrastructure=infra,
         intel=intel,
         attribution=attribution,
@@ -192,8 +195,8 @@ def analyze_bytes(
 def analyze_text(
     raw_text: str,
     filename: str = "pasted.eml",
-    store: Optional["Store"] = None,
-    cfg: Optional[Settings] = None,
+    store: Store | None = None,
+    cfg: Settings | None = None,
     actor: str = "system",
 ) -> AnalysisResult:
     return analyze_bytes(raw_text.encode("utf-8", errors="surrogateescape"), filename, store, cfg, actor)

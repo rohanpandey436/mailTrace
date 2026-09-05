@@ -2,33 +2,35 @@
 Shared FastAPI dependencies.
 
 The application factory places the live ``Settings`` and ``Store`` on
-``app.state``; these helpers hand them to path operations so routers never
-touch module-level singletons (tests inject their own configuration through
-``create_app(settings)``).  PII-mask resolution and the two small helpers that
-mask list rows and alerts also live here so every router applies exactly the
-same privacy policy at the API boundary.
+``app.state``; the ``Annotated`` aliases below hand them to path operations,
+so a handler declares ``store: StoreDep`` and never touches a module-level
+singleton (tests inject their own configuration through
+``create_app(settings)``).  PII-mask resolution and the two helpers that mask
+list rows and alerts also live here so every router applies exactly the same
+privacy policy at the API boundary.
 """
 from __future__ import annotations
 
-from typing import Optional
+from typing import Annotated
 
-from fastapi import HTTPException, Query, Request
+from fastapi import Depends, HTTPException, Query, Request
 
 from ..config import Settings
 from ..database.case_manager import Store
-from ..utils.pii_masker import mask_email, mask_text
 from ..schemas import Alert, CaseSummary
+from ..utils.pii_masker import mask_email, mask_text
 
 # Actor recorded in the chain of custody when a request carries no identity.
 DEFAULT_ACTOR = "analyst"
 
 
 def get_settings(request: Request) -> Settings:
-    return request.app.state.settings
+    settings: Settings = request.app.state.settings
+    return settings
 
 
 def get_store(request: Request) -> Store:
-    store = getattr(request.app.state, "store", None)
+    store: Store | None = getattr(request.app.state, "store", None)
     if store is None:
         raise HTTPException(status_code=503, detail="store not initialised: application startup has not completed")
     return store
@@ -36,11 +38,17 @@ def get_store(request: Request) -> Store:
 
 def mask_param(
     request: Request,
-    mask: Optional[bool] = Query(None, description="Mask PII in the response; defaults to MAILTRACE_PII_MASK_DEFAULT"),
+    mask: Annotated[bool | None, Query(description="Mask PII in the response; defaults to MAILTRACE_PII_MASK_DEFAULT")] = None,
 ) -> bool:
     if mask is None:
         return bool(request.app.state.settings.pii_mask_default)
     return mask
+
+
+SettingsDep = Annotated[Settings, Depends(get_settings)]
+StoreDep = Annotated[Store, Depends(get_store)]
+MaskDep = Annotated[bool, Depends(mask_param)]
+ActorParam = Annotated[str, Query(min_length=1, max_length=64, description="Recorded in the chain of custody")]
 
 
 def mask_summary(summary: CaseSummary) -> CaseSummary:

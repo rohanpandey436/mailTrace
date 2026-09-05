@@ -24,12 +24,17 @@ import ipaddress
 import logging
 import re
 import socket
+from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Optional
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Any
+
+import httpx
+from pydantic import JsonValue
 
 from ..config import Settings
 from ..schemas import DomainIntel, Finding, HeaderAnalysis, ParsedEmail, Severity, UrlAnalysis
+from ..utils.cache import cache_get, cache_set
 from .knowledge import COMMON_URL_HOSTS, DISPOSABLE_DOMAINS, FREEMAIL_DOMAINS, SUSPICIOUS_TLDS
 from .link_analyzer import is_lookalike, registrable_domain
 
@@ -97,25 +102,7 @@ def _is_ip(value: str) -> bool:
         return False
 
 
-def _cache_get(store: Optional["Store"], key: str) -> Any:
-    if store is None:
-        return None
-    try:
-        return store.cache_get(key)
-    except Exception:  # noqa: BLE001
-        return None
-
-
-def _cache_set(store: Optional["Store"], key: str, value: Any, ttl: int) -> None:
-    if store is None:
-        return
-    try:
-        store.cache_set(key, value, ttl)
-    except Exception:  # noqa: BLE001
-        log.debug("cache_set failed for %s", key, exc_info=True)
-
-
-def _parse_whois_date(value: str) -> Optional[datetime]:
+def _parse_whois_date(value: str) -> datetime | None:
     text = (value or "").strip()
     if not text:
         return None
@@ -127,25 +114,37 @@ def _parse_whois_date(value: str) -> Optional[datetime]:
         except ValueError:
             continue
         if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=timezone.utc)
-        return parsed.astimezone(timezone.utc)
+            parsed = parsed.replace(tzinfo=UTC)
+        return parsed.astimezone(UTC)
     match = re.match(r"^(\d{4})-(\d{2})-(\d{2})", text)
     if match:
         try:
-            return datetime(int(match.group(1)), int(match.group(2)), int(match.group(3)), tzinfo=timezone.utc)
+            return datetime(int(match.group(1)), int(match.group(2)), int(match.group(3)), tzinfo=UTC)
         except ValueError:
             return None
     return None
 
 
-def _from_iso(value: Any) -> Optional[datetime]:
+def _text(record: Mapping[str, object], key: str) -> str:
+    """A string field of a cached JSON record; '' when absent or of another type."""
+    value = record.get(key)
+    return value if isinstance(value, str) else ""
+
+
+def _texts(record: Mapping[str, object], key: str) -> list[str]:
+    """A list-of-strings field of a cached JSON record; [] when absent or malformed."""
+    value = record.get(key)
+    return [str(item) for item in value] if isinstance(value, list) else []
+
+
+def _from_iso(value: object) -> datetime | None:
     if not value or not isinstance(value, str):
         return None
     try:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         return None
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 
 # --------------------------------------------------------------------------- #
@@ -166,7 +165,7 @@ def _whois_query(server: str, query: str, timeout: float) -> str:
     return b"".join(chunks).decode("utf-8", errors="replace")
 
 
-def _whois_server_for(domain: str, cfg: Settings, store: Optional["Store"]) -> str:
+def _whois_server_for(domain: str, cfg: Settings, store: Store | None) -> str:
     labels = domain.split(".")
     tld = labels[-1]
     if len(labels) >= 3 and ".".join(labels[-2:]) in _WHOIS_SERVERS:
@@ -174,7 +173,7 @@ def _whois_server_for(domain: str, cfg: Settings, store: Optional["Store"]) -> s
     if tld in _WHOIS_SERVERS:
         return _WHOIS_SERVERS[tld]
     cache_key = f"whois_server:{tld}"
-    cached = _cache_get(store, cache_key)
+    cached = cache_get(store, cache_key)
     if isinstance(cached, str) and cached:
         return cached
     try:
@@ -184,16 +183,16 @@ def _whois_server_for(domain: str, cfg: Settings, store: Optional["Store"]) -> s
     match = _REFER_RE.search(response)
     server = match.group(1).strip().lower() if match else ""
     if server:
-        _cache_set(store, cache_key, server, 7 * 24 * 3600)
+        cache_set(store, cache_key, server, 7 * 24 * 3600)
     return server
 
 
-def whois_lookup(domain: str, cfg: Settings, store: Optional["Store"]) -> dict:
+def whois_lookup(domain: str, cfg: Settings, store: Store | None) -> Mapping[str, object]:
     """Registration facts for ``domain`` as a JSON-safe dict; ``{}`` on failure."""
     if not cfg.enable_network or not domain or _is_ip(domain):
         return {}
     cache_key = f"whois:{domain}"
-    cached = _cache_get(store, cache_key)
+    cached = cache_get(store, cache_key)
     if isinstance(cached, dict):
         return dict(cached, cached=True)
     server = _whois_server_for(domain, cfg, store)
@@ -212,7 +211,7 @@ def whois_lookup(domain: str, cfg: Settings, store: Optional["Store"]) -> dict:
     lowered = text.lower()
     if not created and ("no match" in lowered or "not found" in lowered or "no data found" in lowered):
         result = {"registered": False, "server": server}
-        _cache_set(store, cache_key, result, cfg.cache_ttl_seconds)
+        cache_set(store, cache_key, result, cfg.cache_ttl_seconds)
         return result
     created_dt = _parse_whois_date(created.group(1)) if created else None
     expires_dt = _parse_whois_date(expires.group(1)) if expires else None
@@ -225,19 +224,19 @@ def whois_lookup(domain: str, cfg: Settings, store: Optional["Store"]) -> dict:
         "registrant_country": country.group(1).strip()[:60] if country else "",
         "name_servers": sorted({m.group(1).strip().lower().rstrip(".") for m in _NS_RE.finditer(text)})[:8],
     }
-    _cache_set(store, cache_key, result, cfg.cache_ttl_seconds)
+    cache_set(store, cache_key, result, cfg.cache_ttl_seconds)
     return result
 
 
 # --------------------------------------------------------------------------- #
 # DNS
 # --------------------------------------------------------------------------- #
-def dns_lookup(domain: str, cfg: Settings, store: Optional["Store"]) -> dict:
+def dns_lookup(domain: str, cfg: Settings, store: Store | None) -> Mapping[str, object]:
     """A / MX / NS / SPF / DMARC records; ``{}`` when offline or unavailable."""
     if not cfg.enable_network or not domain or _is_ip(domain):
         return {}
     cache_key = f"dns:{domain}"
-    cached = _cache_get(store, cache_key)
+    cached = cache_get(store, cache_key)
     if isinstance(cached, dict):
         return dict(cached, cached=True)
     try:
@@ -249,9 +248,9 @@ def dns_lookup(domain: str, cfg: Settings, store: Optional["Store"]) -> dict:
     resolver = dns.resolver.Resolver(configure=True)
     resolver.timeout = _timeout(cfg)
     resolver.lifetime = _timeout(cfg)
-    result: dict[str, Any] = {"a": [], "mx": [], "ns": [], "txt_spf": "", "dmarc": "", "nxdomain": False, "queried": True}
+    result: dict[str, JsonValue] = {"a": [], "mx": [], "ns": [], "txt_spf": "", "dmarc": "", "nxdomain": False, "queried": True}
 
-    def query(name: str, rtype: str) -> list:
+    def query(name: str, rtype: str) -> list[Any]:  # dnspython rdata is dynamically typed
         try:
             return list(resolver.resolve(name, rtype))
         except dns.resolver.NXDOMAIN:
@@ -271,7 +270,7 @@ def dns_lookup(domain: str, cfg: Settings, store: Optional["Store"]) -> dict:
     for record in query(domain, "TXT"):
         try:
             text = "".join(s.decode("utf-8", errors="replace") if isinstance(s, bytes) else str(s) for s in record.strings)
-        except Exception:  # noqa: BLE001
+        except AttributeError:  # not a TXT rdata after all
             text = record.to_text().strip('"')
         if text.lower().startswith("v=spf1"):
             result["txt_spf"] = text[:500]
@@ -279,19 +278,19 @@ def dns_lookup(domain: str, cfg: Settings, store: Optional["Store"]) -> dict:
     for record in query(f"_dmarc.{domain}", "TXT"):
         try:
             text = "".join(s.decode("utf-8", errors="replace") if isinstance(s, bytes) else str(s) for s in record.strings)
-        except Exception:  # noqa: BLE001
+        except AttributeError:  # not a TXT rdata after all
             text = record.to_text().strip('"')
         if text.lower().startswith("v=dmarc1"):
             result["dmarc"] = text[:500]
             break
-    _cache_set(store, cache_key, result, cfg.cache_ttl_seconds)
+    cache_set(store, cache_key, result, cfg.cache_ttl_seconds)
     return result
 
 
 # --------------------------------------------------------------------------- #
 # Reputation
 # --------------------------------------------------------------------------- #
-def domain_reputation(domain: str, cfg: Settings, store: Optional["Store"]) -> list[str]:
+def domain_reputation(domain: str, cfg: Settings, store: Store | None) -> list[str]:
     """Feeds/tags that flag the domain: 'urlhaus', 'disposable', 'suspicious_tld'."""
     tags: list[str] = []
     if not domain:
@@ -307,13 +306,11 @@ def domain_reputation(domain: str, cfg: Settings, store: Optional["Store"]) -> l
     if not cfg.enable_network or _is_ip(domain) or not cfg.urlhaus_key:
         return tags
     cache_key = f"rep:{domain}"
-    cached = _cache_get(store, cache_key)
+    cached = cache_get(store, cache_key)
     if isinstance(cached, list):
-        return tags + [t for t in cached if t not in tags]
+        return tags + [str(t) for t in cached if str(t) not in tags]
     remote: list[str] = []
     try:
-        import httpx
-
         headers = {"User-Agent": "MailTrace/1.0", "Auth-Key": cfg.urlhaus_key}
         with httpx.Client(timeout=_timeout(cfg), headers=headers) as client:
             response = client.post("https://urlhaus-api.abuse.ch/v1/host/", data={"host": domain})
@@ -323,8 +320,8 @@ def domain_reputation(domain: str, cfg: Settings, store: Optional["Store"]) -> l
             payload = response.json()
             if payload.get("query_status") == "ok" and payload.get("urls"):
                 remote.append("urlhaus")
-        _cache_set(store, cache_key, remote, cfg.cache_ttl_seconds)
-    except Exception as exc:  # noqa: BLE001
+        cache_set(store, cache_key, remote, cfg.cache_ttl_seconds)
+    except (httpx.HTTPError, httpx.InvalidURL, ValueError) as exc:  # transport failure or a non-JSON body
         log.debug("urlhaus lookup failed for %s: %s", domain, exc)
     return tags + [t for t in remote if t not in tags]
 
@@ -332,11 +329,11 @@ def domain_reputation(domain: str, cfg: Settings, store: Optional["Store"]) -> l
 # --------------------------------------------------------------------------- #
 # Per-domain analysis
 # --------------------------------------------------------------------------- #
-def _finding(fid: str, severity: Severity, title: str, detail: str, evidence: dict) -> Finding:
+def _finding(fid: str, severity: Severity, title: str, detail: str, evidence: dict[str, object]) -> Finding:
     return Finding(id=fid, module="domains", severity=severity, title=title, detail=detail, evidence=evidence)
 
 
-def analyze_domain(domain: str, role: str, cfg: Settings, store: Optional["Store"]) -> DomainIntel:
+def analyze_domain(domain: str, role: str, cfg: Settings, store: Store | None) -> DomainIntel:
     domain = (domain or "").strip().lower().rstrip(".")
     intel = DomainIntel(domain=domain, role=role or "")
     if not domain:
@@ -348,8 +345,8 @@ def analyze_domain(domain: str, role: str, cfg: Settings, store: Optional["Store
     intel.lookalike_of, intel.lookalike_technique = lookalike_of, technique
     intel.source = "live" if cfg.enable_network else "offline"
 
-    whois: dict = {}
-    dns: dict = {}
+    whois: Mapping[str, object] = {}
+    dns: Mapping[str, object] = {}
     if cfg.enable_network and not _is_ip(domain):
         whois = whois_lookup(domain, cfg, store)
         dns = dns_lookup(domain, cfg, store)
@@ -358,20 +355,20 @@ def analyze_domain(domain: str, role: str, cfg: Settings, store: Optional["Store
     intel.reputation = domain_reputation(domain, cfg, store)
 
     if whois:
-        intel.registrar = whois.get("registrar", "") or ""
-        intel.registrant_country = whois.get("registrant_country", "") or ""
-        intel.name_servers = list(whois.get("name_servers", []) or [])
+        intel.registrar = _text(whois, "registrar")
+        intel.registrant_country = _text(whois, "registrant_country")
+        intel.name_servers = _texts(whois, "name_servers")
         intel.created = _from_iso(whois.get("created"))
         intel.expires = _from_iso(whois.get("expires"))
         if intel.created is not None:
-            intel.age_days = max(0, (datetime.now(timezone.utc) - intel.created).days)
+            intel.age_days = max(0, (datetime.now(UTC) - intel.created).days)
     if dns:
-        intel.a_records = list(dns.get("a", []) or [])
-        intel.mx = list(dns.get("mx", []) or [])
+        intel.a_records = _texts(dns, "a")
+        intel.mx = _texts(dns, "mx")
         if not intel.name_servers:
-            intel.name_servers = list(dns.get("ns", []) or [])
-        intel.spf_record = dns.get("txt_spf", "") or ""
-        intel.dmarc_record = dns.get("dmarc", "") or ""
+            intel.name_servers = _texts(dns, "ns")
+        intel.spf_record = _text(dns, "txt_spf")
+        intel.dmarc_record = _text(dns, "dmarc")
         intel.has_mx = bool(intel.mx)
         intel.resolves = bool(intel.a_records or intel.mx)
         fingerprint: list[str] = []
@@ -387,7 +384,7 @@ def analyze_domain(domain: str, role: str, cfg: Settings, store: Optional["Store
     label = {"sender": "Sender", "reply_to": "Reply-To", "return_path": "Return-Path", "url": "Link", "message_id": "Message-ID"}.get(role, "Domain")
     if intel.age_days is not None and not intel.is_free_mail:
         if intel.age_days < 30:
-            sev: Optional[Severity] = Severity.HIGH
+            sev: Severity | None = Severity.HIGH
         elif intel.age_days < 90:
             sev = Severity.MEDIUM
         elif intel.age_days < 365:
@@ -509,7 +506,7 @@ def collect_domains(
     return targets[:limit]
 
 
-def analyze_domains(targets: list[tuple[str, str]], cfg: Settings, store: Optional["Store"]) -> list[DomainIntel]:
+def analyze_domains(targets: list[tuple[str, str]], cfg: Settings, store: Store | None) -> list[DomainIntel]:
     """Analyse every target concurrently, preserving order; never raises."""
     if not targets:
         return []
@@ -518,7 +515,7 @@ def analyze_domains(targets: list[tuple[str, str]], cfg: Settings, store: Option
         domain, role = target
         try:
             return analyze_domain(domain, role, cfg, store)
-        except Exception:  # noqa: BLE001
+        except Exception:  # one domain's failure must not abort the analysis
             log.exception("domain analysis failed for %s", domain)
             return DomainIntel(domain=domain, role=role, source="unavailable")
 

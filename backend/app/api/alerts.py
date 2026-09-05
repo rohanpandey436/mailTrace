@@ -33,17 +33,21 @@ import logging
 import threading
 import time
 import uuid
+from collections.abc import AsyncIterator
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
-from typing import Any, AsyncIterator, Optional
+from datetime import UTC, datetime
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
+from pydantic import JsonValue
+from starlette.types import Message
 
 from ..config import Settings
+from ..core.errors import NotFound
 from ..database.case_manager import Store
-from ..schemas import ENGINE_VERSION, Alert, AnalysisResult
-from .deps import get_store, mask_alert, mask_param
+from ..schemas import ENGINE_VERSION, Acknowledged, Alert, AnalysisResult
+from .deps import MaskDep, StoreDep, mask_alert
 
 log = logging.getLogger("mailtrace.api.alerts")
 
@@ -68,21 +72,21 @@ class Broadcaster:
     """
 
     def __init__(self) -> None:
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
-        self._queues: set[asyncio.Queue] = set()
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._queues: set[asyncio.Queue[Alert]] = set()
         self._lock = threading.Lock()
 
     def bind(self, loop: asyncio.AbstractEventLoop) -> None:
         """Remember the event loop that owns the subscriber queues (called at startup)."""
         self._loop = loop
 
-    def subscribe(self) -> asyncio.Queue:
-        queue: asyncio.Queue = asyncio.Queue()
+    def subscribe(self) -> asyncio.Queue[Alert]:
+        queue: asyncio.Queue[Alert] = asyncio.Queue()
         with self._lock:
             self._queues.add(queue)
         return queue
 
-    def unsubscribe(self, queue: asyncio.Queue) -> None:
+    def unsubscribe(self, queue: asyncio.Queue[Alert]) -> None:
         with self._lock:
             self._queues.discard(queue)
 
@@ -113,7 +117,7 @@ router = APIRouter(prefix="/api/alerts", tags=["alerts"])
 # Outbound webhooks
 # --------------------------------------------------------------------------- #
 _webhook_lock = threading.Lock()
-_webhook_pool: Optional[ThreadPoolExecutor] = None
+_webhook_pool: ThreadPoolExecutor | None = None
 _webhook_inflight = 0
 
 
@@ -127,9 +131,9 @@ def case_url(email_id: str, settings: Settings) -> str:
     return f"http://{host}:{settings.port}/#/email/{email_id}"
 
 
-def webhook_payload(alert: Alert, settings: Settings) -> dict[str, Any]:
+def webhook_payload(alert: Alert, settings: Settings) -> dict[str, JsonValue]:
     """The alert as JSON, plus the ``event`` type and a link back to the case."""
-    payload: dict[str, Any] = json.loads(alert.model_dump_json())
+    payload: dict[str, JsonValue] = json.loads(alert.model_dump_json())
     payload["event"] = WEBHOOK_EVENT
     payload["url"] = case_url(alert.email_id, settings)
     return payload
@@ -157,14 +161,14 @@ def deliver_webhooks(alert: Alert, settings: Settings) -> None:
             for url in urls:
                 try:
                     response = client.post(url, json=payload, headers=headers)
-                except Exception as exc:  # noqa: BLE001 - a dead endpoint is not our problem
+                except (httpx.HTTPError, httpx.InvalidURL) as exc:  # a dead endpoint is not our problem
                     log.warning("alert webhook %s failed for alert %s: %s", url, alert.id, exc)
                     continue
                 if response.status_code >= 400:
                     log.warning("alert webhook %s returned HTTP %d for alert %s", url, response.status_code, alert.id)
                 else:
                     log.info("alert %s delivered to webhook %s (HTTP %d)", alert.id, url, response.status_code)
-    except Exception:  # noqa: BLE001 - alerting must never break analysis
+    except Exception:  # alerting must never break analysis
         log.warning("alert webhook delivery for alert %s failed", alert.id, exc_info=True)
 
 
@@ -218,7 +222,7 @@ def shutdown_webhooks(wait: bool = False) -> None:
         pool.shutdown(wait=wait, cancel_futures=not wait)
 
 
-def maybe_alert(result: AnalysisResult, store: Store, settings: Settings) -> Optional[Alert]:
+def maybe_alert(result: AnalysisResult, store: Store, settings: Settings) -> Alert | None:
     """Create, persist, broadcast and webhook an alert when the verdict reaches the threshold."""
     verdict = result.verdict
     if verdict.risk_score < settings.alert_threshold:
@@ -227,7 +231,7 @@ def maybe_alert(result: AnalysisResult, store: Store, settings: Settings) -> Opt
     subject = " ".join(result.email.subject.split()) or "(no subject)"
     alert = Alert(
         id="alr-" + uuid.uuid4().hex[:8],
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
         email_id=result.id,
         subject=result.email.subject,
         sender=sender,
@@ -248,17 +252,17 @@ def maybe_alert(result: AnalysisResult, store: Store, settings: Settings) -> Opt
 
 @router.get("")
 def list_alerts(
-    limit: int = Query(50, ge=1, le=500),
-    unacknowledged_only: bool = Query(False),
-    mask: bool = Depends(mask_param),
-    store: Store = Depends(get_store),
+    store: StoreDep,
+    mask: MaskDep,
+    limit: Annotated[int, Query(ge=1, le=500)] = 50,
+    unacknowledged_only: Annotated[bool, Query()] = False,
 ) -> list[Alert]:
     alerts = store.list_alerts(limit=limit, unacknowledged_only=unacknowledged_only)
     return [mask_alert(alert) for alert in alerts] if mask else alerts
 
 
 @router.get("/stream")
-async def stream_alerts(request: Request, mask: bool = Depends(mask_param)) -> StreamingResponse:
+async def stream_alerts(request: Request, mask: MaskDep) -> StreamingResponse:
     """SSE feed: ``event: alert`` per new alert, ``: ping`` heartbeat every 15 s.
 
     The queue is polled in short slices so a vanished client is noticed within
@@ -273,7 +277,7 @@ async def stream_alerts(request: Request, mask: bool = Depends(mask_param)) -> S
             while not await request.is_disconnected():
                 try:
                     alert = await asyncio.wait_for(queue.get(), timeout=POLL_SECONDS)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     if time.monotonic() - last_write < HEARTBEAT_SECONDS:
                         continue
                     chunk = ": ping\n\n"
@@ -310,7 +314,7 @@ async def alerts_websocket(websocket: WebSocket) -> None:
     endpoint is unchanged and both may be connected at once.  A client should
     prefer this - a WebSocket survives proxies that buffer ``text/event-stream``
     and browsers cap SSE connections per origin - and fall back to SSE when the
-    handshake fails, which is what ``frontend/index.html`` does.
+    handshake fails, which is what ``frontend/js/live-feed.js`` does.
 
     Keep-alive is left to the protocol: uvicorn sends WebSocket ping frames on
     its own, so there is no application-level heartbeat frame for a client to
@@ -325,8 +329,8 @@ async def alerts_websocket(websocket: WebSocket) -> None:
     mask = _ws_mask(websocket)
     await websocket.accept()
     queue = broadcaster.subscribe()
-    alert_task: Optional[asyncio.Task] = None
-    receive_task: Optional[asyncio.Task] = None
+    alert_task: asyncio.Task[Alert] | None = None
+    receive_task: asyncio.Task[Message] | None = None
     try:
         alert_task = asyncio.create_task(queue.get())
         receive_task = asyncio.create_task(websocket.receive())
@@ -346,7 +350,7 @@ async def alerts_websocket(websocket: WebSocket) -> None:
         log.debug("alert websocket closed by the client")
     except RuntimeError:  # send/receive after the transport is already gone
         log.debug("alert websocket transport closed mid-send", exc_info=True)
-    except Exception:  # noqa: BLE001 - a broken client must not surface as a 500
+    except Exception:  # a broken client must not surface as a 500
         log.warning("alert websocket failed", exc_info=True)
     finally:
         for task in (alert_task, receive_task):
@@ -356,7 +360,7 @@ async def alerts_websocket(websocket: WebSocket) -> None:
 
 
 @router.post("/{alert_id}/ack")
-def acknowledge_alert(alert_id: str, store: Store = Depends(get_store)) -> dict[str, Any]:
+def acknowledge_alert(alert_id: str, store: StoreDep) -> Acknowledged:
     if not store.acknowledge_alert(alert_id):
-        raise HTTPException(status_code=404, detail=f"alert {alert_id} not found")
-    return {"ok": True}
+        raise NotFound(f"alert {alert_id} not found")
+    return Acknowledged()

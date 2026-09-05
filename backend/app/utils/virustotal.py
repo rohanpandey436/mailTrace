@@ -39,10 +39,11 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 from ..config import Settings
 from ..schemas import AttachmentAnalysis, AttachmentMeta, Finding, Severity
+from .cache import cache_get, cache_set
 
 if TYPE_CHECKING:  # pragma: no cover
     from ..database.case_manager import Store
@@ -62,25 +63,6 @@ CONFIRMED_DETECTIONS = 3
 
 def _timeout(cfg: Settings) -> float:
     return max(1.0, float(cfg.lookup_timeout or 3.0))
-
-
-def _cache_get(store: Optional["Store"], key: str) -> Any:
-    if store is None:
-        return None
-    try:
-        return store.cache_get(key)
-    except Exception:  # noqa: BLE001 - a cache miss is never fatal
-        log.debug("cache read failed for %s", key, exc_info=True)
-        return None
-
-
-def _cache_set(store: Optional["Store"], key: str, value: Any, ttl_seconds: int) -> None:
-    if store is None:
-        return
-    try:
-        store.cache_set(key, value, int(ttl_seconds))
-    except Exception:  # noqa: BLE001
-        log.debug("cache write failed for %s", key, exc_info=True)
 
 
 def _parse(payload: dict[str, Any]) -> dict[str, Any]:
@@ -108,7 +90,7 @@ def _parse(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def lookup_hash(sha256: str, cfg: Settings, store: Optional["Store"]) -> Optional[dict[str, Any]]:
+def lookup_hash(sha256: str, cfg: Settings, store: Store | None) -> dict[str, Any] | None:
     """VirusTotal's verdict for one SHA-256, or None when the lookup is disabled or fails.
 
     ``{"found": False}`` means VirusTotal answered and has never seen the file,
@@ -119,7 +101,7 @@ def lookup_hash(sha256: str, cfg: Settings, store: Optional["Store"]) -> Optiona
     if not digest or not cfg.virustotal_key or not cfg.enable_network:
         return None
     key = f"vt:file:{digest}"
-    cached = _cache_get(store, key)
+    cached = cache_get(store, key)
     if isinstance(cached, dict):
         return cached
     try:
@@ -133,7 +115,7 @@ def lookup_hash(sha256: str, cfg: Settings, store: Optional["Store"]) -> Optiona
                 VT_FILE_URL.format(sha256=digest),
                 headers={"x-apikey": cfg.virustotal_key, "Accept": "application/json"},
             )
-    except Exception:  # noqa: BLE001 - timeout, DNS, TLS: intel is optional
+    except (httpx.HTTPError, httpx.InvalidURL):  # timeout, DNS, TLS: intel is optional
         log.debug("VirusTotal lookup failed for %s", digest, exc_info=True)
         return None
     if response.status_code == 404:
@@ -141,7 +123,7 @@ def lookup_hash(sha256: str, cfg: Settings, store: Optional["Store"]) -> Optiona
     elif response.status_code == 200:
         try:
             verdict = _parse(response.json())
-        except Exception:  # noqa: BLE001 - unexpected body shape
+        except (ValueError, TypeError, AttributeError, KeyError):  # unexpected body shape
             log.debug("VirusTotal returned an unreadable body for %s", digest, exc_info=True)
             return None
     else:
@@ -149,11 +131,11 @@ def lookup_hash(sha256: str, cfg: Settings, store: Optional["Store"]) -> Optiona
         # problems: log once at debug and leave the analysis untouched.
         log.debug("VirusTotal returned HTTP %d for %s", response.status_code, digest)
         return None
-    _cache_set(store, key, verdict, cfg.cache_ttl_seconds)
+    cache_set(store, key, verdict, cfg.cache_ttl_seconds)
     return verdict
 
 
-def _severity(malicious: int, suspicious: int) -> Optional[Severity]:
+def _severity(malicious: int, suspicious: int) -> Severity | None:
     if malicious >= CONFIRMED_DETECTIONS:
         return Severity.CRITICAL
     if malicious >= 1:
@@ -163,7 +145,7 @@ def _severity(malicious: int, suspicious: int) -> Optional[Severity]:
     return None
 
 
-def _finding(meta: AttachmentMeta, verdict: dict[str, Any]) -> Optional[Finding]:
+def _finding(meta: AttachmentMeta, verdict: dict[str, Any]) -> Finding | None:
     """A finding for one flagged attachment; None when no engine flagged it."""
     malicious = int(verdict.get("malicious") or 0)
     suspicious = int(verdict.get("suspicious") or 0)
@@ -200,9 +182,9 @@ def _finding(meta: AttachmentMeta, verdict: dict[str, Any]) -> Optional[Finding]
 
 def enrich(
     analysis: AttachmentAnalysis,
-    raw_attachments: list["RawAttachment"],
+    raw_attachments: list[RawAttachment],
     cfg: Settings,
-    store: Optional["Store"] = None,
+    store: Store | None = None,
 ) -> list[Finding]:
     """Look every non-inline attachment up by hash and append any detections.
 
@@ -240,7 +222,7 @@ def enrich(
     return findings
 
 
-def _pair(metas: list[AttachmentMeta], raws: list["RawAttachment"]) -> list[tuple[AttachmentMeta, Any]]:
+def _pair(metas: list[AttachmentMeta], raws: list[RawAttachment]) -> list[tuple[AttachmentMeta, Any]]:
     """Match metadata back to the raw parts it came from, by digest.
 
     ``analyze_attachments`` drops any part whose analysis raised, so the two

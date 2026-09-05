@@ -41,8 +41,8 @@ import logging
 import re
 import uuid
 from collections import Counter
-from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Optional
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from ..config import Settings
 from ..config import settings as default_settings
@@ -63,8 +63,8 @@ from ..schemas import (
     UrlAnalysis,
 )
 from .knowledge import COMMON_URL_HOSTS, FREEMAIL_DOMAINS
-from .parser import hamming_distance, tlsh_diff
 from .link_analyzer import registrable_domain
+from .parser import hamming_distance, tlsh_diff
 
 if TYPE_CHECKING:  # pragma: no cover
     from ..database.case_manager import Store
@@ -162,11 +162,11 @@ def extract_indicators(
     return list(dict.fromkeys(indicators))
 
 
-def _related(store: "Store", indicators: list[str], exclude_email_id: str) -> dict[str, list[str]]:
+def _related(store: Store, indicators: list[str], exclude_email_id: str) -> dict[str, list[str]]:
     """email_id -> shared indicators, keeping only convincing overlaps."""
     try:
         raw = store.find_emails_by_indicators(indicators, exclude_email_id)
-    except Exception:  # noqa: BLE001
+    except Exception:  # correlation must never abort an analysis
         log.exception("indicator lookup failed")
         return {}
     matches: dict[str, list[str]] = {}
@@ -183,7 +183,7 @@ def _related(store: "Store", indicators: list[str], exclude_email_id: str) -> di
 
 
 def _fuzzy_related(
-    store: "Store", fuzzy: FuzzyDigest, exclude_email_id: str, cfg: Settings
+    store: Store, fuzzy: FuzzyDigest, exclude_email_id: str, cfg: Settings
 ) -> dict[str, list[str]]:
     """email_id -> ['simhash~3'] for prior messages whose body is a near-duplicate.
 
@@ -207,7 +207,7 @@ def _fuzzy_related(
             continue
         try:
             stored = store.find_indicators_by_prefix(prefix, exclude_email_id)
-        except Exception:  # noqa: BLE001 - correlation must never abort an analysis
+        except Exception:  # correlation must never abort an analysis
             log.exception("fuzzy digest lookup for %s failed", prefix)
             continue
         for email_id, keys in stored.items():
@@ -226,7 +226,7 @@ def _merge_matches(exact: dict[str, list[str]], fuzzy: dict[str, list[str]]) -> 
     return merged
 
 
-def _finding(fid: str, severity: Severity, title: str, detail: str, evidence: dict) -> Finding:
+def _finding(fid: str, severity: Severity, title: str, detail: str, evidence: dict[str, object]) -> Finding:
     return Finding(id=fid, module="intel", severity=severity, title=title, detail=detail, evidence=evidence)
 
 
@@ -238,8 +238,8 @@ def correlate(
     att_analysis: AttachmentAnalysis,
     domain_intel: list[DomainIntel],
     infra: InfraAnalysis,
-    store: Optional["Store"],
-    cfg: Optional[Settings] = None,
+    store: Store | None,
+    cfg: Settings | None = None,
 ) -> ThreatIntel:
     cfg = cfg or default_settings
     indicators = extract_indicators(parsed, header_analysis, url_analysis, att_analysis, domain_intel, infra)
@@ -263,8 +263,8 @@ def correlate(
         parts: list[str] = []
         for ip, zones in intel.ip_blacklists.items():
             parts.append(f"{ip} listed on {', '.join(zones)}")
-        for domain, feeds in intel.domain_reputation.items():
-            parts.append(f"{domain} flagged by {', '.join(feeds)}")
+        for flagged, feeds in intel.domain_reputation.items():
+            parts.append(f"{flagged} flagged by {', '.join(feeds)}")
         for ip in intel.tor_exits:
             parts.append(f"{ip} is a Tor exit node")
         findings.append(_finding(
@@ -282,7 +282,7 @@ def correlate(
         if matches:
             try:
                 summaries = store.summaries_for(list(matches))
-            except Exception:  # noqa: BLE001
+            except Exception:  # correlation must never abort an analysis
                 log.exception("summary lookup failed")
         for summary in summaries:
             intel.related_incidents.append(RelatedIncident(
@@ -348,7 +348,7 @@ def campaign_name(result: AnalysisResult, summaries: list[CaseSummary]) -> str:
     return f"Campaign - {result.id}"
 
 
-def assign_campaign(result: AnalysisResult, store: "Store", cfg: Optional[Settings] = None) -> Optional[str]:
+def assign_campaign(result: AnalysisResult, store: Store, cfg: Settings | None = None) -> str | None:
     """Cluster ``result`` with related prior emails; returns the campaign id."""
     cfg = cfg or default_settings
     indicators = result.intel.indicators or []
@@ -362,7 +362,7 @@ def assign_campaign(result: AnalysisResult, store: "Store", cfg: Optional[Settin
     if not matches:
         return None
     related_ids = list(matches)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     existing_ids: list[str] = []
     for email_id in related_ids:
         cid = store.campaign_for_email(email_id)
@@ -396,7 +396,7 @@ def assign_campaign(result: AnalysisResult, store: "Store", cfg: Optional[Settin
     shared: set[str] = set(campaign.indicators)
     for lst in matches.values():
         shared.update(lst)
-    categories: Counter = Counter(s.category.value for s in summaries)
+    categories: Counter[str] = Counter(s.category.value for s in summaries)
     categories[result.verdict.category.value] += 1
     countries: list[str] = []
     origin = result.infrastructure.origin_geo

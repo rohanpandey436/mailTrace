@@ -29,7 +29,7 @@ sub-reports (no hops, no links, no attachments, no geo enrichment).
 from __future__ import annotations
 
 import logging
-from typing import Any, Iterable, Optional
+from typing import Any, Iterable
 
 from ..schemas import (
     SEVERITY_ORDER,
@@ -51,8 +51,8 @@ from ..schemas import (
     UrlInfo,
     Verdict,
 )
-from .scoring import severity_for
 from .link_analyzer import registrable_domain
+from .scoring import severity_for
 
 log = logging.getLogger("mailtrace.graph")
 
@@ -114,10 +114,7 @@ def _registrable(host: str) -> str:
     host = (host or "").strip().lower().rstrip(".")
     if not host:
         return ""
-    try:
-        return (registrable_domain(host) or host).lower()
-    except Exception:  # noqa: BLE001 - a helper must never break graph building
-        return host
+    return (registrable_domain(host) or host).lower()
 
 
 # --------------------------------------------------------------------------- #
@@ -145,7 +142,7 @@ class _GraphBuilder:
         return existing.id
 
     def node(
-        self, node_type: NodeType, key: str, label: str, risk: Severity, attrs: Optional[dict[str, Any]] = None
+        self, node_type: NodeType, key: str, label: str, risk: Severity, attrs: dict[str, Any] | None = None
     ) -> str:
         return self.add(
             GraphNode(id=f"{node_type}:{key}", type=node_type, label=_short(label) or key, risk=risk, attrs=dict(attrs or {}))
@@ -170,7 +167,7 @@ def _url_domain(url: UrlInfo) -> str:
     return _registrable(url.registrable_domain or url.host)
 
 
-def _domain_risk(info: Optional[DomainIntel], url_risk: Severity) -> Severity:
+def _domain_risk(info: DomainIntel | None, url_risk: Severity) -> Severity:
     """Contract override first (lookalike / newly registered / blocklisted are
     CRITICAL), otherwise the worst domain finding, never below the risk of the
     links that point at the domain."""
@@ -182,7 +179,7 @@ def _domain_risk(info: Optional[DomainIntel], url_risk: Severity) -> Severity:
     return _max_severity((f.severity for f in info.findings), url_risk)
 
 
-def _domain_attrs(info: Optional[DomainIntel]) -> dict[str, Any]:
+def _domain_attrs(info: DomainIntel | None) -> dict[str, Any]:
     if info is None:
         return {}
     return {
@@ -195,8 +192,8 @@ def _domain_attrs(info: Optional[DomainIntel]) -> dict[str, Any]:
 
 def _ip_profile(
     ip: str,
-    geo: Optional[GeoInfo],
-    hop_index: Optional[int],
+    geo: GeoInfo | None,
+    hop_index: int | None,
     is_origin: bool,
     infra: InfraAnalysis,
     intel: ThreatIntel,
@@ -313,19 +310,19 @@ def build_graph(
             hop_by_ip.setdefault(ip, hop)
     ip_ids: dict[str, str] = {}
     for ip in _unique([origin_ip, *hop_by_ip]):
-        hop = hop_by_ip.get(ip)
+        relay = hop_by_ip.get(ip)
         is_origin = ip == origin_ip
         geo = infra.origin_geo if is_origin else None
-        if geo is None and hop is not None:
-            geo = hop.geo
-        hop_index = hop.index if hop is not None else header_analysis.originating_hop_index
+        if geo is None and relay is not None:
+            geo = relay.geo
+        hop_index = relay.index if relay is not None else header_analysis.originating_hop_index
         risk, attrs = _ip_profile(ip, geo, hop_index, is_origin, infra, intel)
         ip_node = builder.node("ip", ip, ip, risk, attrs)
         ip_ids[ip] = ip_node
         if is_origin:
             builder.edge(email_node, ip_node, "originated_from")
-        elif hop is not None:
-            builder.edge(email_node, ip_node, "relayed_via", float(hop.index))
+        elif relay is not None:
+            builder.edge(email_node, ip_node, "relayed_via", float(relay.index))
         asn = geo.asn.strip() if geo is not None else ""
         if asn:
             builder.edge(ip_node, builder.node("asn", asn, asn, Severity.INFO), "hosted_on")
@@ -346,16 +343,16 @@ def build_graph(
         if info is None:
             continue
         for record in info.a_records:
-            ip_node = ip_ids.get(record.strip())
-            if ip_node is not None:
-                builder.edge(domain_node, ip_node, "resolves_to")
+            resolved = ip_ids.get(record.strip())
+            if resolved is not None:
+                builder.edge(domain_node, resolved, "resolves_to")
 
     graph = builder.build()
     log.debug("graph %s: %d nodes, %d edges", email_id, len(graph.nodes), len(graph.edges))
     return graph
 
 
-def merge_graphs(graphs: list[AttributionGraph], campaign: Optional[Campaign] = None) -> AttributionGraph:
+def merge_graphs(graphs: list[AttributionGraph], campaign: Campaign | None = None) -> AttributionGraph:
     """Union of member graphs; nodes present in two or more members carry
     ``shared_by`` (the campaign's pivot points) and, when ``campaign`` is
     given, every email node is linked ``member_of`` the campaign node."""

@@ -1,0 +1,35 @@
+/*
+ * Adjustments to the two third-party libraries (Leaflet for the map,
+ * Cytoscape for the relationship graph) so they sit inside the design system.
+ */
+.map {
+  height: var(--map-height);
+  border-radius: var(--radius-lg);
+  background: var(--color-line-soft);
+}
+
+.leaflet-container {
+  font-family: var(--font-sans);
+}
+
+/* Mute the basemap so the markers, not the streets, are what the eye lands on. */
+.leaflet-tile-pane {
+  filter: saturate(0.45) brightness(1.04);
+}
+
+.map-popup {
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.graph {
+  width: 100%;
+  height: var(--graph-height);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-lg);
+  background: var(--color-paper);
+}
+
+.graph--tall {
+  height: var(--graph-height-tall);
+}

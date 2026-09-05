@@ -19,21 +19,24 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Any, AsyncIterator, Optional
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.requests import ClientDisconnect
 
 from .api import alerts, analyze, cases, reports
 from .config import Settings
 from .config import settings as default_settings
+from .core.errors import NotFound
 from .database.case_manager import Store
-from .schemas import ENGINE_VERSION
+from .schemas import ENGINE_VERSION, HealthStatus
 
 log = logging.getLogger("mailtrace.main")
 
@@ -53,11 +56,18 @@ def _warm_model(cfg: Settings) -> None:
     threading.Thread(target=run, name="mt-ml-warmup", daemon=True).start()
 
 
-async def _http_error(request: Request, exc: StarletteHTTPException) -> JSONResponse:
+async def _http_error(request: Request, exc: Exception) -> JSONResponse:
+    assert isinstance(exc, StarletteHTTPException)  # registered for this type only
     return JSONResponse(status_code=exc.status_code, content={"error": str(exc.detail)}, headers=exc.headers)
 
 
-async def _validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
+async def _not_found(request: Request, exc: Exception) -> JSONResponse:
+    """A domain-layer ``NotFound`` is a 404 in the API's uniform error shape."""
+    return JSONResponse(status_code=404, content={"error": str(exc)})
+
+
+async def _validation_error(request: Request, exc: Exception) -> JSONResponse:
+    assert isinstance(exc, RequestValidationError)  # registered for this type only
     problems = "; ".join(
         f"{'.'.join(str(part) for part in error.get('loc', ())) or 'request'}: {error.get('msg', 'invalid value')}"
         for error in exc.errors()[:5]
@@ -73,7 +83,7 @@ async def _unhandled_error(request: Request, exc: Exception) -> JSONResponse:
     return JSONResponse(status_code=500, content={"error": "internal server error"})
 
 
-def create_app(settings: Optional[Settings] = None) -> FastAPI:
+def create_app(settings: Settings | None = None) -> FastAPI:
     cfg = settings or default_settings
 
     @asynccontextmanager
@@ -122,6 +132,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
     app.add_exception_handler(StarletteHTTPException, _http_error)
     app.add_exception_handler(RequestValidationError, _validation_error)
+    app.add_exception_handler(NotFound, _not_found)
     app.add_exception_handler(Exception, _unhandled_error)
     app.include_router(analyze.router)
     app.include_router(cases.router)
@@ -129,44 +140,54 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     app.include_router(alerts.router)
 
     @app.get("/api/health", tags=["system"])
-    def health() -> dict[str, Any]:
+    def health() -> HealthStatus:
         # Imported inside the handler so the reported state is always the
         # parser's live state and main.py keeps no import-time dependency on
         # the analysis engine.
         from .core import parser
 
-        return {
-            "status": "ok",
-            "engine_version": ENGINE_VERSION,
-            "network": cfg.enable_network,
-            "pii_mask_default": cfg.pii_mask_default,
+        store: Store | None = getattr(app.state, "store", None)
+        return HealthStatus(
+            network=cfg.enable_network,
+            pii_mask_default=cfg.pii_mask_default,
             # Stage 5C: an auditor (and the UI) can see which mode is running.
-            "zero_persistence": cfg.zero_persistence,
-            "webhooks": len(cfg.webhook_urls),
+            zero_persistence=cfg.zero_persistence,
+            webhooks=len(cfg.webhook_urls),
             # The engine actually in use ("sqlite" / "postgresql"), not the one
             # that was configured: a PostgreSQL URL whose driver or server is
             # missing degrades to SQLite, and that must be visible, not guessed.
-            "database": getattr(getattr(app.state, "store", None), "backend", "sqlite"),
+            database=store.backend if store is not None else "sqlite",
             # Stage 2 PARSE-C++: whether the optional native dissector
             # (engine/) is doing the MIME work, or the pure-Python fallback.
             # Both produce identical results - this only says which is
             # installed and healthy.  See engine/README.md.
-            "native_engine": parser.NATIVE_ENGINE,
-            "native_engine_version": parser.NATIVE_ENGINE_VERSION,
-            "native_engine_status": parser.NATIVE_ENGINE_STATUS,
-        }
+            native_engine=parser.NATIVE_ENGINE,
+            native_engine_version=parser.NATIVE_ENGINE_VERSION,
+            native_engine_status=parser.NATIVE_ENGINE_STATUS,
+        )
+
+    _mount_dashboard(app, cfg.static_dir)
+    return app
+
+
+def _mount_dashboard(app: FastAPI, static_dir: Path) -> None:
+    """Serve the dashboard (index.html with its css/ and js/) at the site root.
+
+    Mounted after every router so the ``/api`` routes always win.  When the
+    frontend directory is absent - a backend-only install - ``/`` explains
+    what is missing instead of returning a bare 404.
+    """
+    page = static_dir / "index.html"
+    if page.is_file():
+        app.mount("/", StaticFiles(directory=static_dir, html=True), name="dashboard")
+        return
 
     @app.get("/", include_in_schema=False)
-    def index() -> FileResponse:
-        page = cfg.static_dir / "index.html"
-        if not page.is_file():
-            raise HTTPException(
-                status_code=404,
-                detail=f"web UI not installed: {page} is missing (expected the dashboard beside the backend)",
-            )
-        return FileResponse(page, media_type="text/html")
-
-    return app
+    def missing_dashboard() -> None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"web UI not installed: {page} is missing (expected the dashboard beside the backend)",
+        )
 
 
 app = create_app()

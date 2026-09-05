@@ -8,15 +8,16 @@ from __future__ import annotations
 import asyncio
 import csv
 import io
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from fastapi.testclient import TestClient
 
 from app.api import alerts as alerts_api
-from app.utils import csv_exporter as csvexport, virustotal
 from app.main import create_app
 from app.schemas import Alert, AttachmentAnalysis, AttachmentMeta, Severity, ThreatCategory
+from app.utils import csv_exporter as csvexport
+from app.utils import virustotal
 
 # A subject that is a live formula in Excel, LibreOffice and Google Sheets.
 EVIL_SUBJECT = '=HYPERLINK("http://evil.test","Click me")'
@@ -49,7 +50,7 @@ def _rows(text: str) -> list[list[str]]:
 def _alert(alert_id: str = "alr-test01") -> Alert:
     return Alert(
         id=alert_id,
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
         email_id="e1",
         subject="Probe subject",
         sender="attacker@evil.example",

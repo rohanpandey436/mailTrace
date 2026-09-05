@@ -195,7 +195,7 @@ class Settings:
         self.evidence_dir.mkdir(parents=True, exist_ok=True)
 
     @classmethod
-    def from_env(cls) -> "Settings":
+    def from_env(cls) -> Settings:
         # .env is looked for beside the backend and at the project root, so it
         # works whether you run from mailtrace/ or mailtrace/backend/.
         _load_dotenv(BASE_DIR / ".env")

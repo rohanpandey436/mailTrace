@@ -53,7 +53,7 @@ def _line_end(data: bytes, pos: int) -> int:
 def _trailing_eol(line: bytes) -> int:
     if line.endswith(b"\r\n"):
         return 2
-    if line.endswith(b"\r") or line.endswith(b"\n"):
+    if line.endswith((b"\r", b"\n")):
         return 1
     return 0
 
@@ -276,7 +276,7 @@ def _parse_node(region: bytes, default_type: bytes, ancestors: list[bytes], dept
         return node
 
     separator = b"--" + boundary
-    active = list(ancestors) + [separator]
+    active = [*ancestors, separator]
     child_default = b"message/rfc822" if content_type == b"multipart/digest" else b"text/plain"
     body = node["body"]
     pos = 0

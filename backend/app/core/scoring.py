@@ -33,7 +33,7 @@ was -- the model is a floor-preserving lift, never a replacement.
 from __future__ import annotations
 
 import logging
-from typing import Any, Iterable, Optional
+from typing import Any, Iterable
 
 from ..config import DEFAULT_WEIGHTS, Settings
 from ..schemas import (
@@ -126,10 +126,7 @@ def _registrable(host: str) -> str:
     host = (host or "").strip().lower().rstrip(".")
     if not host:
         return ""
-    try:
-        return (registrable_domain(host) or host).lower()
-    except Exception:  # noqa: BLE001 - a helper must never break the verdict
-        return host
+    return (registrable_domain(host) or host).lower()
 
 
 def _is_freemail(domain: str) -> bool:
@@ -153,7 +150,7 @@ def _as_category(value: Any) -> ThreatCategory:
         return ThreatCategory.LEGITIMATE
 
 
-def _ml_prob(probs: Optional[dict[str, float]], category: Any) -> float:
+def _ml_prob(probs: dict[str, float] | None, category: Any) -> float:
     """Probability the classifier assigned to ``category``; 0 when unknown."""
     if not probs:
         return 0.0
@@ -176,7 +173,7 @@ def _bec_confidence(nlp: NlpAnalysis, pattern: str) -> tuple[float, list[str]]:
     return best, evidence
 
 
-def _finding(findings: Iterable[Finding], finding_id: str) -> Optional[Finding]:
+def _finding(findings: Iterable[Finding], finding_id: str) -> Finding | None:
     return next((f for f in findings if f.id == finding_id), None)
 
 
@@ -427,7 +424,7 @@ def component_scores(
 def weighted_risk(breakdown: RiskBreakdown) -> int:
     weights = breakdown.weights or DEFAULT_WEIGHTS
     total = sum(weights.get(name, 0.0) * getattr(breakdown, name) for name in DEFAULT_WEIGHTS)
-    return int(round(_clamp(total)))
+    return round(_clamp(total))
 
 
 def _breakdown_line(breakdown: RiskBreakdown, risk: int) -> str:
@@ -590,7 +587,7 @@ def rule_classify(
 def fuse_category(
     rule_cat: ThreatCategory,
     ml_cat: ThreatCategory,
-    ml_probs: Optional[dict[str, float]],
+    ml_probs: dict[str, float] | None,
     risk_score: int,
 ) -> tuple[ThreatCategory, float, bool]:
     """The rule engine decides; the ML model modulates confidence.
@@ -779,7 +776,7 @@ def recommended_actions(
     header_analysis: HeaderAnalysis,
     url_analysis: UrlAnalysis,
     att_analysis: AttachmentAnalysis,
-    attribution: Optional[Attribution] = None,
+    attribution: Attribution | None = None,
 ) -> list[str]:
     """Concrete analyst playbook for the verdict, naming the actual IOCs."""
     category = _as_category(category)
@@ -866,7 +863,7 @@ def recommended_actions(
 # --------------------------------------------------------------------------- #
 # Findings merge
 # --------------------------------------------------------------------------- #
-def collect_findings(*finding_lists: Optional[Iterable[Finding]]) -> list[Finding]:
+def collect_findings(*finding_lists: Iterable[Finding] | None) -> list[Finding]:
     """Merge finding lists, dedupe by (module, id) keeping the first, and sort
     by severity descending, then module, then id."""
     seen: set[tuple[str, str]] = set()
@@ -889,7 +886,7 @@ def collect_findings(*finding_lists: Optional[Iterable[Finding]]) -> list[Findin
 # --------------------------------------------------------------------------- #
 def _score_urls_with_model(
     url_analysis: UrlAnalysis, domain_intel: list[DomainIntel], cfg: Settings
-) -> tuple[Any, Optional[Finding]]:
+) -> tuple[Any, Finding | None]:
     """(outcome, finding) from the XGBoost URL model, or ``(None, None)``.
 
     The one place in this module that is not pure: it may load -- and, the very
@@ -902,12 +899,12 @@ def _score_urls_with_model(
         return None, None
     try:
         from ..ai import url_model as url_ml
-    except Exception:  # noqa: BLE001 - the package ships with the app, but never trust it
+    except ImportError:  # the package ships with the app; a partial install still must not break the verdict
         log.debug("URL model package unavailable", exc_info=True)
         return None, None
     try:
         outcome = url_ml.score_urls(url_analysis.urls, domain_intel, cfg)
-    except Exception:  # noqa: BLE001 - a model must never break the verdict
+    except Exception:  # a model must never break the verdict
         log.exception("URL model scoring failed; the URL pillar stays rule-only")
         return None, None
     if outcome is None:

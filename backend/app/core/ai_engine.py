@@ -41,7 +41,7 @@ from __future__ import annotations
 import logging
 import re
 import unicodedata
-from typing import Any, Optional
+from typing import TYPE_CHECKING
 
 from ..config import Settings
 from ..schemas import (
@@ -59,6 +59,11 @@ from ..schemas import (
 )
 from .knowledge import EXEC_TITLES, FREEMAIL_DOMAINS
 from .link_analyzer import registrable_domain
+
+if TYPE_CHECKING:  # pragma: no cover - annotations only; the model packages are imported lazily at runtime
+    from sklearn.pipeline import Pipeline
+
+    from ..ai.lime_explainer import LimeExplanation
 
 log = logging.getLogger("mailtrace.nlp")
 
@@ -197,7 +202,7 @@ _LETTER_RE = re.compile(r"[A-Za-zऀ-ॿ]")
 _WORD_RE = re.compile(r"\S+")
 
 
-def _compile(lexicon: tuple[str, ...]) -> re.Pattern:
+def _compile(lexicon: tuple[str, ...]) -> re.Pattern[str]:
     phrases = sorted({p.lower() for p in lexicon}, key=len, reverse=True)
     # re.escape leaves spaces alone (3.7+) but older versions escaped them; a
     # phrase may span a line break in the normalised text, so allow any run of
@@ -206,7 +211,7 @@ def _compile(lexicon: tuple[str, ...]) -> re.Pattern:
     return re.compile(rf"(?<![\w-])(?:{alternatives})(?![\w-])", re.IGNORECASE)
 
 
-_PATTERNS: dict[str, re.Pattern] = {
+_PATTERNS: dict[str, re.Pattern[str]] = {
     name: _compile(lexicon)
     for name, lexicon in {
         "urgency": URGENCY, "threat": THREAT, "financial": FINANCIAL, "credential": CREDENTIAL,
@@ -226,8 +231,8 @@ def normalize_text(subject: str, body: str) -> str:
     """NFKC-normalised, lower-case, whitespace-collapsed subject + body."""
     combined = f"{subject or ''}\n{body or ''}"
     combined = unicodedata.normalize("NFKC", combined)
-    combined = combined.replace("’", "'").replace("‘", "'").replace("“", '"').replace("”", '"')
-    combined = combined.replace("–", "-").replace("—", "-")
+    combined = combined.replace("’", "'").replace("‘", "'").replace("“", '"').replace("”", '"')  # noqa: RUF001
+    combined = combined.replace("–", "-").replace("—", "-")  # noqa: RUF001 - typographic dashes are the point
     combined = re.sub(r"[ \t\r\f\v\xa0]+", " ", combined)
     combined = re.sub(r" *\n *", "\n", combined)
     combined = re.sub(r"\n{2,}", "\n", combined)
@@ -317,7 +322,6 @@ def detect_bec_patterns(
     risky_urls = [u for u in url_analysis.urls if SEVERITY_ORDER[u.risk.value] >= SEVERITY_ORDER["medium"]]
     high_urls = [u for u in url_analysis.urls if SEVERITY_ORDER[u.risk.value] >= SEVERITY_ORDER["high"]]
     keyword_urls = [u for u in url_analysis.urls if u.suspicious_keywords]
-    risky_atts = [a for a in att_analysis.attachments if SEVERITY_ORDER[a.risk.value] >= SEVERITY_ORDER["medium"]]
     high_atts = [a for a in att_analysis.attachments if SEVERITY_ORDER[a.risk.value] >= SEVERITY_ORDER["high"]]
 
     # 1. Payment diversion -----------------------------------------------
@@ -481,10 +485,10 @@ _ATTRIBUTION_METHOD = {"linear": "exact-shap-linear", "transformer": "occlusion"
 #: How many LIME surrogate coefficients are carried on the report.
 _LIME_TOP_K = 12
 
-_ModelOutcome = tuple[Optional[str], dict[str, float], list[str], list[tuple[str, float]], str, str, Optional[Any]]
+_ModelOutcome = tuple[str | None, dict[str, float], list[str], list[tuple[str, float]], str, str, "LimeExplanation | None"]
 
 
-def _run_lime(pipeline, text: str, label: str, cfg: Settings):  # type: ignore[no-untyped-def]
+def _run_lime(pipeline: Pipeline, text: str, label: str, cfg: Settings) -> LimeExplanation | None:
     """LIME for the linear backend, or None.
 
     Skipped when ``Settings.lime_enabled`` is off.  Measured cost on the bundled
@@ -541,7 +545,7 @@ def _run_model(text: str, cfg: Settings) -> _ModelOutcome:
         return label, probs, train.explain(pipeline, text, label), weights, train.MODEL_VERSION, "linear", lime
     except ImportError as exc:
         log.warning("ML classifier unavailable (%s); using rule heuristics", exc)
-    except Exception:  # noqa: BLE001 - model failure must never abort analysis
+    except Exception:  # model failure must never abort analysis
         log.exception("ML classification failed; using rule heuristics")
     return None, {}, [], [], "unavailable", "unavailable", None
 
@@ -549,7 +553,7 @@ def _run_model(text: str, cfg: Settings) -> _ModelOutcome:
 # --------------------------------------------------------------------------- #
 # Entry point
 # --------------------------------------------------------------------------- #
-def _finding(fid: str, severity: Severity, title: str, detail: str, evidence: dict) -> Finding:
+def _finding(fid: str, severity: Severity, title: str, detail: str, evidence: dict[str, object]) -> Finding:
     return Finding(id=fid, module="nlp", severity=severity, title=title, detail=detail, evidence=evidence)
 
 

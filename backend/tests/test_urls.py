@@ -1,7 +1,15 @@
 from __future__ import annotations
 
+from app.core.link_analyzer import (
+    analyze_url,
+    analyze_urls,
+    damerau_levenshtein,
+    extract_urls,
+    is_lookalike,
+    normalize_url,
+    registrable_domain,
+)
 from app.core.parser import parse_email
-from app.core.link_analyzer import analyze_url, analyze_urls, damerau_levenshtein, extract_urls, is_lookalike, normalize_url, registrable_domain
 
 
 def test_registrable_domain():

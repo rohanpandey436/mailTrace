@@ -35,7 +35,7 @@ import csv
 import io
 import json
 from datetime import datetime
-from typing import Any, Iterable, Optional
+from typing import Any, Iterable
 
 from ..schemas import CaseSummary, ForensicReport, GeoInfo
 
@@ -103,7 +103,7 @@ def _row(writer: Any, cells: Iterable[Any]) -> None:
 # --------------------------------------------------------------------------- #
 # One case: header block + findings table
 # --------------------------------------------------------------------------- #
-def _geo_rows(geo: Optional[GeoInfo]) -> list[tuple[str, Any]]:
+def _geo_rows(geo: GeoInfo | None) -> list[tuple[str, Any]]:
     if geo is None:
         return [("IP", ""), ("Note", "No routable origin was identified in the Received chain")]
     return [
@@ -195,7 +195,7 @@ def render_report_csv(report: ForensicReport) -> str:
         ("DKIM", auth.dkim), ("DKIM domain", auth.dkim_domain), ("DKIM aligned", auth.dkim_aligned),
         ("DMARC", auth.dmarc), ("DMARC policy", auth.dmarc_policy),
     ])
-    block("Origin", _geo_rows(result.infrastructure.origin_geo) + [
+    block("Origin", [*_geo_rows(result.infrastructure.origin_geo),
         ("Originating IP (header chain)", result.headers.originating_ip),
         ("Origin confidence", round(result.headers.origin_confidence, 4)),
         ("Relay hops", len(result.headers.hops)),

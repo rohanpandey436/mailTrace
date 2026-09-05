@@ -2,23 +2,25 @@
 Campaign and relationship-graph endpoints.
 
 A campaign view is a projection over its member analyses: the member rows
-come straight from the store and the graph is ``graph.merge_graphs`` over
-every member's stored graph, which adds the campaign node and marks the
+come straight from the store and the graph is ``graph_builder.merge_graphs``
+over every member's stored graph, which adds the campaign node and marks the
 pivot nodes shared by several emails.  When PII masking is requested each
 member result is masked *before* merging, so address nodes carry the same
 hashed id across members and still merge correctly.
 """
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query
 
-from ..database.case_manager import Store
+from ..core import decisions
 from ..core import graph_builder as graph_engine
+from ..core.errors import NotFound
+from ..database.case_manager import Store
+from ..schemas import AnalysisResult, AttributionGraph, Campaign, CampaignDetail
 from ..utils.pii_masker import mask_result
-from ..schemas import AnalysisResult, AttributionGraph, Campaign
-from .deps import get_store, mask_param, mask_summary
+from .deps import MaskDep, StoreDep, mask_summary
 
 router = APIRouter(prefix="/api", tags=["cases"])
 
@@ -26,7 +28,7 @@ router = APIRouter(prefix="/api", tags=["cases"])
 def _load_campaign(store: Store, campaign_id: str) -> Campaign:
     campaign = store.get_campaign(campaign_id)
     if campaign is None:
-        raise HTTPException(status_code=404, detail=f"campaign {campaign_id} not found")
+        raise NotFound(f"campaign {campaign_id} not found")
     return campaign
 
 
@@ -45,38 +47,28 @@ def _campaign_graph(store: Store, campaign: Campaign, mask: bool) -> Attribution
 
 
 @router.get("/campaigns")
-def list_campaigns(store: Store = Depends(get_store)) -> list[Campaign]:
+def list_campaigns(store: StoreDep) -> list[Campaign]:
     return store.list_campaigns()
 
 
 @router.get("/campaigns/{campaign_id}")
-def get_campaign(
-    campaign_id: str,
-    mask: bool = Depends(mask_param),
-    store: Store = Depends(get_store),
-) -> dict[str, Any]:
+def get_campaign(campaign_id: str, store: StoreDep, mask: MaskDep) -> CampaignDetail:
     campaign = _load_campaign(store, campaign_id)
     emails = store.summaries_for(campaign.email_ids)
     if mask:
         emails = [mask_summary(summary) for summary in emails]
-    return {
-        "campaign": campaign.model_dump(mode="json"),
-        "emails": [summary.model_dump(mode="json") for summary in emails],
-        "graph": _campaign_graph(store, campaign, mask).model_dump(mode="json"),
-    }
+    return CampaignDetail(campaign=campaign, emails=emails, graph=_campaign_graph(store, campaign, mask))
 
 
 @router.get("/graph")
 def get_graph(
-    email_id: Optional[str] = Query(None),
-    campaign_id: Optional[str] = Query(None),
-    mask: bool = Depends(mask_param),
-    store: Store = Depends(get_store),
+    store: StoreDep,
+    mask: MaskDep,
+    email_id: Annotated[str | None, Query()] = None,
+    campaign_id: Annotated[str | None, Query()] = None,
 ) -> AttributionGraph:
     if email_id:
-        result = store.get_analysis(email_id)
-        if result is None:
-            raise HTTPException(status_code=404, detail=f"email {email_id} not found")
+        result = decisions.load_case(store, email_id)
         return (mask_result(result) if mask else result).graph
     if campaign_id:
         return _campaign_graph(store, _load_campaign(store, campaign_id), mask)

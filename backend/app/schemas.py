@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Any, Literal, Optional
+from typing import Literal, TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -73,7 +73,7 @@ NodeType = Literal["email", "address", "domain", "ip", "asn", "url", "attachment
 # bookkeeping state and nothing more - see ``app/api/analyze.py`` - it does not
 # mean a mail gateway quarantined or blocked anything.
 CaseStatus = Literal["open", "quarantined", "blocked"]
-CASE_STATUSES: tuple[str, ...] = ("open", "quarantined", "blocked")
+CASE_STATUSES: tuple[CaseStatus, ...] = ("open", "quarantined", "blocked")
 
 
 # --------------------------------------------------------------------------- #
@@ -87,7 +87,7 @@ class Finding(BaseModel):
     severity: Severity
     title: str
     detail: str
-    evidence: dict[str, Any] = Field(default_factory=dict)
+    evidence: dict[str, object] = Field(default_factory=dict)
 
 
 class AddressInfo(BaseModel):
@@ -144,7 +144,7 @@ class ParsedEmail(BaseModel):
 
     message_id: str = ""
     subject: str = ""
-    date: Optional[datetime] = None
+    date: datetime | None = None
     sender: AddressInfo = Field(default_factory=AddressInfo, description="RFC5322 From")
     reply_to: list[AddressInfo] = Field(default_factory=list)
     return_path: AddressInfo = Field(default_factory=AddressInfo, description="Envelope sender")
@@ -173,8 +173,8 @@ class GeoInfo(BaseModel):
     country_code: str = ""
     region: str = ""
     city: str = ""
-    lat: Optional[float] = None
-    lon: Optional[float] = None
+    lat: float | None = None
+    lon: float | None = None
     isp: str = ""
     org: str = ""
     asn: str = ""
@@ -185,7 +185,7 @@ class GeoInfo(BaseModel):
     is_mobile: bool = False
     is_tor_exit: bool = False
     blacklists: list[str] = Field(default_factory=list, description="DNSBL zones that list this IP")
-    abuse_confidence: Optional[int] = Field(default=None, description="AbuseIPDB 0-100 if configured")
+    abuse_confidence: int | None = Field(default=None, description="AbuseIPDB 0-100 if configured")
     source: str = Field(default="", description="ip-api|cache|private|offline|unavailable")
 
 
@@ -197,12 +197,12 @@ class Hop(BaseModel):
     by_host: str = ""
     protocol: str = ""
     hop_id: str = ""
-    timestamp: Optional[datetime] = None
-    delay_seconds: Optional[float] = Field(default=None, description="Seconds since previous hop; negative = clock anomaly")
+    timestamp: datetime | None = None
+    delay_seconds: float | None = Field(default=None, description="Seconds since previous hop; negative = clock anomaly")
     is_private_ip: bool = False
     is_internal: bool = Field(default=False, description="Belongs to recipient org / trusted relay")
     anomalies: list[str] = Field(default_factory=list)
-    geo: Optional[GeoInfo] = None
+    geo: GeoInfo | None = None
 
 
 class AuthResult(BaseModel):
@@ -216,15 +216,15 @@ class AuthResult(BaseModel):
     dmarc: str = Field(default="none", description="pass|fail|none")
     dmarc_policy: str = Field(default="", description="none|quarantine|reject or ''")
     dmarc_source: str = "none"
-    spf_aligned: Optional[bool] = None
-    dkim_aligned: Optional[bool] = None
+    spf_aligned: bool | None = None
+    dkim_aligned: bool | None = None
     notes: list[str] = Field(default_factory=list)
 
 
 class HeaderAnalysis(BaseModel):
     hops: list[Hop] = Field(default_factory=list)
     originating_ip: str = ""
-    originating_hop_index: Optional[int] = None
+    originating_hop_index: int | None = None
     origin_confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     origin_reasoning: str = ""
     x_originating_ip: str = ""
@@ -352,9 +352,9 @@ class DomainIntel(BaseModel):
     domain: str
     role: str = Field(default="", description="sender|reply_to|return_path|url|message_id")
     registrar: str = ""
-    created: Optional[datetime] = None
-    expires: Optional[datetime] = None
-    age_days: Optional[int] = None
+    created: datetime | None = None
+    expires: datetime | None = None
+    age_days: int | None = None
     registrant_country: str = ""
     name_servers: list[str] = Field(default_factory=list)
     mx: list[str] = Field(default_factory=list)
@@ -374,7 +374,7 @@ class DomainIntel(BaseModel):
 
 
 class InfraAnalysis(BaseModel):
-    origin_geo: Optional[GeoInfo] = None
+    origin_geo: GeoInfo | None = None
     tor_exit: bool = False
     vpn_or_proxy: bool = False
     hosting_provider: bool = False
@@ -403,7 +403,7 @@ class ThreatIntel(BaseModel):
     domain_reputation: dict[str, list[str]] = Field(default_factory=dict)
     tor_exits: list[str] = Field(default_factory=list)
     related_incidents: list[RelatedIncident] = Field(default_factory=list)
-    campaign_id: Optional[str] = None
+    campaign_id: str | None = None
     findings: list[Finding] = Field(default_factory=list)
 
 
@@ -419,7 +419,7 @@ class GraphNode(BaseModel):
     type: NodeType
     label: str
     risk: Severity = Severity.INFO
-    attrs: dict[str, Any] = Field(default_factory=dict)
+    attrs: dict[str, object] = Field(default_factory=dict)
 
 
 class GraphEdge(BaseModel):
@@ -473,7 +473,7 @@ class CustodyEvent(BaseModel):
     actor: str
     action: str = Field(description="ingested|analyzed|viewed|viewed_unmasked|report_generated|exported")
     email_id: str
-    detail: dict[str, Any] = Field(default_factory=dict)
+    detail: dict[str, object] = Field(default_factory=dict)
     evidence_sha256: str
     prev_hash: str
     hash: str
@@ -535,7 +535,7 @@ class AnalysisResult(BaseModel):
     graph: AttributionGraph
     verdict: Verdict
     findings: list[Finding] = Field(default_factory=list, description="All findings, sorted by severity desc")
-    campaign_id: Optional[str] = None
+    campaign_id: str | None = None
 
 
 class CaseSummary(BaseModel):
@@ -549,7 +549,7 @@ class CaseSummary(BaseModel):
     severity: Severity
     confidence: float = 0.0
     analyzed_at: datetime
-    campaign_id: Optional[str] = None
+    campaign_id: str | None = None
     originating_ip: str = ""
     origin_country: str = ""
     source_type: SourceType = "undetermined"
@@ -610,22 +610,66 @@ class Section65BCertificate(BaseModel):
     )
 
 
+class EvidenceIntegrity(TypedDict):
+    """The hashes and ledger state a report attests to."""
+
+    raw_sha256: str
+    raw_md5: str
+    raw_size: int
+    custody_head_hash: str
+    custody_valid: bool
+    custody_events: int
+    engine_version: str
+    analyzed_at: str
+
+
+class TimelineEntry(TypedDict, total=False):
+    """One row of a report's chronological timeline: a delivery hop or a custody event."""
+
+    kind: str
+    sequence: int
+    timestamp: str | None
+    summary: str
+    # Delivery hop
+    from_host: str
+    from_ip: str
+    by_host: str
+    protocol: str
+    delay_seconds: float | None
+    location: str
+    provider: str
+    is_origin: bool
+    is_private_ip: bool
+    is_internal: bool
+    anomalies: list[str]
+    # Custody event
+    actor: str
+    action: str
+    detail: dict[str, object]
+    hash: str
+
+
 class ForensicReport(BaseModel):
     report_id: str
     generated_at: datetime
     generated_by: str = "system"
     masked: bool = False
-    section_65b: Optional[Section65BCertificate] = Field(
+    section_65b: Section65BCertificate | None = Field(
         default=None, description="Section 65B(4) / BSA 63(4) certificate particulars",
     )
     executive_summary: str
     key_indicators: list[str] = Field(default_factory=list)
-    evidence_integrity: dict[str, Any] = Field(default_factory=dict, description="raw hashes, custody head hash, chain validity")
-    timeline: list[dict[str, Any]] = Field(default_factory=list, description="Chronological hop / event timeline")
+    evidence_integrity: EvidenceIntegrity = Field(description="raw hashes, custody head hash, chain validity")
+    timeline: list[TimelineEntry] = Field(default_factory=list, description="Chronological hop / event timeline")
     recommended_actions: list[str] = Field(default_factory=list)
     legal_notes: list[str] = Field(default_factory=list)
     custody: CustodyChain
     analysis: AnalysisResult
+
+
+class CountryCount(BaseModel):
+    country: str
+    count: int
 
 
 class DashboardStats(BaseModel):
@@ -634,7 +678,7 @@ class DashboardStats(BaseModel):
     campaigns: int = 0
     alerts_open: int = 0
     by_category: dict[str, int] = Field(default_factory=dict)
-    top_countries: list[dict[str, Any]] = Field(default_factory=list)
+    top_countries: list[CountryCount] = Field(default_factory=list)
     top_source_types: dict[str, int] = Field(default_factory=dict)
     avg_risk: float = 0.0
 
@@ -642,3 +686,46 @@ class DashboardStats(BaseModel):
 class RawSubmission(BaseModel):
     raw: str = Field(description="Full RFC822 message text")
     filename: str = "pasted.eml"
+
+
+# --------------------------------------------------------------------------- #
+# API response envelopes
+# --------------------------------------------------------------------------- #
+class AnalyzeResponse(BaseModel):
+    """``POST /api/analyze``: one result per message, plus any alerts they raised."""
+
+    results: list[AnalysisResult]
+    alerts: list[Alert] = Field(default_factory=list)
+
+
+class CaseListResponse(BaseModel):
+    items: list[CaseSummary]
+    total: int
+
+
+class CampaignDetail(BaseModel):
+    campaign: Campaign
+    emails: list[CaseSummary]
+    graph: AttributionGraph
+
+
+class CustodyVerification(BaseModel):
+    valid: bool
+    head_hash: str
+
+
+class Acknowledged(BaseModel):
+    ok: bool = True
+
+
+class HealthStatus(BaseModel):
+    status: str = "ok"
+    engine_version: str = ENGINE_VERSION
+    network: bool
+    pii_mask_default: bool
+    zero_persistence: bool
+    webhooks: int
+    database: str = Field(description="The store engine actually in use: sqlite or postgresql")
+    native_engine: bool = Field(description="Whether the C++ dissector is doing the MIME work")
+    native_engine_version: str
+    native_engine_status: str

@@ -64,7 +64,11 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional, Sequence
+from typing import TYPE_CHECKING, Any, Callable, Sequence
+
+if TYPE_CHECKING:  # pragma: no cover - annotations only; numpy is imported lazily at runtime
+    import numpy as np
+    from numpy.typing import NDArray
 
 log = logging.getLogger("mailtrace.ml.lime")
 
@@ -117,8 +121,8 @@ def tokenize(text: str) -> tuple[list[str], list[str]]:
 
 
 def _perturbations(
-    pieces: Sequence[str], vocabulary: Sequence[str], n_samples: int, rng
-) -> tuple[list[str], Any]:
+    pieces: Sequence[str], vocabulary: Sequence[str], n_samples: int, rng: np.random.Generator
+) -> tuple[list[str], NDArray[np.float64]]:
     """``n_samples`` neighbours plus the binary on/off matrix that describes them.
 
     Row 0 is the original message with every word present, which is what makes
@@ -139,7 +143,7 @@ def _perturbations(
     return texts, mask
 
 
-def _kernel(mask, width: float = KERNEL_WIDTH):  # type: ignore[no-untyped-def]
+def _kernel(mask: NDArray[np.float64], width: float = KERNEL_WIDTH) -> NDArray[np.float64]:
     """LIME's exponential kernel over the cosine distance from the original."""
     import numpy as np
 
@@ -199,7 +203,7 @@ def explain(
         surrogate = Ridge(alpha=RIDGE_ALPHA, fit_intercept=True, random_state=seed)
         surrogate.fit(mask[:, keep], target, sample_weight=weights)
         r2 = float(surrogate.score(mask[:, keep], target, sample_weight=weights))
-    except Exception:  # noqa: BLE001 - explanation must never break analysis
+    except Exception:  # explanation must never break analysis
         log.debug("LIME explanation failed", exc_info=True)
         return empty
 
@@ -240,7 +244,7 @@ def explain_pipeline(
     )
 
 
-def resolve_samples(cfg: Optional[Any] = None, default: int = 160) -> int:
+def resolve_samples(cfg: Any | None = None, default: int = 160) -> int:
     """``Settings.lime_samples`` clamped to a sane range."""
     raw = getattr(cfg, "lime_samples", default) if cfg is not None else default
     try:

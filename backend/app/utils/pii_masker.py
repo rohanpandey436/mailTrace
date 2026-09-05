@@ -15,7 +15,7 @@ import hashlib
 import re
 from typing import Any
 
-from ..schemas import AddressInfo, AnalysisResult, ForensicReport, GraphEdge, GraphNode, HeaderField
+from ..schemas import AddressInfo, AnalysisResult, Finding, ForensicReport, GraphEdge, GraphNode, HeaderField
 
 EMAIL_RE = re.compile(r"[A-Za-z0-9._%+\-'=]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
 PHONE_RE = re.compile(
@@ -66,20 +66,20 @@ def mask_name(name: str) -> str:
     return " ".join(f"{w[0].upper()}." for w in words[:3])
 
 
-def _mask_card(match: re.Match) -> str:
-    raw = match.group(0)
+def _mask_card(match: re.Match[str]) -> str:
+    raw: str = match.group(0)
     digits = re.sub(r"\D", "", raw)
     if 13 <= len(digits) <= 19 and _luhn_ok(digits):
         return "**** **** **** " + digits[-4:]
     return raw
 
 
-def _mask_aadhaar(match: re.Match) -> str:
+def _mask_aadhaar(match: re.Match[str]) -> str:
     digits = re.sub(r"\D", "", match.group(0))
     return f"XXXX-XXXX-{digits[-4:]}"
 
 
-def _mask_phone(match: re.Match) -> str:
+def _mask_phone(match: re.Match[str]) -> str:
     digits = re.sub(r"\D", "", match.group(0))
     return f"+**-*****-**{digits[-2:]}" if len(digits) >= 2 else "**"
 
@@ -123,7 +123,7 @@ def mask_address(address: AddressInfo) -> AddressInfo:
     return AddressInfo(raw=raw, display_name=masked_name, address=masked_addr, local_part=local_part, domain=address.domain)
 
 
-def _mask_findings(findings: list) -> None:
+def _mask_findings(findings: list[Finding]) -> None:
     for finding in findings:
         finding.title = mask_text(finding.title)
         finding.detail = mask_text(finding.detail)

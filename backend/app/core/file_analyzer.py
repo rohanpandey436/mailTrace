@@ -33,6 +33,7 @@ import math
 import re
 import zipfile
 from collections import Counter
+from typing import TypedDict
 
 from ..config import Settings
 from ..schemas import SEVERITY_ORDER, AttachmentAnalysis, AttachmentMeta, Finding, Severity
@@ -199,9 +200,17 @@ def sniff_magic(data: bytes) -> str:
     return ""
 
 
-def _inspect_zip(data: bytes) -> dict:
+class _ZipReport(TypedDict):
+    members: list[str]
+    encrypted: bool
+    risky_members: list[str]
+    has_vba: bool
+    ok: bool
+
+
+def _inspect_zip(data: bytes) -> _ZipReport:
     """Member names, encryption flag, risky members and macro presence."""
-    result = {"members": [], "encrypted": False, "risky_members": [], "has_vba": False, "ok": False}
+    result: _ZipReport = {"members": [], "encrypted": False, "risky_members": [], "has_vba": False, "ok": False}
     try:
         with zipfile.ZipFile(io.BytesIO(data)) as archive:
             for info in archive.infolist()[:500]:
@@ -216,7 +225,7 @@ def _inspect_zip(data: bytes) -> dict:
                 if RISKY_EXTENSIONS.get(ext) in ("critical", "high") and not lowered.endswith("/"):
                     result["risky_members"].append(name)
             result["ok"] = True
-    except Exception:  # noqa: BLE001
+    except Exception:  # a corrupt or hostile archive is data, not an error
         log.debug("zip inspection failed", exc_info=True)
     return result
 
@@ -273,17 +282,7 @@ def analyze_attachment(att: RawAttachment, cfg: Settings) -> AttachmentMeta:
         reasons.append(f"File content is an executable ({magic}) regardless of its name")
         if ext not in _EXEC_EXTS:
             mime_mismatch = True
-    if ext == "pdf" and magic and magic != "pdf":
-        mime_mismatch = True
-    elif ext in _IMAGE_EXTS and magic and magic not in _IMAGE_MAGIC and ext != "svg":
-        mime_mismatch = True
-    elif ext in ("docx", "xlsx", "pptx", "docm", "xlsm", "pptm") and magic and magic not in ("ooxml", "zip"):
-        mime_mismatch = True
-    elif ext in ("doc", "xls", "ppt") and magic and magic not in ("ole", "rtf", "text", "xml", "html"):
-        mime_mismatch = True
-    elif ext == "zip" and magic and magic not in ("zip", "ooxml"):
-        mime_mismatch = True
-    elif declared == "application/pdf" and magic and magic != "pdf":
+    if (ext == "pdf" and magic and magic != "pdf") or (ext in _IMAGE_EXTS and magic and magic not in _IMAGE_MAGIC and ext != "svg") or (ext in ("docx", "xlsx", "pptx", "docm", "xlsm", "pptm") and magic and magic not in ("ooxml", "zip")) or (ext in ("doc", "xls", "ppt") and magic and magic not in ("ole", "rtf", "text", "xml", "html")) or (ext == "zip" and magic and magic not in ("zip", "ooxml")) or (declared == "application/pdf" and magic and magic != "pdf"):
         mime_mismatch = True
     if mime_mismatch:
         severity = _worse(severity, "high")
@@ -390,7 +389,7 @@ def analyze_attachment(att: RawAttachment, cfg: Settings) -> AttachmentMeta:
 # --------------------------------------------------------------------------- #
 # Whole-message analysis
 # --------------------------------------------------------------------------- #
-def _finding(fid: str, severity: Severity, title: str, detail: str, evidence: dict) -> Finding:
+def _finding(fid: str, severity: Severity, title: str, detail: str, evidence: dict[str, object]) -> Finding:
     return Finding(id=fid, module="attachments", severity=severity, title=title, detail=detail, evidence=evidence)
 
 
@@ -405,7 +404,7 @@ def analyze_attachments(raw_attachments: list[RawAttachment], cfg: Settings) -> 
         try:
             metas.append(analyze_attachment(att, cfg))
             inline_flags.append(bool(att.is_inline))
-        except Exception:  # noqa: BLE001 - one hostile file must not abort the analysis
+        except Exception:  # one hostile file must not abort the analysis
             log.exception("attachment analysis failed for %r", att.filename)
     scored = [m for m, inline in zip(metas, inline_flags) if not inline]
     severe = [m for m in scored if SEVERITY_ORDER[m.risk.value] >= SEVERITY_ORDER["high"]]

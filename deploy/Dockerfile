@@ -9,7 +9,7 @@
 # The layout inside the image mirrors the repository exactly, because
 # app/config.py derives its paths from the package location:
 #     BASE_DIR    = /app/backend        (data/, evidence/, the SQLite file)
-#     PROJECT_DIR = /app                (frontend/index.html, samples/*.eml)
+#     PROJECT_DIR = /app                (frontend/, samples/*.eml)
 # Moving either directory without changing config.py will 404 the dashboard.
 #
 # UNVERIFIED: this file has not been built or run - no Docker daemon was
@@ -19,7 +19,7 @@
 # Stage 1: build the virtualenv.  Wheels are resolved here so that pip, its
 # cache and any transient build tooling never reach the runtime image.
 # --------------------------------------------------------------------------- #
-FROM python:3.12-slim AS builder
+FROM python:3.13-slim AS builder
 
 ENV PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
@@ -36,7 +36,7 @@ RUN pip install --no-cache-dir -r /tmp/requirements.txt
 # --------------------------------------------------------------------------- #
 # Stage 2: runtime.
 # --------------------------------------------------------------------------- #
-FROM python:3.12-slim AS runtime
+FROM python:3.13-slim AS runtime
 
 # PORT is a default, not a decision: config.py reads it, and a platform that
 # injects its own (Render, Fly, Koyeb) overrides it. MAILTRACE_HOST is set
@@ -72,7 +72,7 @@ USER 10001:10001
 WORKDIR /app/backend
 EXPOSE 8000
 
-# No curl or wget in python:3.12-slim, and adding either only to poll one URL is
+# No curl or wget in python:3.13-slim, and adding either only to poll one URL is
 # not worth the surface; the interpreter is already here.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD python -c "import os,sys,urllib.request; url='http://127.0.0.1:%s/api/health' % os.environ.get('PORT','8000'); sys.exit(0 if urllib.request.urlopen(url, timeout=4).status == 200 else 1)"

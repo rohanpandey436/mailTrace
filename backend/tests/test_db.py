@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from app.database.case_manager import GENESIS_HASH, Store
 from app.core import pipeline
+from app.database.case_manager import GENESIS_HASH, Store
 from app.schemas import Alert, Severity, ThreatCategory
 
 
@@ -54,7 +54,7 @@ def test_analysis_roundtrip_and_listing(store: Store, cfg, sample):
 
 
 def test_alerts_and_cache(store: Store):
-    alert = Alert(id="alr-1", created_at=datetime.now(timezone.utc), email_id="m1", subject="s", sender="a@b.c",
+    alert = Alert(id="alr-1", created_at=datetime.now(UTC), email_id="m1", subject="s", sender="a@b.c",
                   category=ThreatCategory.PHISHING, risk_score=90, severity=Severity.CRITICAL, message="m")
     store.create_alert(alert)
     assert [a.id for a in store.list_alerts()] == ["alr-1"]

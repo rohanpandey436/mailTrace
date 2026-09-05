@@ -44,13 +44,13 @@ import re
 import time
 from collections import Counter
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from email import policy
 from email.header import decode_header, make_header
 from email.message import Message
 from email.utils import collapse_rfc2231_value, getaddresses, parseaddr, parsedate_to_datetime
 from html.parser import HTMLParser
-from typing import Iterator, Optional
+from typing import Callable, Iterator, Protocol, TypedDict
 
 from ..schemas import AddressInfo, AttachmentMeta, FuzzyDigest, HeaderField, ParsedEmail
 
@@ -61,6 +61,29 @@ _FOLD_RE = re.compile(r"\r?\n[ \t]+")
 _CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]")
 _MAX_DEPTH = 40
 _MAX_PARTS = 500
+_OCTET_STREAM = "application/octet-stream"
+
+def _lenient[T](call: Callable[[], T], default: T) -> T:
+    """Run one standard-library call against hostile input; on any failure, ``default``.
+
+    The ``email`` package raises a wide and undocumented set of exceptions on
+    malformed messages - UnicodeError, LookupError, binascii.Error, IndexError,
+    AttributeError, ... - and a forensic parser has to keep what it can of a
+    message an attacker built to be awkward.  Enumerating the types would be a
+    guess dressed up as precision, so the guard is broad and lives here once.
+    """
+    try:
+        return call()
+    except Exception:  # noqa: BLE001 - see the docstring
+        return default
+
+
+def _content_type(part: Message) -> str:
+    return _lenient(lambda: part.get_content_type().lower(), _OCTET_STREAM)
+
+
+def _header(part: Message, name: str) -> str:
+    return _lenient(lambda: str(part.get(name) or ""), "")
 
 
 @dataclass
@@ -102,6 +125,27 @@ class RawAttachment:
 #: against a different one is refused rather than guessed at.
 _NATIVE_SCHEMA = 1
 
+
+class _NativeNode(TypedDict, total=False):
+    """One node of the tree ``mailtrace_engine.dissect`` returns (schema 1)."""
+
+    kind: str
+    headers: list[tuple[bytes, bytes]]
+    boundary: bytes
+    children: list[_NativeNode]
+    body: bytes
+    trim_last: bool
+
+
+class _NativeEngine(Protocol):
+    """What this module needs from the ``mailtrace_engine`` extension module."""
+
+    __version__: str
+    DISSECT_SCHEMA: int
+
+    def dissect(self, raw: bytes, /) -> object: ...
+
+
 #: True only when the extension imported, matched ``_NATIVE_SCHEMA`` and passed
 #: the import-time self-check.  Reported by ``/api/health``.
 NATIVE_ENGINE: bool = False
@@ -110,7 +154,7 @@ NATIVE_ENGINE_VERSION: str = ""
 #: Human-readable explanation of the above, for logs and ``/api/health``.
 NATIVE_ENGINE_STATUS: str = "not installed"
 
-_native: Optional[object] = None
+_native: _NativeEngine | None = None
 
 # Approximate telemetry.  ``+=`` on a dict entry is not atomic under free
 # threading, so treat these as counts, not as an audit trail.
@@ -126,7 +170,7 @@ def _native_enabled_by_env() -> bool:
     return os.environ.get("MAILTRACE_NATIVE_ENGINE", "1").strip().lower() not in {"0", "false", "no", "off"}
 
 
-def _ascii(value: object) -> str:
+def _ascii(value: bytes) -> str:
     """Engine bytes -> the exact ``str`` CPython's ``BytesParser`` would hold.
 
     ``BytesFeedParser`` decodes the whole message with
@@ -158,16 +202,16 @@ def _trim_last_message(msg: Message) -> None:
     # a surrogate-escaped payload with errors="replace", so reading and writing
     # it back would silently turn every non-ASCII byte into U+FFFD.  CPython's
     # own feedparser touches ``_payload`` here for exactly the same reason.
-    payload = target._payload
+    payload = target._payload  # type: ignore[attr-defined]
     if not isinstance(payload, str) or not payload:
         return
     if payload.endswith("\r\n"):
-        target._payload = payload[:-2]
+        target._payload = payload[:-2]  # type: ignore[attr-defined]
     elif payload[-1] in "\r\n":
-        target._payload = payload[:-1]
+        target._payload = payload[:-1]  # type: ignore[attr-defined]
 
 
-def _build_message(node: dict, default_type: str) -> Message:
+def _build_message(node: _NativeNode, default_type: str) -> Message:
     """Rebuild one ``Message`` from an engine node, verifying as we go.
 
     Raises ``_NativeMismatch`` whenever the standard library's own view of the
@@ -218,14 +262,14 @@ def _build_message(node: dict, default_type: str) -> Message:
     return msg
 
 
-def _native_message(raw: bytes) -> Optional[Message]:
+def _native_message(raw: bytes) -> Message | None:
     """Parse with the C++ engine, or return None to ask for the Python parser."""
     engine = _native
     if engine is None:
         return None
     try:
-        tree = engine.dissect(raw)  # type: ignore[attr-defined]
-    except Exception:  # noqa: BLE001 - a broken extension must never break parsing
+        tree = engine.dissect(raw)
+    except Exception:  # a broken extension must never break parsing
         log.warning("native engine raised while dissecting; using the Python parser", exc_info=True)
         return None
     try:
@@ -235,12 +279,12 @@ def _native_message(raw: bytes) -> Optional[Message]:
     except _NativeMismatch as exc:
         log.warning("native engine disagreed with the standard library (%s); using the Python parser", exc)
         return None
-    except Exception:  # noqa: BLE001 - malformed node dict, wrong types, anything
+    except Exception:  # malformed node dict, wrong types, anything
         log.warning("native engine returned an unusable tree; using the Python parser", exc_info=True)
         return None
 
 
-def _tree_signature(msg: Optional[Message]) -> object:
+def _tree_signature(msg: Message | None) -> object:
     """Everything about a parsed message that ``parse_email`` can observe."""
     if msg is None:
         return None
@@ -336,11 +380,11 @@ def _activate_native_engine() -> None:
         NATIVE_ENGINE_STATUS = "disabled by MAILTRACE_NATIVE_ENGINE"
         return
     try:
-        import mailtrace_engine  # noqa: PLC0415 - optional extension, imported on purpose
+        import mailtrace_engine  # optional extension, imported on purpose
     except ImportError:
         NATIVE_ENGINE_STATUS = "not installed (pure-Python parser in use)"
         return
-    except Exception:  # noqa: BLE001 - ABI mismatch, missing runtime DLL, ...
+    except Exception:  # ABI mismatch, missing runtime DLL, ...
         log.warning("mailtrace_engine present but not loadable; using the Python parser", exc_info=True)
         NATIVE_ENGINE_STATUS = "present but not loadable"
         return
@@ -400,14 +444,13 @@ def decode_header_value(value: object) -> str:
     text = _unfold(str(value))
     if "=?" not in text:
         return text
-    try:
-        chunks = decode_header(text)
-    except Exception:  # noqa: BLE001 - malformed encoded-word syntax
+    decoded = _lenient(lambda: _unfold(str(make_header(decode_header(text)))), "")
+    if decoded:
+        return decoded
+    # An unknown charset or undecodable bytes: decode each encoded word by hand.
+    chunks: list[tuple[bytes | str, str | None]] = _lenient(lambda: decode_header(text), [])
+    if not chunks:
         return text
-    try:
-        return _unfold(str(make_header(chunks)))
-    except Exception:  # noqa: BLE001 - unknown charset / undecodable bytes
-        pass
     out: list[str] = []
     for chunk, charset in chunks:
         if isinstance(chunk, bytes):
@@ -444,10 +487,7 @@ def parse_address(value: str) -> AddressInfo:
     raw = decode_header_value(value or "").strip()
     if not raw:
         return AddressInfo()
-    try:
-        name, addr = parseaddr(raw)
-    except Exception:  # noqa: BLE001
-        name, addr = "", ""
+    name, addr = _lenient(lambda: parseaddr(raw), ("", ""))
     return _address_from_pair(name, addr, raw)
 
 
@@ -458,10 +498,7 @@ def parse_address_list(value: str) -> list[AddressInfo]:
     if not raw:
         return []
     result: list[AddressInfo] = []
-    try:
-        pairs = getaddresses([raw])
-    except Exception:  # noqa: BLE001
-        pairs = []
+    pairs: list[tuple[str, str]] = _lenient(lambda: getaddresses([raw]), [])
     for name, addr in pairs:
         if addr and "@" in addr:
             result.append(_address_from_pair(name, addr, f"{name} <{addr}>".strip() if name else addr))
@@ -472,33 +509,25 @@ def parse_address_list(value: str) -> list[AddressInfo]:
 
 
 def _first_header(msg: Message, name: str) -> str:
-    try:
-        value = msg.get(name)
-    except Exception:  # noqa: BLE001
-        return ""
+    value = _lenient(lambda: msg.get(name), None)
     return decode_header_value(value) if value is not None else ""
 
 
 def _joined_headers(msg: Message, name: str) -> str:
-    try:
-        values = msg.get_all(name) or []
-    except Exception:  # noqa: BLE001
-        return ""
+    values: list[str] = _lenient(lambda: msg.get_all(name) or [], [])
     return ", ".join(decode_header_value(v) for v in values if v is not None)
 
 
-def _parse_date(value: str) -> Optional[datetime]:
+def _parse_date(value: str) -> datetime | None:
     if not value:
         return None
     try:
         parsed = parsedate_to_datetime(value)
     except (TypeError, ValueError, IndexError, OverflowError):
         return None
-    if parsed is None:
-        return None
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 # --------------------------------------------------------------------------- #
@@ -517,7 +546,7 @@ class _TextExtractor(HTMLParser):
         self.chunks: list[str] = []
         self._skip_depth = 0
 
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, Optional[str]]]) -> None:
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag in _SKIP_TAGS:
             self._skip_depth += 1
             return
@@ -545,13 +574,14 @@ def html_to_text(html: str) -> str:
     if not html:
         return ""
     extractor = _TextExtractor()
-    try:
+
+    def feed() -> None:
         extractor.feed(html)
         extractor.close()
-    except Exception:  # noqa: BLE001 - keep whatever was extracted
-        log.debug("html_to_text stopped early", exc_info=True)
+
+    _lenient(feed, None)  # malformed markup stops the parser; keep whatever came before it
     text = "".join(extractor.chunks)
-    text = re.sub(r"[ \t\r\f\v ]+", " ", text)
+    text = re.sub(r"[ \t\r\f\v ]+", " ", text)  # noqa: RUF001 - the class holds U+00A0 on purpose
     text = re.sub(r" *\n *", "\n", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
@@ -560,7 +590,7 @@ def html_to_text(html: str) -> str:
 # --------------------------------------------------------------------------- #
 # MIME walking
 # --------------------------------------------------------------------------- #
-def _python_message(raw: bytes) -> Optional[Message]:
+def _python_message(raw: bytes) -> Message | None:
     """The reference parser: CPython's ``email`` package, unchanged.
 
     This is the behaviour the native path must reproduce, and the behaviour
@@ -568,7 +598,7 @@ def _python_message(raw: bytes) -> Optional[Message]:
     """
     try:
         return email.message_from_bytes(raw, policy=policy.compat32)
-    except Exception:  # noqa: BLE001
+    except Exception:  # hostile input; retried below with a sanitised copy
         log.warning("message_from_bytes failed; retrying with a sanitised copy", exc_info=True)
     try:
         return email.message_from_string(raw.decode("utf-8", errors="replace"), policy=policy.compat32)
@@ -576,7 +606,7 @@ def _python_message(raw: bytes) -> Optional[Message]:
         return None
 
 
-def _parse_message(raw: bytes) -> Optional[Message]:
+def _parse_message(raw: bytes) -> Message | None:
     """Native dissection when it is available and confident, Python otherwise.
 
     Both branches return the same kind of object - a ``Message`` tree with the
@@ -598,10 +628,7 @@ def _iter_parts(part: Message, depth: int = 0) -> Iterator[tuple[str, Message]]:
     every other non-multipart part, in document order."""
     if depth > _MAX_DEPTH:
         return
-    try:
-        ctype = part.get_content_type().lower()
-    except Exception:  # noqa: BLE001
-        ctype = "application/octet-stream"
+    ctype = _content_type(part)
     if ctype == "message/rfc822":
         yield "rfc822", part
         return
@@ -622,21 +649,10 @@ def _sanitize_filename(name: str) -> str:
 
 
 def _part_filename(part: Message) -> str:
-    name: object = None
-    try:
-        name = part.get_filename()
-    except Exception:  # noqa: BLE001
-        name = None
-    if not name:
-        try:
-            name = part.get_param("name")
-        except Exception:  # noqa: BLE001
-            name = None
+    name: object = _lenient(part.get_filename, None) or _lenient(lambda: part.get_param("name"), None)
     if isinstance(name, tuple):
-        try:
-            name = collapse_rfc2231_value(name)
-        except Exception:  # noqa: BLE001
-            name = name[-1]
+        encoded = name
+        name = _lenient(lambda: collapse_rfc2231_value(encoded), encoded[-1])
     return _sanitize_filename(decode_header_value(str(name))) if name else ""
 
 
@@ -648,16 +664,14 @@ def _extension(filename: str) -> str:
 
 
 def _decode_payload(part: Message) -> bytes:
-    try:
-        payload = part.get_payload(decode=True)
-    except Exception:  # noqa: BLE001
-        payload = None
+    payload: object = _lenient(lambda: part.get_payload(decode=True), None)
     if payload is None:
-        try:
+
+        def undecoded() -> bytes:
             raw = part.get_payload()
-            payload = raw.encode("utf-8", errors="replace") if isinstance(raw, str) else b""
-        except Exception:  # noqa: BLE001
-            payload = b""
+            return raw.encode("utf-8", errors="replace") if isinstance(raw, str) else b""
+
+        payload = _lenient(undecoded, b"")
     return payload if isinstance(payload, bytes) else b""
 
 
@@ -665,11 +679,7 @@ def _decode_text(part: Message, issues: list[str], label: str) -> str:
     data = _decode_payload(part)
     if not data:
         return ""
-    charset = None
-    try:
-        charset = part.get_content_charset()
-    except Exception:  # noqa: BLE001
-        charset = None
+    charset = _lenient(part.get_content_charset, None)
     for encoding in (charset, "utf-8"):
         if not encoding:
             continue
@@ -689,13 +699,8 @@ def _decode_text(part: Message, issues: list[str], label: str) -> str:
 def _embedded_message_bytes(part: Message) -> bytes:
     payload = part.get_payload()
     if isinstance(payload, list) and payload and isinstance(payload[0], Message):
-        try:
-            return payload[0].as_bytes()
-        except Exception:  # noqa: BLE001
-            try:
-                return payload[0].as_string().encode("utf-8", errors="replace")
-            except Exception:  # noqa: BLE001
-                return b""
+        inner = payload[0]
+        return _lenient(inner.as_bytes, b"") or _lenient(lambda: inner.as_string().encode("utf-8", errors="replace"), b"")
     return _decode_payload(part)
 
 
@@ -819,15 +824,11 @@ def tlsh_digest(data: bytes) -> str:
     if not data or len(data) < _TLSH_MIN_BYTES:
         return ""
     try:
-        import tlsh  # noqa: PLC0415 - optional dependency, imported lazily on purpose
-    except Exception:  # noqa: BLE001 - ImportError, or a broken/ABI-mismatched build
+        import tlsh  # optional dependency, imported lazily on purpose
+    except (ImportError, OSError):  # absent, or a broken / ABI-mismatched build
         return ""
-    try:
-        digest = tlsh.hash(bytes(data))
-    except Exception:  # noqa: BLE001 - some builds raise instead of returning TNULL
-        log.debug("tlsh.hash declined a %d byte body", len(data), exc_info=True)
-        return ""
-    digest = str(digest or "").strip()
+    # Some builds raise instead of answering "TNULL" for low-variation input.
+    digest = str(_lenient(lambda: tlsh.hash(bytes(data)), "") or "").strip()
     return "" if digest.upper() in {"", "TNULL", "NULL"} else digest
 
 
@@ -843,14 +844,11 @@ def tlsh_diff(a_digest: str, b_digest: str) -> int:
     if not a_digest or not b_digest:
         return _TLSH_UNCOMPARABLE
     try:
-        import tlsh  # noqa: PLC0415 - optional dependency, imported lazily on purpose
-    except Exception:  # noqa: BLE001
+        import tlsh  # optional dependency, imported lazily on purpose
+    except (ImportError, OSError):
         return _TLSH_UNCOMPARABLE
-    try:
-        return int(tlsh.diff(a_digest, b_digest))
-    except Exception:  # noqa: BLE001 - malformed digest from an older engine version
-        log.debug("tlsh.diff rejected a stored digest", exc_info=True)
-        return _TLSH_UNCOMPARABLE
+    # A malformed digest from an older engine version is "infinitely far", not an error.
+    return _lenient(lambda: int(tlsh.diff(a_digest, b_digest)), _TLSH_UNCOMPARABLE)
 
 
 # --------------------------------------------------------------------------- #
@@ -874,7 +872,7 @@ def _finalise(
             tlsh=tlsh_digest(body.encode("utf-8", errors="replace")) if body else "",
             body_length=len(body),
         )
-    except Exception:  # noqa: BLE001 - parse_email must never raise
+    except Exception:  # parse_email must never raise
         log.exception("fuzzy digest computation failed; continuing without one")
         parsed.charset_issues.append("body digest could not be computed")
     parsed.parse_ms = round((time.perf_counter() - started) * 1000, 3)
@@ -903,7 +901,7 @@ def parse_email(raw: bytes) -> tuple[ParsedEmail, list[RawAttachment]]:
     try:
         for name, value in msg.items():
             headers.append(HeaderField(name=str(name), value=decode_header_value(value)))
-    except Exception:  # noqa: BLE001
+    except Exception:  # parse_email must never raise
         log.warning("header iteration failed", exc_info=True)
     parsed.headers = headers
     parsed.message_id = _first_header(msg, "Message-ID").strip().strip("<>").strip()
@@ -929,14 +927,8 @@ def parse_email(raw: bytes) -> tuple[ParsedEmail, list[RawAttachment]]:
         if counter > _MAX_PARTS:
             issues.append("message has more MIME parts than the parser limit; remainder ignored")
             break
-        try:
-            ctype = part.get_content_type().lower()
-        except Exception:  # noqa: BLE001
-            ctype = "application/octet-stream"
-        try:
-            disposition = str(part.get("Content-Disposition") or "").lower()
-        except Exception:  # noqa: BLE001
-            disposition = ""
+        ctype = _content_type(part)
+        disposition = _header(part, "Content-Disposition").lower()
         filename = _part_filename(part)
         is_attachment_disposition = disposition.strip().startswith("attachment")
         if kind == "rfc822":
@@ -950,10 +942,7 @@ def parse_email(raw: bytes) -> tuple[ParsedEmail, list[RawAttachment]]:
             html_parts.append(_decode_text(part, issues, "text/html"))
             continue
         data = _decode_payload(part)
-        try:
-            content_id = str(part.get("Content-ID") or "").strip().strip("<>").strip()
-        except Exception:  # noqa: BLE001
-            content_id = ""
+        content_id = _header(part, "Content-ID").strip().strip("<>").strip()
         is_inline = disposition.strip().startswith("inline") or (bool(content_id) and ctype.startswith("image/"))
         if not filename:
             guessed = mimetypes.guess_extension(ctype) or ""

@@ -55,17 +55,22 @@ import sqlite3
 import threading
 import time
 from collections import Counter
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Iterator, Optional
+from typing import TYPE_CHECKING, Any
+
+from pydantic import JsonValue, ValidationError
 
 from ..schemas import (
     CASE_STATUSES,
     Alert,
     AnalysisResult,
     Campaign,
+    CaseStatus,
     CaseSummary,
+    CountryCount,
     CustodyChain,
     CustodyEvent,
     DashboardStats,
@@ -73,11 +78,16 @@ from ..schemas import (
     ThreatCategory,
 )
 
+if TYPE_CHECKING:  # pragma: no cover - annotations only; psycopg is an optional runtime dependency
+    import psycopg
+
 log = logging.getLogger("mailtrace.db")
 
 GENESIS_HASH = "0" * 64
 HIGH_RISK_THRESHOLD = 70
-DEFAULT_CASE_STATUS = "open"
+DEFAULT_CASE_STATUS: CaseStatus = "open"
+# Column text -> the typed status; anything else normalises to the default.
+_STATUS_BY_NAME: dict[str, CaseStatus] = {str(name): name for name in CASE_STATUSES}
 
 # Stage 6 quick-bar.  The decision lives in its own table rather than in a new
 # ``emails`` column so that an existing deployment picks it up from
@@ -169,15 +179,15 @@ CREATE TABLE IF NOT EXISTS case_status (
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _parse_dt(value: str) -> datetime:
     try:
         parsed = datetime.fromisoformat(value)
     except (TypeError, ValueError):
-        return datetime.now(timezone.utc)
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+        return datetime.now(UTC)
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 
 def canonical_json(value: Any) -> str:
@@ -249,31 +259,36 @@ class _SqliteDialect:
         return f"INSERT OR IGNORE INTO {table} ({names}) VALUES ({placeholders})"
 
 
-class _PgRow(tuple):
+class _PgRow:
     """A row readable both as ``row["column"]`` and ``row[0]``, like sqlite3.Row.
 
     psycopg ships ``tuple_row`` (positional only) and ``dict_row`` (name only);
     this module uses both styles, so it needs the sqlite3 hybrid.
     """
 
-    def __new__(cls, names: tuple[str, ...], values: Any) -> "_PgRow":
-        row = super().__new__(cls, values)
-        row._index = {name: position for position, name in enumerate(names)}  # type: ignore[attr-defined]
-        return row
+    __slots__ = ("_index", "_values")
 
-    def __getitem__(self, key: Any) -> Any:
-        if isinstance(key, str):
-            return tuple.__getitem__(self, self._index[key])  # type: ignore[attr-defined]
-        return tuple.__getitem__(self, key)
+    def __init__(self, names: tuple[str, ...], values: Sequence[object]) -> None:
+        self._values = tuple(values)
+        self._index = {name: position for position, name in enumerate(names)}
+
+    def __getitem__(self, key: str | int) -> object:
+        return self._values[self._index[key] if isinstance(key, str) else key]
+
+    def __iter__(self) -> Iterator[object]:
+        return iter(self._values)
+
+    def __len__(self) -> int:
+        return len(self._values)
 
     def keys(self) -> list[str]:
-        return list(self._index)  # type: ignore[attr-defined]
+        return list(self._index)
 
 
-def _pg_row_factory(cursor: Any) -> Any:
+def _pg_row_factory(cursor: psycopg.Cursor[object]) -> Callable[[Sequence[object]], _PgRow]:
     names = tuple(column.name for column in (cursor.description or ()))
 
-    def make_row(values: Any) -> _PgRow:
+    def make_row(values: Sequence[object]) -> _PgRow:
         return _PgRow(names, values)
 
     return make_row
@@ -322,7 +337,7 @@ class _PostgresDialect:
         self.url = url
 
     def connect(self) -> Connection:
-        import psycopg  # noqa: PLC0415 - optional dependency, imported only when configured
+        import psycopg  # optional dependency, imported only when configured
 
         # autocommit mirrors sqlite3's isolation_level=None: the explicit
         # BEGIN/COMMIT in Store._tx is then the only transaction control, in
@@ -435,7 +450,7 @@ class Store:
         with self._lock:
             try:
                 self._conn.close()
-            except Exception:  # noqa: BLE001 - sqlite3.Error or a psycopg error
+            except Exception:  # sqlite3.Error or a psycopg error
                 log.debug("closing store failed", exc_info=True)
 
     @contextmanager
@@ -445,7 +460,7 @@ class Store:
             self._conn.execute("BEGIN")
             try:
                 yield self._conn
-            except Exception:
+            except Exception:  # sqlite3.Error or a psycopg error; closing is best effort
                 self._conn.execute("ROLLBACK")
                 raise
             else:
@@ -477,7 +492,7 @@ class Store:
             "dmarc": result.headers.auth.dmarc,
         }
 
-    def save_analysis(self, result: AnalysisResult, raw: Optional[bytes]) -> None:
+    def save_analysis(self, result: AnalysisResult, raw: bytes | None) -> None:
         columns = self._summary_columns(result)
         columns["result_json"] = result.model_dump_json()
         sql = self._dialect.upsert("emails", list(columns), ("id",))
@@ -490,18 +505,18 @@ class Store:
             if not path.exists():
                 path.write_bytes(raw)
 
-    def get_analysis(self, email_id: str) -> Optional[AnalysisResult]:
+    def get_analysis(self, email_id: str) -> AnalysisResult | None:
         with self._lock:
             row = self._conn.execute("SELECT result_json FROM emails WHERE id = ?", (email_id,)).fetchone()
         if row is None:
             return None
         try:
             return AnalysisResult.model_validate_json(row["result_json"])
-        except Exception:  # noqa: BLE001 - schema drift on old rows
+        except ValidationError:  # schema drift on old rows
             log.exception("stored analysis %s is unreadable", email_id)
             return None
 
-    def get_raw(self, email_id: str) -> Optional[bytes]:
+    def get_raw(self, email_id: str) -> bytes | None:
         if self.in_memory:
             # Nothing was ever written, and an evidence directory left behind by a
             # previous on-disk run must not be read back in this mode.
@@ -513,7 +528,7 @@ class Store:
             return None
 
     @staticmethod
-    def _row_status(row: Row) -> str:
+    def _row_status(row: Row) -> CaseStatus:
         """Analyst decision on a joined case row; 'open' when the query did not join.
 
         Only the two quick-bar endpoints ever write this column, but an unknown
@@ -524,8 +539,7 @@ class Store:
             value = row["status"]
         except (IndexError, KeyError, TypeError):
             return DEFAULT_CASE_STATUS
-        value = (value or DEFAULT_CASE_STATUS).strip().lower()
-        return value if value in CASE_STATUSES else DEFAULT_CASE_STATUS
+        return _STATUS_BY_NAME.get(str(value or DEFAULT_CASE_STATUS).strip().lower(), DEFAULT_CASE_STATUS)
 
     @staticmethod
     def _row_to_summary(row: Row) -> CaseSummary:
@@ -553,10 +567,10 @@ class Store:
     def list_cases(
         self,
         q: str = "",
-        category: Optional[str] = None,
+        category: str | None = None,
         min_risk: int = 0,
-        campaign_id: Optional[str] = None,
-        source_type: Optional[str] = None,
+        campaign_id: str | None = None,
+        source_type: str | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> tuple[list[CaseSummary], int]:
@@ -591,7 +605,7 @@ class Store:
             ).fetchall()
         return [self._row_to_summary(r) for r in rows], int(total)
 
-    def update_campaign_id(self, email_id: str, campaign_id: Optional[str]) -> None:
+    def update_campaign_id(self, email_id: str, campaign_id: str | None) -> None:
         """Move an email into (or out of) a campaign.
 
         The membership lives in two places: the indexed ``campaign_id`` column
@@ -636,7 +650,7 @@ class Store:
     # ------------------------------------------------------------------ #
     # Stage 6 quick-bar: analyst decisions
     # ------------------------------------------------------------------ #
-    def get_case_status(self, email_id: str) -> str:
+    def get_case_status(self, email_id: str) -> CaseStatus:
         """Current analyst decision on a case ('open' when none was recorded)."""
         with self._lock:
             row = self._conn.execute("SELECT status FROM case_status WHERE email_id = ?", (email_id,)).fetchone()
@@ -717,14 +731,14 @@ class Store:
             result.setdefault(row["email_id"], []).append(row["indicator"])
         return result
 
-    def get_campaign(self, campaign_id: str) -> Optional[Campaign]:
+    def get_campaign(self, campaign_id: str) -> Campaign | None:
         with self._lock:
             row = self._conn.execute("SELECT data_json FROM campaigns WHERE id = ?", (campaign_id,)).fetchone()
         if row is None:
             return None
         try:
             return Campaign.model_validate_json(row["data_json"])
-        except Exception:  # noqa: BLE001
+        except ValidationError:
             log.exception("stored campaign %s is unreadable", campaign_id)
             return None
 
@@ -735,7 +749,7 @@ class Store:
         for row in rows:
             try:
                 campaigns.append(Campaign.model_validate_json(row["data_json"]))
-            except Exception:  # noqa: BLE001
+            except ValidationError:
                 log.exception("stored campaign row is unreadable")
         return campaigns
 
@@ -753,7 +767,7 @@ class Store:
                 [(campaign.id, email_id) for email_id in dict.fromkeys(campaign.email_ids)],
             )
 
-    def campaign_for_email(self, email_id: str) -> Optional[str]:
+    def campaign_for_email(self, email_id: str) -> str | None:
         with self._lock:
             row = self._conn.execute("SELECT campaign_id FROM campaign_members WHERE email_id = ?", (email_id,)).fetchone()
         return row["campaign_id"] if row else None
@@ -766,7 +780,9 @@ class Store:
     # ------------------------------------------------------------------ #
     # Chain of custody
     # ------------------------------------------------------------------ #
-    def record_custody(self, email_id: str, actor: str, action: str, detail: dict, evidence_sha256: str) -> CustodyEvent:
+    def record_custody(
+        self, email_id: str, actor: str, action: str, detail: dict[str, object], evidence_sha256: str
+    ) -> CustodyEvent:
         detail_json = canonical_json(detail or {})
         timestamp = _now_iso()
         with self._tx() as conn:
@@ -876,12 +892,12 @@ class Store:
     def acknowledge_alert(self, alert_id: str) -> bool:
         with self._tx() as conn:
             cursor = conn.execute("UPDATE alerts SET acknowledged = 1 WHERE id = ?", (alert_id,))
-            return cursor.rowcount > 0
+            return bool(cursor.rowcount > 0)
 
     # ------------------------------------------------------------------ #
     # Lookup cache
     # ------------------------------------------------------------------ #
-    def cache_get(self, key: str) -> Any:
+    def cache_get(self, key: str) -> JsonValue | None:
         with self._lock:
             row = self._conn.execute("SELECT value_json, expires_at FROM cache WHERE key = ?", (key,)).fetchone()
             if row is None:
@@ -890,11 +906,12 @@ class Store:
                 self._conn.execute("DELETE FROM cache WHERE key = ?", (key,))
                 return None
         try:
-            return json.loads(row["value_json"])
+            value: JsonValue = json.loads(row["value_json"])
         except (TypeError, ValueError):
             return None
+        return value
 
-    def cache_set(self, key: str, value: Any, ttl_seconds: int) -> None:
+    def cache_set(self, key: str, value: object, ttl_seconds: int) -> None:
         try:
             payload = json.dumps(value, default=str, ensure_ascii=False)
         except (TypeError, ValueError):
@@ -935,7 +952,7 @@ class Store:
             campaigns=int(campaigns),
             alerts_open=int(alerts_open),
             by_category=dict(by_category),
-            top_countries=[{"country": row["origin_country"], "count": int(row["n"])} for row in countries],
+            top_countries=[CountryCount(country=str(row["origin_country"]), count=int(row["n"])) for row in countries],
             top_source_types={row["source_type"]: int(row["n"]) for row in sources},
             avg_risk=round(float(avg or 0.0), 1),
         )

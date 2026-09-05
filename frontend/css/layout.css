@@ -1,0 +1,318 @@
+/*
+ * Application shell and composition primitives.
+ *
+ * The shell is a navigation rail, a sticky top bar and the view area.  On
+ * narrow screens the rail becomes a bottom bar.  The primitives at the end
+ * (stack, cluster, grid) are the only layout helpers the views use.
+ */
+.app {
+  display: flex;
+  min-height: 100vh;
+}
+
+.app__main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding-bottom: 5rem;
+}
+
+/* Navigation rail --------------------------------------------------------- */
+.rail {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: var(--z-rail);
+  display: flex;
+  justify-content: space-around;
+  padding: var(--space-2);
+  background: var(--color-card);
+  border-top: 1px solid var(--color-line);
+}
+
+.rail__brand,
+.rail__footer {
+  display: none;
+}
+
+.rail__link {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 0.8rem;
+  border-radius: var(--radius-md);
+  color: var(--color-muted);
+  font-weight: 500;
+  font-size: 0.9rem;
+}
+
+.rail__link:hover {
+  color: var(--color-ink);
+  background: var(--color-line-soft);
+}
+
+.rail__link.is-active {
+  color: var(--color-ink);
+  background: var(--color-card);
+  box-shadow: inset 0 0 0 1px var(--color-line);
+}
+
+.rail__link .chip {
+  margin-left: auto;
+}
+
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 12px;
+  background: var(--color-brand);
+  color: var(--color-on-brand);
+  font-weight: 700;
+}
+
+.brand-name {
+  display: block;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+}
+
+.brand-sub {
+  font-size: 11px;
+  color: var(--color-muted);
+}
+
+/* Top bar ---------------------------------------------------------------- */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-topbar);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: color-mix(in srgb, var(--color-paper) 90%, transparent);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--color-line);
+}
+
+.topbar__search {
+  flex: 1;
+  max-width: 36rem;
+}
+
+.topbar__tools {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-left: auto;
+}
+
+.topbar__mask {
+  display: none;
+}
+
+.topbar__bell {
+  position: relative;
+}
+
+.topbar__bell .chip {
+  position: absolute;
+  top: -0.4rem;
+  right: -0.4rem;
+}
+
+/* View area -------------------------------------------------------------- */
+.view {
+  flex: 1;
+  width: 100%;
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: var(--space-6) var(--space-4);
+}
+
+.page-head {
+  margin-bottom: var(--space-5);
+}
+
+.page-title {
+  font-size: var(--text-2xl);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+
+.page-title--sm {
+  font-size: var(--text-xl);
+}
+
+.page-intro {
+  max-width: 48rem;
+  margin-top: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--color-muted);
+}
+
+.back-link {
+  display: inline-block;
+  margin-bottom: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--color-muted);
+}
+
+.back-link:hover {
+  color: var(--color-ink);
+}
+
+@media (min-width: 640px) {
+  .topbar__mask {
+    display: flex;
+  }
+}
+
+@media (min-width: 768px) {
+  .app__main {
+    padding-bottom: 0;
+  }
+
+  .rail {
+    position: static;
+    flex: none;
+    flex-direction: column;
+    justify-content: flex-start;
+    gap: var(--space-1);
+    width: var(--rail-width);
+    padding: var(--space-5) var(--space-3);
+    border-top: 0;
+    border-right: 1px solid var(--color-line);
+  }
+
+  .rail__brand {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: 0 var(--space-2);
+    margin-bottom: var(--space-6);
+  }
+
+  .rail__footer {
+    display: block;
+    margin-top: auto;
+    padding: 0 var(--space-2);
+    font-size: 11px;
+    line-height: 1.5;
+    color: var(--color-muted);
+  }
+
+  .topbar,
+  .view {
+    padding-inline: var(--space-6);
+  }
+}
+
+/* Composition primitives ------------------------------------------------- */
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.stack--lg {
+  gap: var(--space-4);
+}
+
+.cluster {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.cluster--between {
+  justify-content: space-between;
+}
+
+.cluster--end {
+  justify-content: flex-end;
+}
+
+.cluster--center {
+  justify-content: center;
+}
+
+.cluster--loose {
+  column-gap: var(--space-5);
+}
+
+.cluster--top {
+  align-items: flex-start;
+}
+
+.spread {
+  flex: 1;
+  min-width: 0;
+}
+
+.grid {
+  display: grid;
+  gap: var(--space-4);
+}
+
+/* A grid item defaults to min-width:auto, so a wide table inside one would
+   stretch its column instead of scrolling inside .table-wrap. */
+.grid > * {
+  min-width: 0;
+}
+
+.grid--kpi {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@media (min-width: 640px) {
+  .grid--filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: end;
+  }
+
+  .grid--terms {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 768px) {
+  .grid--cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .grid--filters {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1024px) {
+  .grid--kpi {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .grid--2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .grid--verdict {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .grid--recent {
+    grid-template-columns: 2fr 1fr;
+    align-items: start;
+  }
+}
+
+@media (min-width: 1280px) {
+  .grid--cards {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}

@@ -40,10 +40,11 @@ import json
 import logging
 import platform
 import sys
-from datetime import datetime, timezone
+from collections.abc import Sequence
+from datetime import UTC, datetime
 from enum import Enum
 from io import BytesIO
-from typing import Any, Optional
+from typing import TYPE_CHECKING
 
 from ..schemas import (
     SEVERITY_ORDER,
@@ -51,10 +52,12 @@ from ..schemas import (
     AnalysisResult,
     CustodyChain,
     CustodyEvent,
+    EvidenceIntegrity,
     ForensicReport,
     GeoInfo,
     Section65BCertificate,
     Severity,
+    TimelineEntry,
 )
 
 try:  # PDF output is the only feature that needs reportlab; keep the app importable without it.
@@ -73,9 +76,12 @@ try:  # PDF output is the only feature that needs reportlab; keep the app import
         TableStyle,
     )
 
-    _REPORTLAB_ERROR: Optional[BaseException] = None
+    _REPORTLAB_ERROR: BaseException | None = None
 except ImportError as exc:  # pragma: no cover - only reachable without the dependency
     _REPORTLAB_ERROR = exc
+
+if TYPE_CHECKING:  # pragma: no cover - annotations only
+    from reportlab.platypus import Flowable
 
 log = logging.getLogger("mailtrace.reporting")
 
@@ -187,12 +193,12 @@ thead{display:table-header-group}
 # --------------------------------------------------------------------------- #
 # Plain-text helpers
 # --------------------------------------------------------------------------- #
-def _clean(text: Any) -> str:
+def _clean(text: object) -> str:
     """Collapse whitespace so a value never breaks the one-sentence-per-line summary."""
     return " ".join(str(text).split()) if text else ""
 
 
-def _val(value: Any) -> str:
+def _val(value: object) -> str:
     """String form of a value; enum members yield their value, never 'Severity.HIGH'."""
     if isinstance(value, Enum):
         return str(value.value)
@@ -239,7 +245,7 @@ def _unique(items: list[str]) -> list[str]:
 
 
 def _pct(value: float) -> str:
-    return f"{int(round(max(0.0, min(1.0, value)) * 100))}%"
+    return f"{round(max(0.0, min(1.0, value)) * 100)}%"
 
 
 def _sentence(clauses: list[str]) -> str:
@@ -247,11 +253,11 @@ def _sentence(clauses: list[str]) -> str:
     return text[:1].upper() + text[1:] + "."
 
 
-def _sev_rank(value: Any) -> int:
+def _sev_rank(value: object) -> int:
     return SEVERITY_ORDER.get(_val(value), 0)
 
 
-def _place(geo: Optional[GeoInfo]) -> str:
+def _place(geo: GeoInfo | None) -> str:
     if geo is None:
         return ""
     if geo.is_private:
@@ -269,23 +275,23 @@ def _describe_address(addr: AddressInfo) -> str:
     return f'"{name}"' if name else "an unknown sender"
 
 
-def _fmt_dt(value: Optional[datetime]) -> str:
+def _fmt_dt(value: datetime | None) -> str:
     if value is None:
         return ""
     if value.tzinfo is None:
         return value.strftime("%Y-%m-%d %H:%M:%S")
-    return value.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    return value.astimezone(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
 
 
-def _fmt_date(value: Optional[datetime]) -> str:
+def _fmt_date(value: datetime | None) -> str:
     return value.strftime("%Y-%m-%d") if value is not None else ""
 
 
-def _iso(value: Optional[datetime]) -> Optional[str]:
+def _iso(value: datetime | None) -> str | None:
     return value.isoformat() if value is not None else None
 
 
-def _fmt_delay(seconds: Optional[float]) -> str:
+def _fmt_delay(seconds: float | None) -> str:
     if seconds is None:
         return ""
     sign = "-" if seconds < 0 else "+"
@@ -531,7 +537,7 @@ def _key_indicators(result: AnalysisResult) -> list[str]:
     return _unique(items)
 
 
-def _evidence_integrity(result: AnalysisResult, custody: CustodyChain) -> dict[str, Any]:
+def _evidence_integrity(result: AnalysisResult, custody: CustodyChain) -> EvidenceIntegrity:
     return {
         "raw_sha256": result.email.raw_sha256,
         "raw_md5": result.email.raw_md5,
@@ -544,9 +550,9 @@ def _evidence_integrity(result: AnalysisResult, custody: CustodyChain) -> dict[s
     }
 
 
-def _timeline(result: AnalysisResult, custody: CustodyChain) -> list[dict[str, Any]]:
+def _timeline(result: AnalysisResult, custody: CustodyChain) -> list[TimelineEntry]:
     hdr = result.headers
-    entries: list[dict[str, Any]] = []
+    entries: list[TimelineEntry] = []
     for hop in sorted(hdr.hops, key=lambda item: item.index):
         geo = hop.geo
         entries.append(
@@ -664,12 +670,12 @@ def _fmt_duration(start: datetime, end: datetime) -> str:
     return f"{seconds / 86400:.1f} days"
 
 
-def _custody_span(custody: CustodyChain) -> tuple[Optional[datetime], Optional[datetime]]:
+def _custody_span(custody: CustodyChain) -> tuple[datetime | None, datetime | None]:
     stamps = [event.timestamp for event in custody.events if event.timestamp is not None]
     return (min(stamps), max(stamps)) if stamps else (None, None)
 
 
-def _first_event(custody: CustodyChain, action: str) -> Optional[CustodyEvent]:
+def _first_event(custody: CustodyChain, action: str) -> CustodyEvent | None:
     return next((event for event in custody.events if event.action == action), None)
 
 
@@ -679,7 +685,7 @@ def _runtime_description() -> str:
     return f"{platform.platform()} running {implementation} {platform.python_version()}"
 
 
-def _cert_statement_of_record(result: AnalysisResult, report_id: str, ingested_at: Optional[datetime],
+def _cert_statement_of_record(result: AnalysisResult, report_id: str, ingested_at: datetime | None,
                               generated_at: datetime) -> str:
     email = result.email
     message_id = _clean(email.message_id)
@@ -827,7 +833,7 @@ def build_report(
     ``masked`` states whether ``result`` has already been passed through PII
     masking; this function never masks anything itself.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     is_masked = masked or result.masked
     report_id = f"RPT-{result.id}-{now:%Y%m%d%H%M}"
     report = ForensicReport(
@@ -852,7 +858,7 @@ def build_report(
 # --------------------------------------------------------------------------- #
 # HTML building blocks (every dynamic value is escaped here)
 # --------------------------------------------------------------------------- #
-def _esc(value: Any) -> str:
+def _esc(value: object) -> str:
     if value is None:
         return ""
     if isinstance(value, Enum):
@@ -860,16 +866,16 @@ def _esc(value: Any) -> str:
     return html.escape(str(value), quote=True)
 
 
-def _cell(value: Any) -> str:
+def _cell(value: object) -> str:
     text = _esc(value)
     return text if text else _DASH
 
 
-def _cell_list(items: list[Any]) -> str:
+def _cell_list(items: Sequence[object]) -> str:
     return ", ".join(_esc(item) for item in items) or _DASH
 
 
-def _mono(value: Any) -> str:
+def _mono(value: object) -> str:
     text = _esc(value)
     return f"<code>{text}</code>" if text else _DASH
 
@@ -878,17 +884,17 @@ def _yes_no(flag: bool) -> str:
     return "Yes" if flag else "No"
 
 
-def _tri(flag: Optional[bool], yes: str, no: str) -> str:
+def _tri(flag: bool | None, yes: str, no: str) -> str:
     if flag is None:
         return "unknown"
     return yes if flag else no
 
 
-def _badge(text: Any, css: str) -> str:
+def _badge(text: object, css: str) -> str:
     return f'<span class="badge {_esc(css)}">{_esc(text)}</span>'
 
 
-def _sev_badge(severity: Any) -> str:
+def _sev_badge(severity: object) -> str:
     value = _val(severity) or Severity.INFO.value
     return _badge(value, f"sev-{value}")
 
@@ -919,7 +925,7 @@ def _auth_badge(outcome: str) -> str:
 
 
 def _bar(percent: float, css: str, label: str) -> str:
-    width = int(round(max(0.0, min(100.0, percent))))
+    width = round(max(0.0, min(100.0, percent)))
     return (
         f'<div class="meter"><div class="bar"><span class="fill {_esc(css)}" style="width:{width}%"></span></div>'
         f'<span class="meter-label">{_esc(label)}</span></div>'
@@ -941,7 +947,7 @@ def _kv(rows: list[tuple[str, str]]) -> str:
     return f'<table class="kv"><tbody>{body}</tbody></table>'
 
 
-def _list(items: list[Any], ordered: bool = False, empty: str = "None recorded.") -> str:
+def _list(items: Sequence[object], ordered: bool = False, empty: str = "None recorded.") -> str:
     if not items:
         return f'<p class="muted">{_esc(empty)}</p>'
     tag = "ol" if ordered else "ul"
@@ -992,7 +998,7 @@ def _geo_flags(geo: GeoInfo) -> list[str]:
     return flags
 
 
-def _geo_cell(geo: Optional[GeoInfo]) -> str:
+def _geo_cell(geo: GeoInfo | None) -> str:
     if geo is None:
         return _DASH
     if geo.is_private:
@@ -1753,10 +1759,10 @@ _SEV_INK: dict[str, str] = {
     Severity.CRITICAL.value: "#9b2c2c",
 }
 
-_PDF_STYLES: dict[str, Any] = {}
+_PDF_STYLES: dict[str, ParagraphStyle] = {}
 
 
-def _pdf_escape(value: Any) -> str:
+def _pdf_escape(value: object) -> str:
     """Escape one dynamic value for platypus' mini-HTML parser.
 
     Every dynamic value that reaches a Paragraph passes through here: platypus
@@ -1772,7 +1778,7 @@ def _pdf_escape(value: Any) -> str:
     return "".join(char if char >= " " or char == "\t" else " " for char in text)
 
 
-def _styles() -> dict[str, Any]:
+def _styles() -> dict[str, ParagraphStyle]:
     """Paragraph styles, built once on first use (they need reportlab imported)."""
     if _PDF_STYLES:
         return _PDF_STYLES
@@ -1818,53 +1824,53 @@ def _styles() -> dict[str, Any]:
 # --------------------------------------------------------------------------- #
 # PDF flowable helpers
 # --------------------------------------------------------------------------- #
-def _markup(text: str, style: str = "cell") -> Any:
+def _markup(text: str, style: str = "cell") -> Flowable:
     """Paragraph from mark-up that is already escaped (colour and bold wrappers)."""
     return Paragraph(text or "&nbsp;", _styles()[style])
 
 
-def _para(value: Any, style: str = "body") -> Any:
+def _para(value: object, style: str = "body") -> Flowable:
     return _markup(_pdf_escape(value), style)
 
 
-def _cellp(value: Any, style: str = "cell") -> Any:
+def _cellp(value: object, style: str = "cell") -> Flowable:
     """Table cell; an empty value renders as an em dash, never as 'None'."""
     text = _pdf_escape(value).strip()
     return _markup(text if text else _EM_DASH, style)
 
 
-def _monop(value: Any) -> Any:
+def _monop(value: object) -> Flowable:
     """Monospace cell for hashes, IPs and URLs; long values wrap inside the column."""
     text = _pdf_escape(value).strip()
     return _markup(text, "mono") if text else _markup(_EM_DASH)
 
 
-def _linesp(values: list[Any], style: str = "cell") -> Any:
+def _linesp(values: Sequence[object], style: str = "cell") -> Flowable:
     """Several values stacked in one cell, each on its own line."""
     parts = [part for part in (_pdf_escape(value).strip() for value in values) if part]
     return _markup("<br/>".join(parts) if parts else _EM_DASH, style)
 
 
-def _listp(items: list[Any], style: str = "cell") -> Any:
+def _listp(items: Sequence[object], style: str = "cell") -> Flowable:
     return _cellp(", ".join(_val(item) for item in items if _val(item)), style)
 
 
-def _colour(value: Any, ink: str, bold: bool = True) -> Any:
+def _colour(value: object, ink: str, bold: bool = True) -> Flowable:
     text = _pdf_escape(value)
     inner = f"<b>{text}</b>" if bold else text
     return _markup(f'<font color="{ink}">{inner}</font>')
 
 
-def _sevp(severity: Any) -> Any:
+def _sevp(severity: object) -> Flowable:
     value = _val(severity) or Severity.INFO.value
     return _colour(value.upper(), _SEV_INK.get(value, _INK_MUTED))
 
 
-def _flagp(hit: bool, yes: str = "flagged", no: str = "clear") -> Any:
+def _flagp(hit: bool, yes: str = "flagged", no: str = "clear") -> Flowable:
     return _colour(yes, _INK_BAD) if hit else _colour(no, _INK_OK)
 
 
-def _authp(outcome: str) -> Any:
+def _authp(outcome: str) -> Flowable:
     text = outcome or "none"
     if text == "pass":
         return _colour(text, _INK_OK)
@@ -1885,8 +1891,8 @@ def _cw(*fractions: float) -> list[float]:
     return [total * fraction / scale for fraction in fractions]
 
 
-def _grid_style(header: bool = True, kv: bool = False) -> Any:
-    commands: list[tuple] = [
+def _grid_style(header: bool = True, kv: bool = False) -> TableStyle:
+    commands: list[tuple[object, ...]] = [
         ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor(_INK_RULE)),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("LEFTPADDING", (0, 0), (-1, -1), 3.5),
@@ -1901,17 +1907,17 @@ def _grid_style(header: bool = True, kv: bool = False) -> Any:
     return TableStyle(commands)
 
 
-def _pdf_table(headers: list[str], rows: list[list[Any]], fractions: list[float], empty: str) -> list[Any]:
+def _pdf_table(headers: Sequence[str], rows: Sequence[Sequence[object]], fractions: Sequence[float], empty: str) -> list[Flowable]:
     """Table of Paragraph cells; renders ``empty`` when there is nothing to show."""
     if not rows:
         return [_para(empty, "muted"), Spacer(1, 4)] if empty else []
-    data = [[_para(header, "th") for header in headers]] + rows
+    data: list[Sequence[object]] = [[_para(header, "th") for header in headers], *rows]
     table = Table(data, colWidths=_cw(*fractions), repeatRows=1, hAlign="LEFT", splitByRow=1, splitInRow=1)
     table.setStyle(_grid_style())
     return [table, Spacer(1, 7)]
 
 
-def _pdf_kv(rows: list[tuple[str, Any]], label_fraction: float = 0.31) -> list[Any]:
+def _pdf_kv(rows: Sequence[tuple[str, object]], label_fraction: float = 0.31) -> list[Flowable]:
     if not rows:
         return []
     data = [
@@ -1925,11 +1931,11 @@ def _pdf_kv(rows: list[tuple[str, Any]], label_fraction: float = 0.31) -> list[A
     return [table, Spacer(1, 7)]
 
 
-def _pdf_list(items: list[Any], ordered: bool = False, empty: str = "None recorded.") -> list[Any]:
+def _pdf_list(items: Sequence[object], ordered: bool = False, empty: str = "None recorded.") -> list[Flowable]:
     if not items:
         return [_para(empty, "muted"), Spacer(1, 4)]
     style = _styles()["bullet"]
-    flowables: list[Any] = [
+    flowables: list[Flowable] = [
         Paragraph(_pdf_escape(item), style, bulletText=(f"{index}." if ordered else "•"))
         for index, item in enumerate(items, 1)
     ]
@@ -1937,7 +1943,7 @@ def _pdf_list(items: list[Any], ordered: bool = False, empty: str = "None record
     return flowables
 
 
-def _pdf_heading(number: int, title: str) -> list[Any]:
+def _pdf_heading(number: int, title: str) -> list[Flowable]:
     return [
         _para(f"{number}. {title}", "h2"),
         HRFlowable(width="100%", thickness=1.1, color=colors.HexColor(_INK), spaceBefore=1, spaceAfter=7),
@@ -1952,7 +1958,7 @@ def _addr_text(addr: AddressInfo) -> str:
     return address or name
 
 
-def _recipients_p(addrs: list[AddressInfo]) -> Any:
+def _recipients_p(addrs: list[AddressInfo]) -> Flowable:
     shown = [text for text in (_addr_text(addr) for addr in addrs[:5]) if text]
     if not shown:
         return _markup(_EM_DASH)
@@ -1962,7 +1968,7 @@ def _recipients_p(addrs: list[AddressInfo]) -> Any:
     return _linesp(shown)
 
 
-def _geo_lines(geo: Optional[GeoInfo]) -> list[str]:
+def _geo_lines(geo: GeoInfo | None) -> list[str]:
     """Location, provider, ASN and network tags for one IP, one string per line."""
     if geo is None:
         return []
@@ -1990,7 +1996,7 @@ def _geo_lines(geo: Optional[GeoInfo]) -> list[str]:
 # --------------------------------------------------------------------------- #
 # PDF sections (one function per section, mirroring the HTML report)
 # --------------------------------------------------------------------------- #
-def _pdf_cover(report: ForensicReport, result: AnalysisResult) -> list[Any]:
+def _pdf_cover(report: ForensicReport, result: AnalysisResult) -> list[Flowable]:
     verdict = result.verdict
     severity = _val(verdict.severity) or Severity.INFO.value
     classification = Table(
@@ -2060,14 +2066,14 @@ def _pdf_cover(report: ForensicReport, result: AnalysisResult) -> list[Any]:
     ]
 
 
-def _pdf_summary(report: ForensicReport) -> list[Any]:
+def _pdf_summary(report: ForensicReport) -> list[Flowable]:
     lines = [line.strip() for line in report.executive_summary.split("\n") if line.strip()]
     if not lines:
         return [_para("No summary available.", "muted")]
     return [_para(line, "just") for line in lines]
 
 
-def _pdf_verdict(result: AnalysisResult) -> list[Any]:
+def _pdf_verdict(result: AnalysisResult) -> list[Flowable]:
     verdict = result.verdict
     breakdown = verdict.breakdown
     stance = "agree" if verdict.dual_validation_agreement else "disagree"
@@ -2087,7 +2093,7 @@ def _pdf_verdict(result: AnalysisResult) -> list[Any]:
             ("Dual validation", agreement),
         ]
     )
-    rows: list[list[Any]] = []
+    rows: list[list[object]] = []
     for index, (name, label, explanation) in enumerate(_PILLARS, 1):
         score = float(getattr(breakdown, name, 0.0) or 0.0)
         weight = breakdown.weights.get(name)
@@ -2111,7 +2117,7 @@ def _pdf_verdict(result: AnalysisResult) -> list[Any]:
     ]
 
 
-def _pdf_evidence(result: AnalysisResult, custody: CustodyChain) -> list[Any]:
+def _pdf_evidence(result: AnalysisResult, custody: CustodyChain) -> list[Flowable]:
     email = result.email
     status = _colour("valid", _INK_OK) if custody.valid else _colour("invalid", _INK_BAD)
     integrity = _pdf_kv(
@@ -2148,8 +2154,8 @@ def _pdf_evidence(result: AnalysisResult, custody: CustodyChain) -> list[Any]:
     return [*integrity, _para("Chain of custody", "h3"), *table]
 
 
-def _pdf_signature_block(cert: Section65BCertificate) -> list[Any]:
-    rows: list[list[Any]] = []
+def _pdf_signature_block(cert: Section65BCertificate) -> list[Flowable]:
+    rows: list[list[object]] = []
     ruled: list[int] = []
     for index, (label, field) in enumerate(_SIGNATURE_FIELDS):
         value = _clean(getattr(cert, field, "")) if field else ""
@@ -2159,7 +2165,7 @@ def _pdf_signature_block(cert: Section65BCertificate) -> list[Any]:
     # Minimum (not fixed) heights: the rows must be tall enough to sign in, but a
     # long label still gets the space it needs instead of being clipped.
     table = Table(rows, colWidths=_cw(0.42, 0.58), minRowHeights=[25] * len(rows), hAlign="LEFT", splitByRow=1)
-    commands: list[tuple] = [
+    commands: list[tuple[object, ...]] = [
         ("VALIGN", (0, 0), (-1, -1), "BOTTOM"),
         ("LEFTPADDING", (0, 0), (-1, -1), 0),
         ("RIGHTPADDING", (0, 0), (-1, -1), 8),
@@ -2171,7 +2177,7 @@ def _pdf_signature_block(cert: Section65BCertificate) -> list[Any]:
     return [table, Spacer(1, 6)]
 
 
-def _pdf_certificate(report: ForensicReport) -> list[Any]:
+def _pdf_certificate(report: ForensicReport) -> list[Flowable]:
     cert = report.section_65b
     if cert is None:
         return [_para("No Section 65B certificate was generated for this report.", "muted")]
@@ -2196,7 +2202,7 @@ def _pdf_certificate(report: ForensicReport) -> list[Any]:
             ("Recorded events", _cellp(cert.custody_event_count)),
         ]
     )
-    clauses: list[Any] = []
+    clauses: list[Flowable] = []
     for letter, title, field in _CERT_CLAUSES:
         clauses.append(_para(f"({letter}) {title}", "h4"))
         clauses.append(_para(_clean(getattr(cert, field, "")), "just"))
@@ -2234,7 +2240,7 @@ def _pdf_certificate(report: ForensicReport) -> list[Any]:
     ]
 
 
-def _pdf_identity(result: AnalysisResult) -> list[Any]:
+def _pdf_identity(result: AnalysisResult) -> list[Flowable]:
     email = result.email
     hdr = result.headers
     auth = hdr.auth
@@ -2321,9 +2327,9 @@ def _pdf_identity(result: AnalysisResult) -> list[Any]:
     ]
 
 
-def _pdf_routing(result: AnalysisResult) -> list[Any]:
+def _pdf_routing(result: AnalysisResult) -> list[Flowable]:
     hdr = result.headers
-    rows: list[list[Any]] = []
+    rows: list[list[object]] = []
     for hop in sorted(hdr.hops, key=lambda item: item.index):
         notes: list[str] = []
         if hdr.originating_hop_index is not None and hop.index == hdr.originating_hop_index:
@@ -2367,11 +2373,11 @@ def _pdf_routing(result: AnalysisResult) -> list[Any]:
     return [*table, _para("Origin determination", "h3"), *origin]
 
 
-def _pdf_infra(result: AnalysisResult) -> list[Any]:
+def _pdf_infra(result: AnalysisResult) -> list[Flowable]:
     infra = result.infrastructure
     geo = infra.origin_geo
     if geo is None:
-        origin: list[Any] = [_para("No origin geolocation is available for this message.", "muted"), Spacer(1, 4)]
+        origin: list[Flowable] = [_para("No origin geolocation is available for this message.", "muted"), Spacer(1, 4)]
     else:
         country = f"{geo.country} ({geo.country_code})".strip() if geo.country_code else geo.country
         coords = f"{geo.lat:.4f}, {geo.lon:.4f}" if geo.lat is not None and geo.lon is not None else ""
@@ -2425,8 +2431,8 @@ def _pdf_infra(result: AnalysisResult) -> list[Any]:
     return [_para("Origin geolocation", "h3"), *origin, _para("Infrastructure indicators", "h3"), *flags]
 
 
-def _pdf_domains(result: AnalysisResult) -> list[Any]:
-    rows: list[list[Any]] = []
+def _pdf_domains(result: AnalysisResult) -> list[Flowable]:
+    rows: list[list[object]] = []
     for intel in result.domains:
         registration: list[str] = []
         if intel.registrar:
@@ -2476,9 +2482,9 @@ def _pdf_domains(result: AnalysisResult) -> list[Any]:
     )
 
 
-def _pdf_links(result: AnalysisResult) -> list[Any]:
+def _pdf_links(result: AnalysisResult) -> list[Flowable]:
     analysis = result.urls
-    rows: list[list[Any]] = []
+    rows: list[list[object]] = []
     for index, url in enumerate(analysis.urls, 1):
         tags: list[str] = []
         if url.anchor_mismatch:
@@ -2526,9 +2532,9 @@ def _pdf_links(result: AnalysisResult) -> list[Any]:
     return [*summary, *table]
 
 
-def _pdf_attachments(result: AnalysisResult) -> list[Any]:
+def _pdf_attachments(result: AnalysisResult) -> list[Flowable]:
     analysis = result.attachments
-    rows: list[list[Any]] = []
+    rows: list[list[object]] = []
     for index, item in enumerate(analysis.attachments, 1):
         tags: list[str] = []
         if item.mime_mismatch:
@@ -2573,7 +2579,7 @@ def _pdf_attachments(result: AnalysisResult) -> list[Any]:
     return [*summary, *table]
 
 
-def _pdf_content(result: AnalysisResult) -> list[Any]:
+def _pdf_content(result: AnalysisResult) -> list[Flowable]:
     nlp = result.nlp
     overview = _pdf_kv(
         [
@@ -2622,9 +2628,9 @@ def _pdf_content(result: AnalysisResult) -> list[Any]:
     ]
 
 
-def _pdf_intel(report: ForensicReport, result: AnalysisResult) -> list[Any]:
+def _pdf_intel(report: ForensicReport, result: AnalysisResult) -> list[Flowable]:
     intel = result.intel
-    ioc_rows: list[list[Any]] = []
+    ioc_rows: list[list[object]] = []
     for item in report.key_indicators:
         kind, sep, value = item.partition(": ")
         ioc_rows.append([_cellp(_human(kind)) if sep else _cellp(""), _monop(value if sep else item)])
@@ -2670,7 +2676,7 @@ def _pdf_intel(report: ForensicReport, result: AnalysisResult) -> list[Any]:
     ]
 
 
-def _pdf_attribution(result: AnalysisResult) -> list[Any]:
+def _pdf_attribution(result: AnalysisResult) -> list[Flowable]:
     attribution = result.attribution
     label = _SOURCE_LABELS.get(attribution.source_type, "")
     source = _human(attribution.source_type)
@@ -2686,7 +2692,7 @@ def _pdf_attribution(result: AnalysisResult) -> list[Any]:
     )
 
 
-def _pdf_graph(result: AnalysisResult) -> list[Any]:
+def _pdf_graph(result: AnalysisResult) -> list[Flowable]:
     graph = result.graph
     degree: dict[str, int] = {}
     for edge in graph.edges:
@@ -2716,7 +2722,7 @@ def _pdf_graph(result: AnalysisResult) -> list[Any]:
     return [*overview, _para("Top pivot entities", "h3"), *table]
 
 
-def _pdf_findings(result: AnalysisResult) -> list[Any]:
+def _pdf_findings(result: AnalysisResult) -> list[Flowable]:
     findings = sorted(result.findings, key=lambda item: -_sev_rank(item.severity))
     return _pdf_table(
         ["Severity", "Module", "Finding", "Detail"],
@@ -2729,9 +2735,9 @@ def _pdf_findings(result: AnalysisResult) -> list[Any]:
     )
 
 
-def _pdf_appendix(result: AnalysisResult) -> list[Any]:
+def _pdf_appendix(result: AnalysisResult) -> list[Flowable]:
     email = result.email
-    flowables: list[Any] = [_para("Full header block", "h3")]
+    flowables: list[Flowable] = [_para("Full header block", "h3")]
     if email.headers:
         # One paragraph per header: a single huge flowable could not be split
         # across pages, and every value wraps inside the printable width.
@@ -2748,7 +2754,7 @@ def _pdf_appendix(result: AnalysisResult) -> list[Any]:
     return flowables
 
 
-def _pdf_sections(report: ForensicReport) -> list[tuple[str, list[Any], bool]]:
+def _pdf_sections(report: ForensicReport) -> list[tuple[str, list[Flowable], bool]]:
     """(title, flowables, start-on-a-new-page) in the same order as the HTML report."""
     result = report.analysis
     return [
@@ -2777,15 +2783,16 @@ def _pdf_sections(report: ForensicReport) -> list[tuple[str, list[Any], bool]]:
     ]
 
 
-def _numbered_canvas(footer_text: str) -> Any:
+def _numbered_canvas(footer_text: str) -> type[Canvas]:
     """Canvas that stamps 'Page n of m' in the footer once the total is known."""
 
-    class _NumberedCanvas(Canvas):
-        def __init__(self, *args: Any, **kwargs: Any) -> None:
+    # reportlab ships no type information, so its Canvas is Any to the checker.
+    class _NumberedCanvas(Canvas):  # type: ignore[misc]
+        def __init__(self, *args: object, **kwargs: object) -> None:
             super().__init__(*args, **kwargs)
-            self._page_states: list[dict[str, Any]] = []
+            self._page_states: list[dict[str, object]] = []
 
-        def showPage(self) -> None:  # noqa: N802 - reportlab API
+        def showPage(self) -> None:
             self._page_states.append(dict(self.__dict__))
             self._startPage()
 
@@ -2834,7 +2841,7 @@ def render_pdf(report: ForensicReport) -> bytes:
         subject=f"Forensic analysis of {result.filename}",
         creator="MailTrace",
     )
-    story: list[Any] = _pdf_cover(report, result)
+    story: list[Flowable] = _pdf_cover(report, result)
     for number, (title, content, page_break) in enumerate(_pdf_sections(report), 1):
         if page_break:
             story.append(PageBreak())

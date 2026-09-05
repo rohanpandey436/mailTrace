@@ -5,7 +5,7 @@ from app.core.parser import decode_header_value, html_to_text, parse_address, pa
 
 def test_parses_every_sample_without_error(sample):
     for key in ("phishing", "bec", "legit", "fraud", "ceo"):
-        parsed, raw_atts = parse_email(sample(key))
+        parsed, _ = parse_email(sample(key))
         assert parsed.sender.address, key
         assert parsed.subject, key
         assert parsed.raw_size > 0 and len(parsed.raw_sha256) == 64
@@ -45,7 +45,7 @@ def test_pdf_attachment_bytes(sample):
 
 
 def test_garbage_input_never_raises():
-    for blob in (b"", b"\x00\xff\xfe garbage", b"Subject: only a subject\n", "plain text no headers".encode()):
+    for blob in (b"", b"\x00\xff\xfe garbage", b"Subject: only a subject\n", b"plain text no headers"):
         parsed, atts = parse_email(blob)
         assert parsed.raw_size == len(blob)
         assert atts == [] or isinstance(atts, list)

@@ -95,7 +95,7 @@ import sys
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit
 
 from ..config import Settings
@@ -118,6 +118,9 @@ from ..core.link_analyzer import (
     registrable_domain,
 )
 from ..schemas import DomainIntel, UrlInfo
+
+if TYPE_CHECKING:  # pragma: no cover - annotations only; xgboost is imported lazily at runtime
+    from xgboost import XGBClassifier
 
 log = logging.getLogger("mailtrace.ml.url")
 
@@ -227,7 +230,7 @@ def lookalike_distance(host: str) -> float:
     return round(min(1.0, max(0.0, best)), 6)
 
 
-def _intel_features(intel: Optional[DomainIntel]) -> tuple[float, float, float]:
+def _intel_features(intel: DomainIntel | None) -> tuple[float, float, float]:
     """(age_days, resolves, has_mx) with NaN wherever nothing was observed.
 
     ``source in ("offline", "unavailable", "")`` means the domain engine never
@@ -243,7 +246,7 @@ def _intel_features(intel: Optional[DomainIntel]) -> tuple[float, float, float]:
     return age, resolves, has_mx
 
 
-def features(info: UrlInfo, intel: Optional[DomainIntel] = None) -> list[float]:
+def features(info: UrlInfo, intel: DomainIntel | None = None) -> list[float]:
     """Feature row for one link, in ``FEATURE_NAMES`` order.  Never raises."""
     normalized = info.normalized or info.url or ""
     host = (info.host or "").lower()
@@ -297,7 +300,7 @@ def features(info: UrlInfo, intel: Optional[DomainIntel] = None) -> list[float]:
     return [float(values[name]) for name in FEATURE_NAMES]
 
 
-def features_for(url: str, anchor: str, cfg: Settings, intel: Optional[DomainIntel] = None) -> list[float]:
+def features_for(url: str, anchor: str, cfg: Settings, intel: DomainIntel | None = None) -> list[float]:
     """Convenience wrapper: run the deterministic extractor, then featurise."""
     return features(analyze_url(url, anchor, cfg), intel)
 
@@ -528,7 +531,7 @@ def _sample_rows(cfg: Settings) -> list[tuple[str, str, int]]:
         malicious = not path.name.startswith("legit")
         try:
             parsed, _ = parse_email(path.read_bytes())
-        except Exception:  # noqa: BLE001 - a bad sample must not stop training
+        except Exception:  # a bad sample must not stop training
             log.debug("sample %s could not be parsed for the URL dataset", path.name, exc_info=True)
             continue
         for url, anchor in extract_urls(parsed.text_body or "", parsed.html_body or ""):
@@ -557,7 +560,7 @@ def _apply_intel_prior(row: list[float], label: int, rng: random.Random) -> None
     row[mx_i] = float(rng.random() < _PRIOR_MALICIOUS_MX_RATE) if label else 1.0
 
 
-def build_dataset(cfg: Optional[Settings] = None, seed: int = 20260905) -> tuple[list[list[float]], list[int], dict[str, Any]]:
+def build_dataset(cfg: Settings | None = None, seed: int = 20260905) -> tuple[list[list[float]], list[int], dict[str, Any]]:
     """(X, y, meta).  Deterministic for a given seed and knowledge base."""
     cfg = cfg or default_settings
     rng = random.Random(seed)
@@ -580,7 +583,7 @@ def build_dataset(cfg: Optional[Settings] = None, seed: int = 20260905) -> tuple
         seen.add(key)
         try:
             row = features(analyze_url(url, anchor, cfg))
-        except Exception:  # noqa: BLE001 - one bad row must not stop training
+        except Exception:  # one bad row must not stop training
             log.debug("could not featurise %r", url[:120], exc_info=True)
             continue
         _apply_intel_prior(row, label, rng)
@@ -607,7 +610,7 @@ def _sha256_file(path: Path) -> str:
         return ""
 
 
-def dataset_fingerprint(cfg: Optional[Settings] = None) -> str:
+def dataset_fingerprint(cfg: Settings | None = None) -> str:
     """Hash of every input the dataset is generated from.
 
     Cheap on purpose (a handful of file reads, no featurisation) because it is
@@ -630,7 +633,7 @@ def dataset_fingerprint(cfg: Optional[Settings] = None) -> str:
     return digest.hexdigest()
 
 
-def build_classifier():  # type: ignore[no-untyped-def]
+def build_classifier() -> XGBClassifier:
     """A deliberately small booster: 120 trees of depth 4, single-threaded.
 
     The bundle is ~200 KB and inference is microseconds.  ``n_jobs=1`` matters:
@@ -654,7 +657,7 @@ def build_classifier():  # type: ignore[no-untyped-def]
     )
 
 
-def _bundle(model, meta: dict[str, Any], fingerprint: str, metrics: dict[str, float]) -> dict[str, Any]:  # type: ignore[no-untyped-def]
+def _bundle(model: XGBClassifier, meta: dict[str, Any], fingerprint: str, metrics: dict[str, float]) -> dict[str, Any]:
     import xgboost
 
     return {
@@ -688,7 +691,7 @@ def _holdout_metrics(x: list[list[float]], y: list[int]) -> dict[str, float]:
     }
 
 
-def train(cfg: Optional[Settings] = None, model_path: Optional[Path] = None, with_metrics: bool = True):  # type: ignore[no-untyped-def]
+def train(cfg: Settings | None = None, model_path: Path | None = None, with_metrics: bool = True) -> XGBClassifier:
     """Generate the dataset, fit, persist the bundle, return the fitted model."""
     import joblib
 
@@ -706,7 +709,7 @@ def train(cfg: Optional[Settings] = None, model_path: Optional[Path] = None, wit
     return model
 
 
-def _load_bundle(path: Path, fingerprint: str):  # type: ignore[no-untyped-def]
+def _load_bundle(path: Path, fingerprint: str) -> XGBClassifier | None:
     import joblib
 
     if not Path(path).is_file():
@@ -729,7 +732,7 @@ def _load_bundle(path: Path, fingerprint: str):  # type: ignore[no-untyped-def]
 # Process-wide cache
 # --------------------------------------------------------------------------- #
 _lock = threading.Lock()
-_models: dict[str, Any] = {}
+_models: dict[str, XGBClassifier] = {}
 #: Fingerprints whose load/train already failed (xgboost missing, fit error).
 #: Retrying per message would cost a doomed import on every analysis.
 _failed: set[str] = set()
@@ -738,13 +741,13 @@ _failed: set[str] = set()
 def available() -> bool:
     """True when xgboost can be imported in this process."""
     try:
-        import xgboost  # noqa: F401, PLC0415
-    except Exception:  # noqa: BLE001 - missing, or a broken native install
+        import xgboost  # noqa: F401
+    except (ImportError, OSError):  # missing, or a broken native install
         return False
     return True
 
 
-def load_or_train(cfg: Optional[Settings] = None):  # type: ignore[no-untyped-def]
+def load_or_train(cfg: Settings | None = None) -> XGBClassifier | None:
     """The fitted model, training it once if needed; ``None`` if unavailable.
 
     Never raises.  Keyed on the dataset fingerprint, not on the file path, so
@@ -756,7 +759,7 @@ def load_or_train(cfg: Optional[Settings] = None):  # type: ignore[no-untyped-de
         return None
     try:
         fingerprint = dataset_fingerprint(cfg)
-    except Exception:  # noqa: BLE001
+    except OSError:
         log.debug("could not fingerprint the URL dataset", exc_info=True)
         return None
     with _lock:
@@ -773,7 +776,7 @@ def load_or_train(cfg: Optional[Settings] = None):  # type: ignore[no-untyped-de
             _failed.add(fingerprint)
             log.warning("xgboost unavailable (%s); the URL pillar stays rule-only", exc)
             return None
-        except Exception:  # noqa: BLE001 - never let a model break the analysis
+        except Exception:  # never let a model break the analysis
             _failed.add(fingerprint)
             log.exception("URL model could not be trained; the URL pillar stays rule-only")
             return None
@@ -804,7 +807,7 @@ def _intel_index(domain_intel: Any) -> dict[str, DomainIntel]:
     return index
 
 
-def score_urls(urls: Any, domain_intel: Any, cfg: Optional[Settings] = None) -> Optional[UrlModelOutcome]:
+def score_urls(urls: Any, domain_intel: Any, cfg: Settings | None = None) -> UrlModelOutcome | None:
     """``P(malicious)`` for every link in the message, worst-first.
 
     Returns ``None`` -- never raises -- when there are no links, when the model
@@ -830,7 +833,7 @@ def score_urls(urls: Any, domain_intel: Any, cfg: Optional[Settings] = None) -> 
                 matched += 1
             rows.append(features(info, intel))
         probabilities = model.predict_proba(np.asarray(rows, dtype=np.float32))[:, 1]
-    except Exception:  # noqa: BLE001 - inference failure must never abort scoring
+    except Exception:  # inference failure must never abort scoring
         log.exception("URL model inference failed; the URL pillar stays rule-only")
         return None
     per_url = sorted(
@@ -849,7 +852,7 @@ def score_urls(urls: Any, domain_intel: Any, cfg: Optional[Settings] = None) -> 
 # --------------------------------------------------------------------------- #
 # CLI
 # --------------------------------------------------------------------------- #
-def main(argv: Optional[list[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Train the MailTrace URL/domain risk model.")
     parser.add_argument("--out", type=Path, default=None, help="model output path")
     parser.add_argument("--report", action="store_true", help="print gain-ranked feature importances")

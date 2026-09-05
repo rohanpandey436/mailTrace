@@ -33,10 +33,11 @@ import logging
 import re
 from email import policy as email_policy
 from email.parser import BytesParser
-from typing import Any, Optional
+from typing import Any
 
 from ..config import Settings
 from ..schemas import AuthResult, Finding, HeaderAnalysis, HeaderField, Hop, ParsedEmail, Severity
+from ..utils.cache import cache_get, cache_set
 from .header_analyzer import is_private_ip
 from .knowledge import BRANDS
 from .link_analyzer import registrable_domain
@@ -135,28 +136,10 @@ def _is_public(ip: str) -> bool:
     return not is_private_ip(ip)
 
 
-def _aligned(domain: str, sender_rd: str) -> Optional[bool]:
+def _aligned(domain: str, sender_rd: str) -> bool | None:
     if not domain or not sender_rd:
         return None
     return registrable_domain(domain) == sender_rd
-
-
-def _cache_get(store: Any, key: str) -> Any:
-    if store is None:
-        return None
-    try:
-        return store.cache_get(key)
-    except Exception:  # noqa: BLE001 - cache problems must not affect analysis
-        return None
-
-
-def _cache_set(store: Any, key: str, value: Any, ttl: int) -> None:
-    if store is None:
-        return
-    try:
-        store.cache_set(key, value, ttl)
-    except Exception:  # noqa: BLE001
-        log.debug("cache_set failed for %s", key)
 
 
 # --------------------------------------------------------------------------- #
@@ -286,7 +269,7 @@ class _SpfEvaluator:
             answers = self.resolver.resolve(name, rdtype)
         except self.no_record_errors:
             return []
-        except Exception as exc:  # noqa: BLE001 - timeouts, SERVFAIL, resolver errors
+        except Exception as exc:  # timeouts, SERVFAIL, resolver errors
             raise _SpfTempError(f"{rdtype} lookup of {name} failed: {exc.__class__.__name__}") from exc
         if rdtype == "TXT":
             return [b"".join(rdata.strings).decode("utf-8", errors="replace") for rdata in answers]
@@ -297,7 +280,7 @@ class _SpfEvaluator:
     def _spf_record(self, domain: str) -> tuple[str, str]:
         """(record, status) with status ``ok`` | ``none`` | ``permerror``."""
         cache_key = f"spf:{domain}"
-        cached = _cache_get(self.store, cache_key)
+        cached = cache_get(self.store, cache_key)
         if isinstance(cached, dict):
             return str(cached.get("record", "")), str(cached.get("status", "none"))
         records = [
@@ -310,7 +293,7 @@ class _SpfEvaluator:
             result = ("", "permerror")
         else:
             result = (records[0].strip(), "ok")
-        _cache_set(self.store, cache_key, {"record": result[0], "status": result[1]}, self.cfg.cache_ttl_seconds)
+        cache_set(self.store, cache_key, {"record": result[0], "status": result[1]}, self.cfg.cache_ttl_seconds)
         return result
 
     # -- Evaluation ----------------------------------------------------------
@@ -396,7 +379,7 @@ class _SpfEvaluator:
             return False
         return network.version == self.addr.version and self.addr in network
 
-    def _prefix_length(self, cidr: str) -> Optional[int]:
+    def _prefix_length(self, cidr: str) -> int | None:
         """Prefix length for this address family from ``24``, ``24//64`` or ``/64``."""
         if not cidr:
             return None
@@ -445,12 +428,13 @@ def live_spf(ip: str, domain: str, cfg: Settings, store: Any = None) -> tuple[st
     if is_private_ip(str(addr)):
         return "unverifiable", [f"{addr} is a private address; SPF cannot be evaluated for it"]
     try:
+        import dns.exception
         import dns.resolver
-    except Exception as exc:  # noqa: BLE001 - optional dependency
+    except ImportError as exc:
         return "unverifiable", [f"dnspython unavailable: {exc.__class__.__name__}"]
 
     notes: list[str] = []
-    evaluator: Optional[_SpfEvaluator] = None
+    evaluator: _SpfEvaluator | None = None
     try:
         resolver = dns.resolver.Resolver(configure=True)
         resolver.timeout = cfg.lookup_timeout
@@ -465,7 +449,7 @@ def live_spf(ip: str, domain: str, cfg: Settings, store: Any = None) -> tuple[st
     except _SpfTempError as exc:
         notes.append(f"temperror: {exc}")
         result = "temperror"
-    except Exception as exc:  # noqa: BLE001 - resolver configuration or unexpected DNS failures
+    except dns.exception.DNSException as exc:  # resolver configuration or an unexpected DNS failure
         log.debug("SPF evaluation for %s/%s failed: %s", ip, domain, exc)
         notes.append(f"temperror: {exc.__class__.__name__}")
         result = "temperror"
@@ -497,13 +481,14 @@ def live_dkim(raw: bytes, cfg: Settings) -> tuple[str, str, str, list[str]]:
         return "unverifiable", d_domain, selector, ["network enrichment disabled; signature not verified"]
     try:
         import dkim
+        import dns.exception
         import dns.resolver
-    except Exception as exc:  # noqa: BLE001 - optional dependencies
+    except ImportError as exc:
         return "unverifiable", d_domain, selector, [f"DKIM library unavailable: {exc.__class__.__name__}"]
 
     key_found = False
 
-    def dnsfunc(name: Any, timeout: float = cfg.lookup_timeout) -> Optional[bytes]:
+    def dnsfunc(name: Any, timeout: float = cfg.lookup_timeout) -> bytes | None:
         """dkimpy key lookup honouring cfg.lookup_timeout instead of dkimpy's default."""
         nonlocal key_found
         label = name.decode("ascii", errors="ignore") if isinstance(name, bytes) else str(name)
@@ -512,7 +497,7 @@ def live_dkim(raw: bytes, cfg: Settings) -> tuple[str, str, str, list[str]]:
             resolver.timeout = cfg.lookup_timeout
             resolver.lifetime = cfg.lookup_timeout
             answers = resolver.resolve(label, "TXT")
-        except Exception as exc:  # noqa: BLE001 - NXDOMAIN, timeout, resolver errors
+        except dns.exception.DNSException as exc:  # NXDOMAIN, timeout, resolver errors
             notes.append(f"key lookup {label} failed: {exc.__class__.__name__}")
             return None
         for rdata in answers:
@@ -545,7 +530,7 @@ def live_dmarc(domain: str, cfg: Settings, store: Any = None) -> tuple[str, str]
     if not cfg.enable_network or not domain or not _DOMAIN_RE.match(domain):
         return "", ""
     cache_key = f"dmarc:{domain}"
-    cached = _cache_get(store, cache_key)
+    cached = cache_get(store, cache_key)
     if isinstance(cached, dict):
         return str(cached.get("policy", "")), str(cached.get("record", ""))
     candidates = [domain]
@@ -576,14 +561,14 @@ def live_dmarc(domain: str, cfg: Settings, store: Any = None) -> tuple[str, str]
         return "", ""
     policy_match = re.search(r"(?:^|;)\s*p\s*=\s*([a-z]+)", record, re.IGNORECASE)
     policy = policy_match.group(1).lower() if policy_match else ""
-    _cache_set(store, cache_key, {"policy": policy, "record": record}, cfg.cache_ttl_seconds)
+    cache_set(store, cache_key, {"policy": policy, "record": record}, cfg.cache_ttl_seconds)
     return policy, record
 
 
 # --------------------------------------------------------------------------- #
 # Evaluation
 # --------------------------------------------------------------------------- #
-def _boundary_hop(header_analysis: HeaderAnalysis, cfg: Settings) -> Optional[Hop]:
+def _boundary_hop(header_analysis: HeaderAnalysis, cfg: Settings) -> Hop | None:
     """Latest hop whose source is a public, non-organisation, non-trusted
     address: the connection the receiving boundary evaluated SPF against."""
     for hop in reversed(header_analysis.hops):

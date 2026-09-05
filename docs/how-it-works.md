@@ -19,14 +19,17 @@ mailtrace/
 │   │   └── api/             the URLs the browser calls
 │   └── tests/               140 automated tests
 ├── engine/src/parser.cpp    the C++20 parser
-├── frontend/index.html      the dashboard
+├── frontend/
+│   ├── index.html           the page shell
+│   ├── css/                 design tokens, base, layout, components
+│   └── js/                  the dashboard: api, router, state, ui/, views/
 ├── samples/                 five demo emails
 └── docs/                    this file
 ```
 
 ## What each file does, in one line
 
-**core/ — the analysis engine.** Twelve files, one job each.
+**core/ — the analysis engine.** Fourteen files, one job each.
 
 | File | What it does |
 |---|---|
@@ -43,6 +46,8 @@ mailtrace/
 | `scoring.py` | **The brain.** Combines everything into the 0-100 threat score and the verdict. |
 | `graph_builder.py` | Draws the connections between senders, domains, IPs and links. |
 | `knowledge.py` | Reference data: brand domains, free-mail providers, risky file types. |
+| `decisions.py` | Records an analyst's quarantine/block decision in the evidence log. Says plainly that it does not touch any mail system. |
+| `errors.py` | The one error the engine raises to the web layer: `NotFound`. |
 
 **ai/ — the machine learning.**
 
@@ -61,6 +66,7 @@ mailtrace/
 | `utils/pii_masker.py` | Hides names, addresses and ID numbers when privacy mode is on. |
 | `utils/csv_exporter.py` | CSV export of a case or the whole list. |
 | `utils/virustotal.py` | Optional: checks attachment hashes against VirusTotal. |
+| `utils/cache.py` | The lookup cache every engine shares, so a second email from the same server costs no second lookup. |
 | `database/case_manager.py` | Saves cases, campaigns, alerts and the chain of custody. |
 | `api/analyze.py` | Upload and list emails. |
 | `api/reports.py` | Download reports (PDF, HTML, CSV). |
