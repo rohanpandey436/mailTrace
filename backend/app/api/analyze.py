@@ -19,10 +19,10 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import Response
 
 from ..config import Settings
-from ..db import Store
-from ..engine import pipeline
-from ..engine.csvexport import UTF8_BOM, render_case_list_csv
-from ..engine.privacy import mask_result
+from ..database.case_manager import Store
+from ..core import pipeline
+from ..utils.csv_exporter import UTF8_BOM, render_case_list_csv
+from ..utils.pii_masker import mask_result
 from ..schemas import (
     AnalysisResult,
     CaseDecision,

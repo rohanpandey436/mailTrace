@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import pytest
 
-from app.engine.attachments import analyze_attachments
-from app.engine.nlp import analyze_content, detect_language, normalize_text
-from app.engine.parser import parse_email
-from app.engine.urls import analyze_urls
+from app.core.file_analyzer import analyze_attachments
+from app.core.ai_engine import analyze_content, detect_language, normalize_text
+from app.core.parser import parse_email
+from app.core.link_analyzer import analyze_urls
 
 
 def _nlp(raw: bytes, cfg):

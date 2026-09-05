@@ -36,7 +36,7 @@ from typing import Any, Optional
 from ..config import Settings
 from ..schemas import Finding, HeaderAnalysis, Hop, ParsedEmail, Severity
 from .knowledge import BRANDS, EXEC_TITLES, FREEMAIL_DOMAINS
-from .urls import registrable_domain
+from .link_analyzer import registrable_domain
 
 log = logging.getLogger("mailtrace.headers")
 

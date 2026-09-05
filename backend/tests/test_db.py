@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from app.db import GENESIS_HASH, Store
-from app.engine import pipeline
+from app.database.case_manager import GENESIS_HASH, Store
+from app.core import pipeline
 from app.schemas import Alert, Severity, ThreatCategory
 
 

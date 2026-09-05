@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.engine.parser import decode_header_value, html_to_text, parse_address, parse_address_list, parse_email
+from app.core.parser import decode_header_value, html_to_text, parse_address, parse_address_list, parse_email
 
 
 def test_parses_every_sample_without_error(sample):

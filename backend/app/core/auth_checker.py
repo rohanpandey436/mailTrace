@@ -37,9 +37,9 @@ from typing import Any, Optional
 
 from ..config import Settings
 from ..schemas import AuthResult, Finding, HeaderAnalysis, HeaderField, Hop, ParsedEmail, Severity
-from .headers import is_private_ip
+from .header_analyzer import is_private_ip
 from .knowledge import BRANDS
-from .urls import registrable_domain
+from .link_analyzer import registrable_domain
 
 log = logging.getLogger("mailtrace.auth")
 

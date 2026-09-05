@@ -52,7 +52,7 @@ from ..schemas import (
     Verdict,
 )
 from .scoring import severity_for
-from .urls import registrable_domain
+from .link_analyzer import registrable_domain
 
 log = logging.getLogger("mailtrace.graph")
 

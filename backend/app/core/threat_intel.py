@@ -64,10 +64,10 @@ from ..schemas import (
 )
 from .knowledge import COMMON_URL_HOSTS, FREEMAIL_DOMAINS
 from .parser import hamming_distance, tlsh_diff
-from .urls import registrable_domain
+from .link_analyzer import registrable_domain
 
 if TYPE_CHECKING:  # pragma: no cover
-    from ..db import Store
+    from ..database.case_manager import Store
 
 log = logging.getLogger("mailtrace.campaigns")
 

@@ -56,7 +56,7 @@ from ..schemas import Finding, GeoInfo, HeaderAnalysis, Hop, InfraAnalysis, Seve
 from .knowledge import DNSBL_ZONES
 
 if TYPE_CHECKING:  # pragma: no cover
-    from ..db import Store
+    from ..database.case_manager import Store
 
 log = logging.getLogger("mailtrace.geoip")
 
@@ -236,7 +236,7 @@ def _registrable(host: str) -> str:
     if not text or text == "unknown" or _parse_ip(text) is not None:
         return ""
     try:
-        from .urls import registrable_domain  # sibling module; degrade to a heuristic if unavailable
+        from .link_analyzer import registrable_domain  # sibling module; degrade to a heuristic if unavailable
 
         return registrable_domain(text)
     except Exception:  # noqa: BLE001

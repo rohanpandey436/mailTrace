@@ -17,10 +17,10 @@ from typing import Any, Literal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 
-from ..db import Store
-from ..engine.csvexport import UTF8_BOM, render_report_csv
-from ..engine.privacy import mask_report_fields, mask_result
-from ..engine.reporting import PdfUnavailable, build_report, render_html, render_pdf
+from ..database.case_manager import Store
+from ..utils.csv_exporter import UTF8_BOM, render_report_csv
+from ..utils.pii_masker import mask_report_fields, mask_result
+from ..utils.pdf_generator import PdfUnavailable, build_report, render_html, render_pdf
 from ..schemas import CustodyChain
 from .deps import DEFAULT_ACTOR, get_store, mask_param
 

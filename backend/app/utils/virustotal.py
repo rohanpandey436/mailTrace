@@ -45,7 +45,7 @@ from ..config import Settings
 from ..schemas import AttachmentAnalysis, AttachmentMeta, Finding, Severity
 
 if TYPE_CHECKING:  # pragma: no cover
-    from ..db import Store
+    from ..database.case_manager import Store
     from .parser import RawAttachment
 
 log = logging.getLogger("mailtrace.virustotal")

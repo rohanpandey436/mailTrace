@@ -24,7 +24,7 @@ SAMPLES = HERE.parent / "samples"
 if str(BACKEND) not in sys.path:
     sys.path.insert(0, str(BACKEND))
 
-from app.engine import parser  # noqa: E402
+from app.core import parser  # noqa: E402
 
 
 def timed(function, raw: bytes, iterations: int) -> tuple[float, float]:

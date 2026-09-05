@@ -7,8 +7,8 @@ before any of it could be stood up, written against the code as it exists today
 so that the gaps are visible rather than hand-waved.
 
 What *is* running: a single FastAPI process, a single SQLite file behind
-`backend/app/db.py`, in-process correlation in `backend/app/engine/campaigns.py`,
-and an in-process graph builder in `backend/app/engine/graph.py`. The optional
+`backend/app/database/case_manager.py`, in-process correlation in `backend/app/core/threat_intel.py`,
+and an in-process graph builder in `backend/app/core/graph_builder.py`. The optional
 PostgreSQL adapter added alongside this document (`MAILTRACE_DATABASE_URL`) is
 the one piece of shared-state infrastructure that has any code behind it, and it
 too is unverified against a real server.
@@ -55,7 +55,7 @@ Two effects are stacked in that table and it is worth separating them:
 
 ### 1.1 What already exists
 
-`app/engine/graph.py` builds a real property graph in memory for every analysed
+`app/core/graph_builder.py` builds a real property graph in memory for every analysed
 message. Node ids are already `"<type>:<key>"` with normalised keys, precisely so
 that two messages' graphs can be overlaid (`merge_graphs`). The type vocabulary
 is fixed in `app/schemas.py`:
@@ -167,7 +167,7 @@ test rather than a string prefix:
 
 ```cypher
 // Messages that share infrastructure with $email_id, scored the way
-// app/engine/campaigns.py::_related scores it today.
+// app/core/threat_intel.py::_related scores it today.
 MATCH (new:Email {id: $email_id})--(ioc)--(other:Email)
 WHERE other.id <> new.id
   AND NOT ioc:Campaign

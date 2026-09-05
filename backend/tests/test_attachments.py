@@ -3,8 +3,8 @@ from __future__ import annotations
 import io
 import zipfile
 
-from app.engine.attachments import analyze_attachment, analyze_attachments, sniff_magic
-from app.engine.parser import RawAttachment, parse_email
+from app.core.file_analyzer import analyze_attachment, analyze_attachments, sniff_magic
+from app.core.parser import RawAttachment, parse_email
 
 MZ = b"MZ\x90\x00 This program cannot be run in DOS mode." + b"\x00" * 64
 PDF = b"%PDF-1.4\n1 0 obj << >> endobj\n%%EOF\n"

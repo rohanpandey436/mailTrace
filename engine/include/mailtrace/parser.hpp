@@ -9,7 +9,7 @@
 // walking multipart boundaries and stopping at embedded message/rfc822 parts.
 // It deliberately does NOT interpret those bytes: no RFC 2047 word decoding,
 // no RFC 2231 parameter collapsing, no charset handling, no address parsing.
-// Those live in Python (backend/app/engine/parser.py), where the standard
+// Those live in Python (backend/app/core/parser.py), where the standard
 // library already does them correctly and where the cost is negligible.
 //
 // Byte-for-byte compatibility with CPython's email.feedparser is a hard

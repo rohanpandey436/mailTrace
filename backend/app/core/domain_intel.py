@@ -31,10 +31,10 @@ from typing import TYPE_CHECKING, Any, Optional
 from ..config import Settings
 from ..schemas import DomainIntel, Finding, HeaderAnalysis, ParsedEmail, Severity, UrlAnalysis
 from .knowledge import COMMON_URL_HOSTS, DISPOSABLE_DOMAINS, FREEMAIL_DOMAINS, SUSPICIOUS_TLDS
-from .urls import is_lookalike, registrable_domain
+from .link_analyzer import is_lookalike, registrable_domain
 
 if TYPE_CHECKING:  # pragma: no cover
-    from ..db import Store
+    from ..database.case_manager import Store
 
 log = logging.getLogger("mailtrace.domains")
 

@@ -47,7 +47,7 @@ Deviations from the package, all for latency, all deliberate:
 
 Why bother, given SHAP is already exact?
 ----------------------------------------
-The SHAP values in ``app/ml/train.py`` are exact *for the linear model* --
+The SHAP values in ``app/ai/model_trainer.py`` are exact *for the linear model* --
 they are a closed-form read of its coefficients, so they can only ever tell you
 what the model's weights are.  LIME asks a different question: it perturbs the
 input, watches what the *whole pipeline* actually does (both TF-IDF blocks, the

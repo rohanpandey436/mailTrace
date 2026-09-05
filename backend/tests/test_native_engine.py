@@ -14,7 +14,7 @@ or not.  What is tested is everything that decides whether shipping it is safe:
   algorithm the C++ implements is the right one.  It does *not* check that the
   C++ implements it correctly; that is what the six ``@requires_extension``
   parity tests at the end of this file are for, and they need a build.
-* The adapter in ``app.engine.parser`` - tree rebuilding, structural
+* The adapter in ``app.core.parser`` - tree rebuilding, structural
   cross-checking, the import-time self-check and every fallback path - is the
   code that will actually run in production, and it is tested directly.
 
@@ -28,7 +28,7 @@ import types
 
 import pytest
 
-from app.engine import parser
+from app.core import parser
 
 # --------------------------------------------------------------------------- #
 # Pure-Python mirror of engine/src/parser.cpp
@@ -692,7 +692,7 @@ def test_extension_sha256_matches_hashlib():
 def test_extension_entropy_matches_python():
     import os
 
-    from app.engine.attachments import shannon_entropy
+    from app.core.file_analyzer import shannon_entropy
 
     for data in [b"", b"aaaa", bytes(range(256)), os.urandom(50000)]:
         assert abs(_real_engine.shannon_entropy(data) - shannon_entropy(data)) < 1e-9

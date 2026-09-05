@@ -41,7 +41,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, WebSocket
 from fastapi.responses import StreamingResponse
 
 from ..config import Settings
-from ..db import Store
+from ..database.case_manager import Store
 from ..schemas import ENGINE_VERSION, Alert, AnalysisResult
 from .deps import get_store, mask_alert, mask_param
 

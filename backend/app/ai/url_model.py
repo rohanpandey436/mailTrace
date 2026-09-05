@@ -5,10 +5,10 @@ What this is
 ------------
 A gradient-boosted decision tree over 31 numeric features engineered from a
 :class:`~app.schemas.UrlInfo` (produced by the deterministic extractor in
-``app/engine/urls.py``) and, when it is available, the
+``app/core/link_analyzer.py``) and, when it is available, the
 :class:`~app.schemas.DomainIntel` for that link's registrable domain.  It emits
 ``P(malicious)`` per link; ``score_urls`` reduces that to the worst link in the
-message and ``app/engine/scoring.py`` folds it into the URL term.
+message and ``app/core/scoring.py`` folds it into the URL term.
 
 What it is NOT
 --------------
@@ -35,7 +35,7 @@ Training data (generated, and honest about it)
    the documented deception patterns (IP literals, shorteners, punycode, the
    ``user@host`` trick, abuse-prone TLDs, redirect parameters, executable
    paths, base64 query blobs, excessive sub-domains).
-2. **Seed corpus** (``app/ml/seed_corpus.json``).  Real URLs written into the
+2. **Seed corpus** (``app/ai/seed_corpus.json``).  Real URLs written into the
    message bodies, weakly labelled by the message's own class: a link in a
    Legitimate message is benign, a link in a Phishing/Fraud/Impersonated/
    Suspicious message is malicious *unless* its registrable domain is a known
@@ -79,8 +79,8 @@ already fitted in this process instead of refitting it.
 
 CLI
 ---
-``python -m app.ml.url_model``            retrain and print hold-out metrics
-``python -m app.ml.url_model --report``   also dump gain-ranked feature importances
+``python -m app.ai.url_model``            retrain and print hold-out metrics
+``python -m app.ai.url_model --report``   also dump gain-ranked feature importances
 """
 from __future__ import annotations
 
@@ -100,7 +100,7 @@ from urllib.parse import urlsplit
 
 from ..config import Settings
 from ..config import settings as default_settings
-from ..engine.knowledge import (
+from ..core.knowledge import (
     BRANDS,
     COMMON_URL_HOSTS,
     FREEMAIL_DOMAINS,
@@ -109,7 +109,7 @@ from ..engine.knowledge import (
     URL_SHORTENERS,
     URL_SUSPICIOUS_KEYWORDS,
 )
-from ..engine.urls import (
+from ..core.link_analyzer import (
     BRAND_LEGIT_DOMAINS,
     analyze_url,
     damerau_levenshtein,
@@ -522,7 +522,7 @@ def _sample_rows(cfg: Settings) -> list[tuple[str, str, int]]:
     directory = Path(cfg.samples_dir)
     if not directory.is_dir():
         return rows
-    from ..engine.parser import parse_email  # local: keeps module import cheap
+    from ..core.parser import parse_email  # local: keeps module import cheap
 
     for path in sorted(directory.glob("*.eml")):
         malicious = not path.name.startswith("legit")

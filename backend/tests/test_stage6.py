@@ -14,7 +14,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.api import alerts as alerts_api
-from app.engine import csvexport, virustotal
+from app.utils import csv_exporter as csvexport, virustotal
 from app.main import create_app
 from app.schemas import Alert, AttachmentAnalysis, AttachmentMeta, Severity, ThreatCategory
 
@@ -410,7 +410,7 @@ def test_virustotal_adds_a_finding_when_engines_flag_the_file(cfg, monkeypatch):
 
 
 def test_virustotal_skips_inline_parts_and_caps_the_request_budget(cfg, monkeypatch):
-    from app.engine.parser import RawAttachment
+    from app.core.parser import RawAttachment
 
     cfg.virustotal_key = "key"
     cfg.enable_network = True

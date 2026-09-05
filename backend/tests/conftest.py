@@ -43,7 +43,7 @@ def cfg(tmp_path: Path) -> Settings:
 
 @pytest.fixture
 def store(cfg: Settings):
-    from app.db import Store
+    from app.database.case_manager import Store
 
     handle = Store(cfg.db_path, cfg.evidence_dir)
     yield handle
@@ -69,7 +69,7 @@ def session_cfg(tmp_path_factory: pytest.TempPathFactory) -> Settings:
 @pytest.fixture(scope="session")
 def analyses(session_cfg: Settings) -> dict:
     """Every sample analysed once, offline, without a store."""
-    from app.engine import pipeline
+    from app.core import pipeline
 
     results = {}
     for key, name in SAMPLE_FILES.items():

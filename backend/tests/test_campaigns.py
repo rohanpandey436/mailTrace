@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from app.engine import pipeline
-from app.engine.campaigns import extract_indicators, is_strong, normalize_subject
+from app.core import pipeline
+from app.core.threat_intel import extract_indicators, is_strong, normalize_subject
 
 
 def test_normalize_subject():
@@ -72,7 +72,7 @@ def test_simhash_threshold_calibration(sample, cfg):
     """
     import re
 
-    from app.engine.parser import hamming_distance, parse_email, simhash_hex
+    from app.core.parser import hamming_distance, parse_email, simhash_hex
 
     threshold = cfg.simhash_max_distance
     assert threshold == 12, "the calibration below justifies 12; update both together"

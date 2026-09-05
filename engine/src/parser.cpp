@@ -396,7 +396,7 @@ Node parse_node(std::string_view region, std::string_view default_type,
     // Note the lstrip happens *after* the join and includes CR and LF, so
     // "Subject:\r\n continued" yields "continued", not "\r\n continued".
     // Older CPython releases lstripped only the first line and only blanks;
-    // the import-time self-check in backend/app/engine/parser.py covers a
+    // the import-time self-check in backend/app/core/parser.py covers a
     // header of exactly that shape, so an interpreter that still behaves the
     // old way switches this engine off instead of producing different values.
     std::size_t i = 0;

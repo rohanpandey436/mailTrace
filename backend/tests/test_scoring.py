@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.engine.scoring import RISK_FLOORS, severity_for
+from app.core.scoring import RISK_FLOORS, severity_for
 from app.schemas import SEVERITY_ORDER, Severity, ThreatCategory
 
 

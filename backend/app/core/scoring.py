@@ -23,7 +23,7 @@ Approach
 Everything here is offline and deterministic for identical input, and robust to
 empty sub-reports.  One qualification to the older "no I/O at all" claim: when
 ``xgboost`` is installed and ``Settings.url_model_enabled`` is on, the URL term
-also consults the gradient-boosted link model in ``app/ml/url_model.py``, which
+also consults the gradient-boosted link model in ``app/ai/url_model.py``, which
 loads (and on the very first call fits) a cached joblib bundle from
 ``Settings.data_dir``.  That is the only disk touch, it is cached process-wide
 after the first call, and it never reaches the network.  With the package absent
@@ -57,7 +57,7 @@ from ..schemas import (
     Verdict,
 )
 from .knowledge import BRANDS, FREEMAIL_DOMAINS
-from .urls import registrable_domain
+from .link_analyzer import registrable_domain
 
 log = logging.getLogger("mailtrace.scoring")
 
@@ -295,7 +295,7 @@ def _url_score(urls: UrlAnalysis, domain_intel: list[DomainIntel], url_model: An
 
     Chosen over a plain ``max(rule, 100*P)`` deliberately.  A max would let the
     model overrule a confident low rule verdict on its own, and this model is
-    trained on a generated corpus (see ``app/ml/url_model.py``) -- it has not
+    trained on a generated corpus (see ``app/ai/url_model.py``) -- it has not
     earned that authority.  The blend guarantees the published behaviour can only
     move one way: ``url >= floor`` for every input, because the added term is
     non-negative.  Remove xgboost, or set ``MAILTRACE_URL_MODEL=0``, and
@@ -408,7 +408,7 @@ def component_scores(
 
     ``sender_domain`` (registrable) enables the protected-domain bonus in the
     authentication score; when omitted it is taken from the sender DomainIntel.
-    ``url_model`` is an optional ``app.ml.url_model.UrlModelOutcome``; omitting
+    ``url_model`` is an optional ``app.ai.url_model.UrlModelOutcome``; omitting
     it (or passing None) reproduces the rule-only URL term exactly.
     """
     domain_intel = list(domain_intel or [])
@@ -901,7 +901,7 @@ def _score_urls_with_model(
     if not url_analysis.urls or not getattr(cfg, "url_model_enabled", True):
         return None, None
     try:
-        from ..ml import url_model as url_ml
+        from ..ai import url_model as url_ml
     except Exception:  # noqa: BLE001 - the package ships with the app, but never trust it
         log.debug("URL model package unavailable", exc_info=True)
         return None, None

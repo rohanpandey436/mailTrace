@@ -74,23 +74,23 @@ from an earlier run.
 
 | Requirement area | How MailTrace covers it | Where |
 |---|---|---|
-| Ingest suspicious emails as raw evidence | Multipart upload of one or many `.eml` / `.txt` files, or pasted RFC 822 source; the exact bytes are hashed and stored once under `<data dir>/evidence/<id>.eml` | `POST /api/analyze`, `POST /api/analyze/raw`, `backend/app/engine/parser.py`, `backend/app/db.py` |
-| Header forensics and origin tracing | Every `Received` hop parsed (hosts, IP, protocol, TLS, timestamp), ordered chronologically, per-hop delay and anomalies (negative delay, private IP, missing TLS, forged order), originating IP with confidence and reasoning, `X-Originating-IP` handling | `backend/app/engine/headers.py`, Trace tab |
-| Spoofing detection (SPF / DKIM / DMARC) | `Authentication-Results` parsing plus live SPF evaluation, DKIM signature verification and DMARC policy lookup; relaxed alignment; Return-Path, Reply-To, Message-ID and display-name mismatch checks | `backend/app/engine/auth.py`, `backend/app/engine/headers.py` |
-| Geolocation and infrastructure intelligence | City / region / country, ISP, organisation, ASN and reverse DNS per public hop; Tor exit, VPN / proxy, hosting-provider, DNSBL, open-relay and botnet heuristics; AbuseIPDB with a key; route drawn on a map | `backend/app/engine/geoip.py`, Leaflet map in the UI |
-| Malicious link analysis | URL extraction from text and HTML (anchor text vs. href), lookalike / homoglyph / typosquat / punycode detection, shorteners, IP literals, userinfo tricks, open redirects, obfuscation, suspicious TLDs and keywords, plus an XGBoost link model that can only raise the rule score | `backend/app/engine/urls.py`, `backend/app/ml/url_model.py` |
-| Attachment analysis | Magic-byte sniffing against the declared type, double extensions, executables, macro documents, archives with risky members, password-protected archives, Shannon entropy, hashes | `backend/app/engine/attachments.py` |
-| Domain intelligence | WHOIS age and registrar, DNS (A / MX / NS / SPF / DMARC), free-mail and disposable detection, lookalike-of-brand, abuse-prone TLD tagging. **URLhaus reputation is skipped unless `MAILTRACE_URLHAUS_KEY` is set** - abuse.ch has required an Auth-Key since 2025 and `domain_reputation` returns before making any request without one | `backend/app/engine/domains.py` |
-| NLP and social-engineering analysis | Urgency, fear, authority, secrecy, reward and scarcity lexicons; credential and financial terms; generic greeting; "reply, do not click" pattern; BEC patterns (payment diversion, fake invoice, credential harvesting, executive impersonation) with confidence and evidence phrases | `backend/app/engine/nlp.py` |
-| AI classification with explainability | TF-IDF (word and character n-grams) with logistic regression over a labelled seed corpus; per-class probabilities, exact SHAP token attributions and a second, independent LIME explanation with its surrogate R^2; optional DistilRoBERTa backend | `backend/app/ml/train.py`, `backend/app/ml/lime_text.py`, `backend/app/ml/seed_corpus.json` |
-| Risk scoring and dual validation | Five weighted component scores; deterministic first-match policy; ML corroboration modulates confidence; per-category floors; every step written to `verdict.rationale` | `backend/app/engine/scoring.py` |
+| Ingest suspicious emails as raw evidence | Multipart upload of one or many `.eml` / `.txt` files, or pasted RFC 822 source; the exact bytes are hashed and stored once under `<data dir>/evidence/<id>.eml` | `POST /api/analyze`, `POST /api/analyze/raw`, `backend/app/core/parser.py`, `backend/app/database/case_manager.py` |
+| Header forensics and origin tracing | Every `Received` hop parsed (hosts, IP, protocol, TLS, timestamp), ordered chronologically, per-hop delay and anomalies (negative delay, private IP, missing TLS, forged order), originating IP with confidence and reasoning, `X-Originating-IP` handling | `backend/app/core/header_analyzer.py`, Trace tab |
+| Spoofing detection (SPF / DKIM / DMARC) | `Authentication-Results` parsing plus live SPF evaluation, DKIM signature verification and DMARC policy lookup; relaxed alignment; Return-Path, Reply-To, Message-ID and display-name mismatch checks | `backend/app/core/auth_checker.py`, `backend/app/core/header_analyzer.py` |
+| Geolocation and infrastructure intelligence | City / region / country, ISP, organisation, ASN and reverse DNS per public hop; Tor exit, VPN / proxy, hosting-provider, DNSBL, open-relay and botnet heuristics; AbuseIPDB with a key; route drawn on a map | `backend/app/core/geoip_mapper.py`, Leaflet map in the UI |
+| Malicious link analysis | URL extraction from text and HTML (anchor text vs. href), lookalike / homoglyph / typosquat / punycode detection, shorteners, IP literals, userinfo tricks, open redirects, obfuscation, suspicious TLDs and keywords, plus an XGBoost link model that can only raise the rule score | `backend/app/core/link_analyzer.py`, `backend/app/ai/url_model.py` |
+| Attachment analysis | Magic-byte sniffing against the declared type, double extensions, executables, macro documents, archives with risky members, password-protected archives, Shannon entropy, hashes | `backend/app/core/file_analyzer.py` |
+| Domain intelligence | WHOIS age and registrar, DNS (A / MX / NS / SPF / DMARC), free-mail and disposable detection, lookalike-of-brand, abuse-prone TLD tagging. **URLhaus reputation is skipped unless `MAILTRACE_URLHAUS_KEY` is set** - abuse.ch has required an Auth-Key since 2025 and `domain_reputation` returns before making any request without one | `backend/app/core/domain_intel.py` |
+| NLP and social-engineering analysis | Urgency, fear, authority, secrecy, reward and scarcity lexicons; credential and financial terms; generic greeting; "reply, do not click" pattern; BEC patterns (payment diversion, fake invoice, credential harvesting, executive impersonation) with confidence and evidence phrases | `backend/app/core/ai_engine.py` |
+| AI classification with explainability | TF-IDF (word and character n-grams) with logistic regression over a labelled seed corpus; per-class probabilities, exact SHAP token attributions and a second, independent LIME explanation with its surrogate R^2; optional DistilRoBERTa backend | `backend/app/ai/model_trainer.py`, `backend/app/ai/lime_explainer.py`, `backend/app/ai/seed_corpus.json` |
+| Risk scoring and dual validation | Five weighted component scores; deterministic first-match policy; ML corroboration modulates confidence; per-category floors; every step written to `verdict.rationale` | `backend/app/core/scoring.py` |
 | Source attribution | Spoofed domain / lookalike domain / compromised account / direct attacker infrastructure / legitimate sender, with confidence, reasoning and pivot indicators | `scoring.attribute_source` |
-| Threat-intel correlation and campaign detection | Normalised IOC keys per email, overlap search across all prior cases, automatic campaign creation and merging, shared-indicator pivots | `backend/app/engine/campaigns.py` |
-| Relationship graph | Email, address, domain, IP, ASN, URL, attachment and campaign nodes with typed edges; merged per campaign | `backend/app/engine/graph.py`, `GET /api/graph` |
-| Forensic reporting and chain of custody | Hash-linked custody ledger (`ingested`, `analyzed`, `viewed_unmasked`, `exported`, `report_generated`), ledger verification, JSON / HTML / PDF report with evidence integrity, timeline, IOCs, actions and legal notes | `backend/app/db.py`, `backend/app/engine/reporting.py`, `/api/reports`, `/api/custody` |
-| Privacy | PII masking (addresses, names, phone numbers, Aadhaar, PAN, card numbers) on every API representation, configurable default, unmasked views recorded in custody | `backend/app/engine/privacy.py`, `?mask=` |
+| Threat-intel correlation and campaign detection | Normalised IOC keys per email, overlap search across all prior cases, automatic campaign creation and merging, shared-indicator pivots | `backend/app/core/threat_intel.py` |
+| Relationship graph | Email, address, domain, IP, ASN, URL, attachment and campaign nodes with typed edges; merged per campaign | `backend/app/core/graph_builder.py`, `GET /api/graph` |
+| Forensic reporting and chain of custody | Hash-linked custody ledger (`ingested`, `analyzed`, `viewed_unmasked`, `exported`, `report_generated`), ledger verification, JSON / HTML / PDF report with evidence integrity, timeline, IOCs, actions and legal notes | `backend/app/database/case_manager.py`, `backend/app/utils/pdf_generator.py`, `/api/reports`, `/api/custody` |
+| Privacy | PII masking (addresses, names, phone numbers, Aadhaar, PAN, card numbers) on every API representation, configurable default, unmasked views recorded in custody | `backend/app/utils/pii_masker.py`, `?mask=` |
 | Real-time alerting and dashboard | Alerts above a configurable risk threshold pushed to the browser over a WebSocket (with a Server-Sent-Events fallback) and as JSON webhooks to a SIEM or Slack; KPI dashboard, filterable case list, campaign views | `backend/app/api/alerts.py`, `frontend/index.html` |
-| Output and act | CSV export of one case's report or of the whole filtered case list (every cell guarded against spreadsheet formula injection); quarantine / block decisions recorded in the custody ledger with the IOCs to hand to whatever enforces | `backend/app/engine/csvexport.py`, `backend/app/api/analyze.py` |
+| Output and act | CSV export of one case's report or of the whole filtered case list (every cell guarded against spreadsheet formula injection); quarantine / block decisions recorded in the custody ledger with the IOCs to hand to whatever enforces | `backend/app/utils/csv_exporter.py`, `backend/app/api/analyze.py` |
 
 ### Stage-by-stage compliance
 
@@ -103,7 +103,7 @@ the configuration `deploy/.env.example` ships.
 | Stage | Specified | Implementation | Measured (2026-09-05, this machine) |
 |---|---|---|---|
 | 1-2 | Native ingestion, sub-30 ms parse, headers/body/attachments separated | `parser.parse_email` times itself into `ParsedEmail.parse_ms` | 1.2-3.1 ms across the five samples (best of five repeats each), 10-25x headroom |
-| 3A | DistilRoBERTa NLP intent, Shannon entropy > 7.0, SHAP token weights | Linear classifier with **exact** SHAP by default plus a from-scratch LIME; DistilRoBERTa behind `MAILTRACE_TRANSFORMER_MODEL` (dormant, see section 9); `attachments.shannon_entropy` against `Settings.entropy_threshold` | `python -m app.ml.train`: SHAP additivity residual 4.885e-15 over 34,643 features; `claim_form.pdf.exe` reads 7.90 bits/byte and trips `high_entropy` |
+| 3A | DistilRoBERTa NLP intent, Shannon entropy > 7.0, SHAP token weights | Linear classifier with **exact** SHAP by default plus a from-scratch LIME; DistilRoBERTa behind `MAILTRACE_TRANSFORMER_MODEL` (dormant, see section 9); `attachments.shannon_entropy` against `Settings.entropy_threshold` | `python -m app.ai.model_trainer`: SHAP additivity residual 4.885e-15 over 34,643 features; `claim_form.pdf.exe` reads 7.90 bits/byte and trips `high_entropy` |
 | 3B | Header chain, MaxMind DB, hop latency, time-delta anomalies, VPN/TOR | `geoip.maxmind_lookup` preferred when a `.mmdb` is configured (dormant - no database file ships), ip-api fallback; per-hop `delay_seconds` and anomaly flags | The `negative_delay` anomaly fires on hop 2 of the phishing sample; origin `45.148.10.72` selected at confidence 0.9 |
 | 3C | WHOIS age, DNS/MX alignment, lookalike detection, blacklists | `domains.py` (WHOIS over port 43, dnspython, `is_lookalike`), Spamhaus and five other DNSBL zones; URLhaus needs a key | Offline: `sbi-kyc-update.xyz` is flagged an `extra_token` imitation of `sbi` and `acme-corp-in.com` of `acme-corp.in`. WHOIS/DNS ages need the network and were **not** measured in this pass |
 | 4 | Calibrated 0-100 across 5 pillars with an explicit weighted formula | `RiskBreakdown.auth/text/url/network/entropy` at 0.20/0.35/0.25/0.10/0.10, normalised from `MAILTRACE_WEIGHT_AUTH/_TEXT/_URL/_NETWORK/_ENTROPY` | Sample verdicts **83 / 72 / 60 / 45 / 4** (phishing / BEC / lottery / CEO / GitHub) - see the note below |
@@ -143,7 +143,7 @@ folded into the network term and the AI signal into the text term.)
                           |  run_in_threadpool (one message at a time per request)
                           v
    +----------------------+---------------------------------------------------------+
-   |  backend/app/engine/pipeline.py                                                |
+   |  backend/app/core/pipeline.py                                                |
    |                                                                                |
    |  1 parser -> 2 headers -> 3 auth -> 4 urls (link extraction)                    |
    |     -> 5 three engines concurrently:  3A attachments+nlp(+ML)                   |
@@ -154,7 +154,7 @@ folded into the network term and the AI signal into the text term.)
                  |                                                |
                  v                                                v
    +-------------+--------------------+       +-------------------+-----------------+
-   |  backend/app/db.py  SQLite (WAL) |       |  live enrichment (optional)         |
+   |  backend/app/database/case_manager.py  SQLite (WAL) |       |  live enrichment (optional)         |
    |  emails, indicators, campaigns   |       |  DNS (dnspython)   WHOIS (sockets)  |
    |  custody ledger, alerts, cache   |       |  ip-api.com   Tor exit list   DNSBL |
    |  <data dir>/evidence/<id>.eml    |       |  AbuseIPDB / URLhaus / VT (keys)    |
@@ -166,13 +166,13 @@ folded into the network term and the AI signal into the text term.)
 Two independent judges look at every email, and the disagreement between them is
 a feature rather than a bug.
 
-**1. A trained machine-learning model** (`backend/app/ml/train.py`). Text is
+**1. A trained machine-learning model** (`backend/app/ai/model_trainer.py`). Text is
 turned into numbers with TF-IDF over word pairs and character triples, and a
 multinomial logistic-regression classifier assigns one of the five categories. It
 is trained on this machine the first time the server starts, from the **249
-labelled emails** in `backend/app/ml/seed_corpus.json`, and cached to
+labelled emails** in `backend/app/ai/seed_corpus.json`, and cached to
 `<data dir>/model.joblib`. Nothing is downloaded and no API is called. Measured
-in this pass with `python -m app.ml.train` on a 20% stratified hold-out the
+in this pass with `python -m app.ai.model_trainer` on a 20% stratified hold-out the
 model never sees during training:
 
 | Class | Precision | Recall |
@@ -184,7 +184,7 @@ model never sees during training:
 | Suspicious | 0.80 | 0.80 |
 
 Overall accuracy is **0.900**. Reproduce it any time with
-`cd backend && python -m app.ml.train`.
+`cd backend && python -m app.ai.model_trainer`.
 
 Every prediction carries **exact SHAP values**. For a linear model the Shapley
 value of a feature is `phi_i = coef_i * (x_i - E[x_i])`, where the expectation is
@@ -197,7 +197,7 @@ and "login" argued *against* Impersonated and *toward* Phishing, which a plain
 coefficient-times-feature view cannot express.
 
 Beside SHAP the linear backend also fits **LIME**
-(`backend/app/ml/lime_text.py`, a from-scratch implementation - the `lime`
+(`backend/app/ai/lime_explainer.py`, a from-scratch implementation - the `lime`
 package is an sdist-only build that drags in matplotlib and scikit-image). Where
 SHAP reads the coefficients in closed form, LIME perturbs the message and fits a
 local weighted surrogate to what the whole pipeline actually does, reporting its
@@ -215,7 +215,7 @@ configured, the transformer takes over and the linear model becomes the fallback
 token attributions there come from occlusion, and are labelled as such rather
 than being called SHAP, and LIME is skipped entirely.
 
-**2. A rule engine** (`backend/app/engine/nlp.py`, `scoring.py` and friends).
+**2. A rule engine** (`backend/app/core/ai_engine.py`, `scoring.py` and friends).
 This is where the keyword lists live. They are deliberately not the model, for
 three reasons:
 
@@ -239,10 +239,10 @@ p=0.52, and the verdict is reported at **0.70** confidence with a
 `dual_validation_disagreement` finding.
 
 Scaling up is a matter of data, not architecture. Point
-`python -m app.ml.train --csv your_data.csv` at a larger labelled corpus and the
+`python -m app.ai.model_trainer --csv your_data.csv` at a larger labelled corpus and the
 same pipeline retrains, with the rules unchanged underneath.
 
-### Pipeline order (`backend/app/engine/pipeline.py`)
+### Pipeline order (`backend/app/core/pipeline.py`)
 
 1. `parser.parse_email` - structure, bodies, attachment bytes, raw SHA-256 / MD5,
    SimHash (and TLSH when py-tlsh is installed)
@@ -417,7 +417,7 @@ Projections: `CaseSummary` (case-list rows, stored as indexed columns),
 `ForensicReport` (executive summary, key indicators, evidence integrity,
 timeline, actions, legal notes, custody, full analysis) and `DashboardStats`.
 
-Storage (`backend/app/db.py`): tables `emails` (summary columns plus
+Storage (`backend/app/database/case_manager.py`): tables `emails` (summary columns plus
 `result_json`), `indicators`, `campaigns`, `campaign_members`, `custody`,
 `alerts` and `cache`; raw messages under `<data dir>/evidence/<id>.eml`.
 
@@ -425,7 +425,7 @@ Storage (`backend/app/db.py`): tables `emails` (summary columns plus
 
 **The five pillars** (0-100 each, exposed as `verdict.breakdown`). These are the
 fields of `RiskBreakdown` and the terms of the deck's threat-score formula; the
-table is written from `backend/app/engine/scoring.py`:
+table is written from `backend/app/core/scoring.py`:
 
 | Pillar | Default weight | Derived from |
 |---|---|---|
@@ -502,7 +502,7 @@ credentials, preserve the evidence, report to CERT-In and cybercrime.gov.in.
 
 ## 7. Privacy and chain of custody
 
-**PII masking** (`backend/app/engine/privacy.py`). Email addresses become
+**PII masking** (`backend/app/utils/pii_masker.py`). Email addresses become
 `r***n@domain.tld`, names become initials, and phone numbers, Aadhaar numbers, PAN
 numbers and Luhn-valid card numbers are masked. Masking is applied to addresses,
 header values, bodies, subject, finding details and evidence, graph address nodes
@@ -513,7 +513,7 @@ value. `?mask=true|false` on every endpoint that returns analysis data overrides
 is the default and an analyst explicitly requests the unmasked analysis, a
 `viewed_unmasked` custody event is written.
 
-**Chain of custody** (`backend/app/db.py`). An append-only ledger in which every
+**Chain of custody** (`backend/app/database/case_manager.py`). An append-only ledger in which every
 row's hash is `sha256(prev_hash | seq | email_id | timestamp | actor | action |
 detail_json | evidence_sha256)` (the fields joined with `|`; `detail_json` is the
 canonical JSON of the detail dictionary, sorted keys and compact separators,
@@ -605,7 +605,7 @@ follow the quick start.
 
 | Capability | Notes |
 |---|---|
-| RFC 822 / MIME parsing, hashes, SimHash | Pure Python (`backend/app/engine/parser.py`) |
+| RFC 822 / MIME parsing, hashes, SimHash | Pure Python (`backend/app/core/parser.py`) |
 | Received-chain forensics, origin selection | Offline |
 | SPF / DKIM / DMARC from `Authentication-Results` | Offline; live SPF, DKIM and DMARC lookups when the network is on |
 | URL extraction, lookalike / homoglyph / typosquat detection | Offline |
@@ -791,8 +791,8 @@ Run these from `backend/`:
 
 ```bash
 cd backend
-python -m app.ml.train                                   # retrain from app/ml/seed_corpus.json, print holdout accuracy
-python -m app.ml.train --csv my_mails.csv --text-col text --label-col label --out data/model.joblib
+python -m app.ai.model_trainer                                   # retrain from app/ai/seed_corpus.json, print holdout accuracy
+python -m app.ai.model_trainer --csv my_mails.csv --text-col text --label-col label --out data/model.joblib
 ```
 
 The CSV needs a text column (`body` or `text`, optionally with a `subject` column)
@@ -805,13 +805,13 @@ stores the SHA-256 of the corpus it was trained from along with the expected
 feature vector the SHAP values are computed against.
 
 The running server always reconciles `<data dir>/model.joblib` with
-`app/ml/seed_corpus.json`: at startup and on first use it reloads the cached model
+`app/ai/seed_corpus.json`: at startup and on first use it reloads the cached model
 only while the stored corpus hash matches the seed corpus, otherwise it retrains
 from the seed corpus. To change what the server uses, extend
-`app/ml/seed_corpus.json` (same `{"subject", "body", "label"}` objects), delete
+`app/ai/seed_corpus.json` (same `{"subject", "body", "label"}` objects), delete
 `data/model.joblib` and restart. Use `--csv ... --out <other path>` for
 experiments and benchmarks on larger corpora. The classifier only modulates
-confidence; the rule policy in `app/engine/scoring.py` always decides the category.
+confidence; the rule policy in `app/core/scoring.py` always decides the category.
 
 ## 14. Running the tests
 
@@ -840,7 +840,7 @@ output on all five demo messages. See section 9 and
 ## 15. Limitations and honest notes
 
 - **Seed corpus.** The classifier is trained on the 249 synthetic examples in
-  `backend/app/ml/seed_corpus.json`. It is a corroborating signal and an
+  `backend/app/ai/seed_corpus.json`. It is a corroborating signal and an
   explainability aid, not a production model; retrain it on real labelled mail
   before relying on its probabilities.
 - **The dashboard needs internet.** Tailwind, Leaflet, d3, the Inter font and the

@@ -17,7 +17,7 @@ Order of operations
      3A  attachments + nlp   (entropy, intent, ML classification, SHAP)
      3B  geoip               (origin trace, VPN/TOR, hop timing)
      3C  domains             (WHOIS age, DNS/MX, lookalikes, reputation)
-6. campaigns.correlate        (threat-intel + prior-incident correlation)
+6. threat_intel.correlate        (threat-intel + prior-incident correlation)
 7. scoring          -> verdict, attribution, merged findings
 8. graph            -> relationship graph
 9. persist, cluster into campaign, chain-of-custody events
@@ -36,7 +36,7 @@ from ..config import settings as default_settings
 from ..schemas import ENGINE_VERSION, AnalysisResult, AttachmentAnalysis, InfraAnalysis, NlpAnalysis
 
 if TYPE_CHECKING:  # pragma: no cover
-    from ..db import Store
+    from ..database.case_manager import Store
 
 log = logging.getLogger("mailtrace.pipeline")
 
@@ -65,7 +65,11 @@ def analyze_bytes(
     ``store`` may be None (pure analysis, nothing persisted, no campaign
     correlation).  ``actor`` is recorded in the chain of custody.
     """
-    from . import attachments, auth, campaigns, domains, geoip, graph, headers, nlp, parser, scoring, urls, virustotal
+    from ..utils import virustotal
+    from . import (
+        ai_engine, auth_checker, domain_intel, file_analyzer, geoip_mapper, graph_builder,
+        header_analyzer, link_analyzer, parser, scoring, threat_intel,
+    )
 
     cfg = cfg or default_settings
     t0 = time.perf_counter()
@@ -75,10 +79,10 @@ def analyze_bytes(
     parsed, raw_attachments = parser.parse_email(raw)
 
     # 2. Header / routing analysis (offline) ------------------------------
-    header_analysis = headers.analyze_headers(parsed, cfg)
+    header_analysis = header_analyzer.analyze_headers(parsed, cfg)
 
     # 3. Authentication ---------------------------------------------------
-    auth_result, auth_findings = auth.evaluate_auth(parsed, header_analysis, cfg, raw)
+    auth_result, auth_findings = auth_checker.evaluate_auth(parsed, header_analysis, cfg, raw)
     header_analysis.auth = auth_result
     header_analysis.findings.extend(auth_findings)
 
@@ -86,8 +90,8 @@ def analyze_bytes(
     # Cheap, offline, and a prerequisite of two of the three engines below:
     # the AI core scores the lure links, and the domain engine enriches the
     # hosts they point at.
-    url_analysis = urls.analyze_urls(parsed, cfg)
-    domain_targets = domains.collect_domains(parsed, header_analysis, url_analysis, cfg)
+    url_analysis = link_analyzer.analyze_urls(parsed, cfg)
+    domain_targets = domain_intel.collect_domains(parsed, header_analysis, url_analysis, cfg)
 
     def run_ai_core() -> tuple[Any, Any]:
         """Engine 3A: attachment inspection (including Shannon entropy) and the
@@ -98,8 +102,8 @@ def analyze_bytes(
         ``MAILTRACE_VIRUSTOTAL_KEY`` configured it returns without making a
         request, which is the deployed default.
         """
-        atts = attachments.analyze_attachments(raw_attachments, cfg)
-        content = nlp.analyze_content(parsed, url_analysis, atts, cfg)
+        atts = file_analyzer.analyze_attachments(raw_attachments, cfg)
+        content = ai_engine.analyze_content(parsed, url_analysis, atts, cfg)
         virustotal.enrich(atts, raw_attachments, cfg, store)
         return atts, content
 
@@ -110,8 +114,8 @@ def analyze_bytes(
     # degrades that engine's contribution and never aborts the analysis.
     with ThreadPoolExecutor(max_workers=3, thread_name_prefix="mt-engine") as pool:
         fut_ai = pool.submit(run_ai_core)          # 3A - AI core
-        fut_infra = pool.submit(geoip.analyze_infrastructure, header_analysis, cfg, store)  # 3B - GeoIP/route
-        fut_domains = pool.submit(domains.analyze_domains, domain_targets, cfg, store)      # 3C - domain intel
+        fut_infra = pool.submit(geoip_mapper.analyze_infrastructure, header_analysis, cfg, store)  # 3B - GeoIP/route
+        fut_domains = pool.submit(domain_intel.analyze_domains, domain_targets, cfg, store)      # 3C - domain intel
         att_analysis, nlp_analysis = _safe_result(fut_ai, (None, None), "ai_core")
         infra = _safe_result(fut_infra, None, "geoip")
         domain_intel = _safe_result(fut_domains, [], "domains")
@@ -125,7 +129,7 @@ def analyze_bytes(
     # 6. Threat-intel / prior-incident correlation ------------------------
     # cfg is passed explicitly so the fuzzy-matching thresholds come from this
     # analysis's settings rather than the module-level singleton.
-    intel = campaigns.correlate(
+    intel = threat_intel.correlate(
         email_id, parsed, header_analysis, url_analysis, att_analysis, domain_intel, infra, store, cfg
     )
 
@@ -135,7 +139,7 @@ def analyze_bytes(
     )
 
     # 8. Relationship graph -----------------------------------------------
-    relationship_graph = graph.build_graph(
+    relationship_graph = graph_builder.build_graph(
         email_id, parsed, header_analysis, url_analysis, att_analysis, domain_intel, infra, intel, verdict
     )
 
@@ -166,7 +170,7 @@ def analyze_bytes(
             {"filename": filename, "size": len(raw), "sha256": parsed.raw_sha256, "md5": parsed.raw_md5},
             parsed.raw_sha256,
         )
-        campaign_id = campaigns.assign_campaign(result, store, cfg)
+        campaign_id = threat_intel.assign_campaign(result, store, cfg)
         result.campaign_id = campaign_id
         result.intel.campaign_id = campaign_id
         result.processing_ms = int((time.perf_counter() - t0) * 1000)

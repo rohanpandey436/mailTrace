@@ -17,7 +17,7 @@ double shannon_entropy(const std::uint8_t* data, std::size_t len) noexcept {
     }
 
     // Symbols are visited in byte order (0x00 .. 0xff), the same order the
-    // Python implementation in backend/app/engine/attachments.py uses, so the
+    // Python implementation in backend/app/core/file_analyzer.py uses, so the
     // floating-point summation order matches.  Results are still only expected
     // to agree to within normal double rounding, which is why the Python
     // pipeline keeps computing its own value rather than calling this one.

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from app.engine.headers import analyze_headers, extract_ips, is_private_ip, parse_received
-from app.engine.parser import parse_email
+from app.core.header_analyzer import analyze_headers, extract_ips, is_private_ip, parse_received
+from app.core.parser import parse_email
 
 
 def test_is_private_ip():

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from app.engine.auth import evaluate_auth, parse_authentication_results, parse_dkim_signature
-from app.engine.headers import analyze_headers
-from app.engine.parser import parse_email
+from app.core.auth_checker import evaluate_auth, parse_authentication_results, parse_dkim_signature
+from app.core.header_analyzer import analyze_headers
+from app.core.parser import parse_email
 from app.schemas import HeaderField
 
 

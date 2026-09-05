@@ -5,7 +5,7 @@
 // Two entry points, with different jobs:
 //
 //   dissect(raw)        Structural only.  This is what
-//                       backend/app/engine/parser.py consumes: header
+//                       backend/app/core/parser.py consumes: header
 //                       name/value pairs and raw body byte ranges, with the
 //                       tree shape CPython's email.feedparser would produce.
 //                       It performs no decoding at all, so the Python side can
@@ -43,7 +43,7 @@ namespace {
 #endif
 constexpr const char* kVersion = MAILTRACE_ENGINE_VERSION;
 
-// The dict schema that backend/app/engine/parser.py expects.  Bump this when
+// The dict schema that backend/app/core/parser.py expects.  Bump this when
 // the shape of dissect()'s output changes; the Python adapter refuses to use an
 // engine whose schema it does not recognise.
 constexpr int kDissectSchema = 1;
@@ -220,7 +220,7 @@ void flatten(const mailtrace::Node& node, std::vector<FlatPart>& out, std::size_
 PYBIND11_MODULE(mailtrace_engine, m) {
     m.doc() =
         "MailTrace C++20 parse engine: RFC 5322 / RFC 2046 dissection, SHA-256 and Shannon entropy.\n"
-        "Optional: backend/app/engine/parser.py falls back to a pure-Python parser when this module "
+        "Optional: backend/app/core/parser.py falls back to a pure-Python parser when this module "
         "is not importable, and both paths produce identical results.";
 
     m.attr("__version__") = kVersion;

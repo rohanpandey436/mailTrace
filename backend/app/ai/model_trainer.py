@@ -57,8 +57,8 @@ happens inside functions and surfaces as ``ImportError`` to the caller
 
 CLI
 ---
-``python -m app.ml.train``                      retrain from the seed corpus
-``python -m app.ml.train --csv data.csv``       retrain from a CSV with
+``python -m app.ai.model_trainer``                      retrain from the seed corpus
+``python -m app.ai.model_trainer --csv data.csv``       retrain from a CSV with
 ``subject``/``body`` (or ``text``) and ``label`` columns; prints hold-out accuracy.
 """
 from __future__ import annotations

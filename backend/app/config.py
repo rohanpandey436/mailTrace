@@ -103,7 +103,7 @@ class Settings:
     # Stage 2/TRACE: VirusTotal v3 file-hash reputation for attachments. Empty
     # (the default) disables the lookup completely - no request is made and the
     # analysis is byte-for-byte what it was before. Only SHA-256 digests are
-    # ever sent; see app/engine/virustotal.py for why the file itself is not.
+    # ever sent; see app/utils/virustotal.py for why the file itself is not.
     virustotal_key: str = ""
     # Stage 3B: a local MaxMind GeoLite2-City database is used first when present;
     # the ip-api.com service is the fallback so the tool works with no database.
@@ -120,7 +120,7 @@ class Settings:
     url_model_enabled: bool = True
     # Stage 3A: LIME, the sampling-based second explanation beside exact SHAP.
     # It costs one batched predict_proba over `lime_samples` perturbations per
-    # message, so it is switchable; see app/ml/lime_text.py for the measured cost.
+    # message, so it is switchable; see app/ai/lime_explainer.py for the measured cost.
     lime_enabled: bool = True
     lime_samples: int = 160
     entropy_threshold: float = 7.0
@@ -179,7 +179,7 @@ class Settings:
 
     @property
     def corpus_path(self) -> Path:
-        return BASE_DIR / "app" / "ml" / "seed_corpus.json"
+        return BASE_DIR / "app" / "ai" / "seed_corpus.json"
 
     @property
     def static_dir(self) -> Path:

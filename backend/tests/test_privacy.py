@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.engine.privacy import mask_email, mask_name, mask_result, mask_text
+from app.utils.pii_masker import mask_email, mask_name, mask_result, mask_text
 
 
 def test_mask_email_and_name():

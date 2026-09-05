@@ -113,7 +113,7 @@ curl -s https://your-instance/api/health | python -m json.tool
 Or from Python:
 
 ```python
-from app.engine import parser
+from app.core import parser
 print(parser.engine_status())
 # {'native_engine': True, 'native_engine_version': '1.0.0',
 #  'native_engine_status': 'active', 'parsed_native': 12,
@@ -165,7 +165,7 @@ That is the guard working, not a bug; `render.yaml` therefore pins Python 3.13.
 
 ## The fallback is automatic, and the results are identical
 
-`backend/app/engine/parser.py` imports the extension inside a `try`. When it is
+`backend/app/core/parser.py` imports the extension inside a `try`. When it is
 missing, `parse_email` runs the pure-Python parser it always ran. When it is
 present, the C++ finds the header and body byte ranges and Python assembles
 them into a real `email.message.Message` tree — *the same object the standard

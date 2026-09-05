@@ -32,7 +32,7 @@ from starlette.requests import ClientDisconnect
 from .api import alerts, analyze, cases, reports
 from .config import Settings
 from .config import settings as default_settings
-from .db import Store
+from .database.case_manager import Store
 from .schemas import ENGINE_VERSION
 
 log = logging.getLogger("mailtrace.main")
@@ -43,7 +43,7 @@ def _warm_model(cfg: Settings) -> None:
 
     def run() -> None:
         try:
-            from .ml import train
+            from .ai import model_trainer as train
 
             train.load_or_train(cfg)
             log.info("ML classifier ready (%s)", cfg.model_path)
@@ -133,7 +133,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         # Imported inside the handler so the reported state is always the
         # parser's live state and main.py keeps no import-time dependency on
         # the analysis engine.
-        from .engine import parser
+        from .core import parser
 
         return {
             "status": "ok",

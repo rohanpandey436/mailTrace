@@ -60,7 +60,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator, Optional
 
-from .schemas import (
+from ..schemas import (
     CASE_STATUSES,
     Alert,
     AnalysisResult,

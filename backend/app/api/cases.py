@@ -14,9 +14,9 @@ from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from ..db import Store
-from ..engine import graph as graph_engine
-from ..engine.privacy import mask_result
+from ..database.case_manager import Store
+from ..core import graph_builder as graph_engine
+from ..utils.pii_masker import mask_result
 from ..schemas import AnalysisResult, AttributionGraph, Campaign
 from .deps import get_store, mask_param, mask_summary
 

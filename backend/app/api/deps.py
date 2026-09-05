@@ -15,8 +15,8 @@ from typing import Optional
 from fastapi import HTTPException, Query, Request
 
 from ..config import Settings
-from ..db import Store
-from ..engine.privacy import mask_email, mask_text
+from ..database.case_manager import Store
+from ..utils.pii_masker import mask_email, mask_text
 from ..schemas import Alert, CaseSummary
 
 # Actor recorded in the chain of custody when a request carries no identity.

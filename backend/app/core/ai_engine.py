@@ -12,21 +12,21 @@ Approach
    structural signals (links, attachments, sender/Reply-To relationship,
    display name): payment diversion, fake invoice, credential harvesting and
    executive impersonation.  Evidence lists quote the phrases actually found.
-3. The classifier (``app.ml.train``) supplies a category, class probabilities
+3. The classifier (``app.ai.model_trainer``) supplies a category, class probabilities
    and signed token-level attributions.  Two backends, picked in this order:
 
    * ``transformer`` - a DistilRoBERTa (or other) sequence-classification model,
      used only when ``Settings.transformer_model`` is set.  Its attributions are
      occlusion deltas, not Shapley values, so the method is named in
      ``ml_model`` and in the finding evidence.  Off by default: `transformers`
-     and `torch` are not in requirements.txt (see ``app/ml/train.py``).
+     and `torch` are not in requirements.txt (see ``app/ai/model_trainer.py``).
    * ``linear`` - the bundled TF-IDF + logistic-regression model, whose
      attributions are *exact* SHAP values ``phi_i = w_i * (x_i - E[x_i])``.
 
    When scikit-learn is unavailable the module degrades to a documented
    heuristic probability estimate, ``ml_backend="unavailable"`` and no weights.
 3b. On the linear backend a **second, independent explanation** is fitted:
-   LIME (``app/ml/lime_text.py``, a from-scratch implementation - see that
+   LIME (``app/ai/lime_explainer.py``, a from-scratch implementation - see that
    module for why the ``lime`` package is not used).  Where SHAP reads the
    model's coefficients in closed form, LIME perturbs the message, watches what
    the whole pipeline actually does, and fits a local weighted surrogate to that
@@ -58,7 +58,7 @@ from ..schemas import (
     UrlAnalysis,
 )
 from .knowledge import EXEC_TITLES, FREEMAIL_DOMAINS
-from .urls import registrable_domain
+from .link_analyzer import registrable_domain
 
 log = logging.getLogger("mailtrace.nlp")
 
@@ -497,7 +497,7 @@ def _run_lime(pipeline, text: str, label: str, cfg: Settings):  # type: ignore[n
     if not getattr(cfg, "lime_enabled", True):
         return None
     try:
-        from ..ml import lime_text
+        from ..ai import lime_explainer as lime_text
     except ImportError:  # pragma: no cover - ships with the app
         log.debug("LIME module unavailable", exc_info=True)
         return None
@@ -516,7 +516,7 @@ def _run_model(text: str, cfg: Settings) -> _ModelOutcome:
     ``ml.lime_text.LimeExplanation`` or None.
     """
     try:
-        from ..ml import train
+        from ..ai import model_trainer as train
     except ImportError as exc:  # pragma: no cover - the package ships with the app
         log.warning("ML package unavailable (%s); using rule heuristics", exc)
         return None, {}, [], [], "unavailable", "unavailable", None
