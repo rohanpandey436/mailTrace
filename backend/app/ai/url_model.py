@@ -70,7 +70,7 @@ Caching
 Same bundle convention as the text model: a joblib dict at
 ``Settings.url_model_path`` carrying the fitted estimator, the feature-name
 list, the row count and a ``corpus_sha256`` fingerprint.  The fingerprint
-covers the seed corpus, the sample ``.eml`` files, ``engine/knowledge.py`` (the
+covers the seed corpus, the sample ``.eml`` files, ``core/knowledge.py`` (the
 single source of truth for brands, TLDs, shorteners and keywords) and the
 feature list itself, so editing any of them retrains automatically.  The
 in-process cache is keyed on that fingerprint rather than on the file path, so
@@ -610,7 +610,7 @@ def dataset_fingerprint(cfg: Settings | None = None) -> str:
 
     Cheap on purpose (a handful of file reads, no featurisation) because it is
     checked on every ``load_or_train``: the seed corpus, the sample ``.eml``
-    files, ``engine/knowledge.py`` and the feature list.  Editing any of them
+    files, ``core/knowledge.py`` and the feature list.  Editing any of them
     invalidates the cached bundle exactly as editing the text corpus does.
     """
     cfg = cfg or default_settings
@@ -618,7 +618,7 @@ def dataset_fingerprint(cfg: Settings | None = None) -> str:
     digest.update(MODEL_VERSION.encode())
     digest.update("\n".join(FEATURE_NAMES).encode())
     digest.update(_sha256_file(cfg.corpus_path).encode())
-    digest.update(_sha256_file(Path(__file__).resolve().parent.parent / "engine" / "knowledge.py").encode())
+    digest.update(_sha256_file(Path(__file__).resolve().parent.parent / "core" / "knowledge.py").encode())
     directory = Path(cfg.samples_dir)
     if directory.is_dir():
         for path in sorted(directory.glob("*.eml")):

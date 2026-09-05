@@ -1,0 +1,21 @@
+# Line-ending policy. Later rules win, so the general case comes first and the
+# exceptions follow.
+* text=auto
+
+# Email fixtures must never be converted. RFC 5322 line endings are part of the
+# message: the parser's header folding, boundary matching and body hashing all
+# read the exact bytes, the C++ engine is checked byte-for-byte against
+# CPython's parser on these files, and app/ai/url_model.py hashes them into the
+# dataset fingerprint that decides whether the committed ONNX graph still
+# describes its own inputs.
+#
+# Without this, a Windows checkout (core.autocrlf=true) and a Linux one see
+# different bytes for the same fixture - which is exactly what happened:
+# samples/fraud_lottery_advance_fee.eml was stored LF, checked out CRLF, and the
+# ONNX graph exported on Windows was then refused on Render.
+*.eml -text
+
+# Model artefacts and databases are binary; a byte changed is a file broken.
+*.onnx binary
+*.mmdb binary
+*.joblib binary
