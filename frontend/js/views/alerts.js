@@ -1,98 +1,87 @@
 // @ts-check
 /** Alerts: the list, the unread badges, and the "mark as seen" action. */
 import { api, errorMessage } from "../api.js";
-import { $, html, mount, must, on } from "../dom.js";
 import { formatDate } from "../format.js";
-import { session } from "../state.js";
-import { categoryChip, chip, emptyState, pageHead, riskBar, skeleton } from "../ui/primitives.js";
+import { useAsync } from "../hooks.js";
+import { subscribeToAlerts } from "../live-feed.js";
+import { Fragment, html, useEffect, useState } from "../react.js";
+import { unreadAlerts } from "../state.js";
+import { categoryChip, chip, emptyState, errorState, pageHead, riskBar, skeleton } from "../ui/primitives.js";
 import { toast } from "../ui/toast.js";
 
 /** @typedef {import('../types.js').Alert} Alert */
 
 const LIST_LIMIT = 100;
 
-/**
- * @param {Alert} alert
- */
-function alertRow(alert) {
-  return html`<div class="card card--tight alert-row">
-    <div>${riskBar(alert.risk_score, alert.severity)}</div>
-    <div class="spread">
-      <div class="alert-row__title">
-        ${categoryChip(alert.category)}
-        <a class="truncate" href="#/email/${encodeURIComponent(alert.email_id)}">${alert.subject || "(no subject)"}</a>
-      </div>
-      <div class="hint truncate">${alert.sender} · ${formatDate(alert.created_at)}</div>
-    </div>
-    ${alert.acknowledged ? chip("seen") : html`<button class="btn" type="button" data-ack="${alert.id}">Mark as seen</button>`}
-  </div>`;
-}
-
-/** @type {import('../router.js').View} */
-export async function alertsView(container) {
-  mount(
-    container,
-    html`${pageHead("Alerts", "Raised the moment a dangerous email is checked, so nobody has to be watching the screen.")}
-      <div id="alerts" class="stack">${skeleton(3)}</div>`,
-  );
-  const alerts = await api.listAlerts({ limit: LIST_LIMIT });
-  mount(
-    must("#alerts", container),
-    alerts.length > 0
-      ? html`${alerts.map(alertRow)}`
-      : emptyState("No alerts", "Anything scoring above the alert level will show up here straight away."),
-  );
-  setUnreadCount(0);
-}
-
-/**
- * No-op unless the alert list is the view on screen.
- * @param {Alert} alert
- */
-export function prependAlert(alert) {
-  const list = $("#alerts");
-  if (!list) return;
-  list.querySelector(".empty")?.remove();
-  list.insertAdjacentHTML("afterbegin", String(alertRow(alert)));
-}
-
-/**
- * @param {number} count
- */
-export function setUnreadCount(count) {
-  session.unreadAlerts = count;
-  for (const badge of [$("#bell-count"), $("#nav-alert-count")]) {
-    if (!badge) continue;
-    badge.textContent = String(count);
-    badge.hidden = count <= 0;
-  }
-}
-
+/** Ask the server how many are unread and publish it to the shell. */
 export async function refreshUnreadCount() {
   try {
-    setUnreadCount((await api.listAlerts({ limit: LIST_LIMIT, unacknowledgedOnly: true })).length);
+    unreadAlerts.set((await api.listAlerts({ limit: LIST_LIMIT, unacknowledgedOnly: true })).length);
   } catch {
     // The badge keeps its last value; the next alert or page load corrects it.
   }
 }
 
 /**
- * "Mark as seen" for any alert row, registered once on the document.
- * @param {Document} root
+ * @param {{ alert: Alert, onAcknowledged: (id: string) => void }} props
  */
-export function bindAlertActions(root) {
-  on(root, "click", "[data-ack]", async (_event, target) => {
-    const button = /** @type {HTMLButtonElement} */ (target);
-    const id = button.dataset.ack;
-    if (!id) return;
-    button.disabled = true;
+function AlertRow({ alert, onAcknowledged }) {
+  const [busy, setBusy] = useState(false);
+  async function acknowledge() {
+    setBusy(true);
     try {
-      await api.acknowledgeAlert(id);
-      button.outerHTML = String(chip("seen"));
+      await api.acknowledgeAlert(alert.id);
+      onAcknowledged(alert.id);
       void refreshUnreadCount();
     } catch (error) {
-      button.disabled = false;
+      setBusy(false);
       toast(html`Could not update: ${errorMessage(error)}`, "error");
     }
-  });
+  }
+  return html`<div class="card card--tight alert-row">
+    <div>${riskBar(alert.risk_score, alert.severity)}</div>
+    <div class="spread">
+      <div class="alert-row__title">
+        ${categoryChip(alert.category)}
+        <a class="truncate" href=${`#/email/${encodeURIComponent(alert.email_id)}`}>${alert.subject || "(no subject)"}</a>
+      </div>
+      <div class="hint truncate">${alert.sender} · ${formatDate(alert.created_at)}</div>
+    </div>
+    ${alert.acknowledged
+      ? chip("seen")
+      : html`<button class="btn" type="button" disabled=${busy} onClick=${() => void acknowledge()}>Mark as seen</button>`}
+  </div>`;
+}
+
+export function AlertsView() {
+  const { data, error, loading, reload } = useAsync(() => api.listAlerts({ limit: LIST_LIMIT }), []);
+  const [live, setLive] = useState(/** @type {Alert[]} */ ([]));
+  const [seen, setSeen] = useState(/** @type {Set<string>} */ (new Set()));
+
+  // Opening the list is what marks the badge read; new alerts arriving while
+  // it is open are already visible, so they never raise it again.
+  useEffect(() => {
+    unreadAlerts.set(0);
+    return subscribeToAlerts((alert) => setLive((current) => [alert, ...current]));
+  }, []);
+
+  if (error) return errorState(error, reload);
+
+  const alerts = loading || !data ? [] : [...live, ...data];
+  const body = () => {
+    if (loading || !data) return skeleton(3);
+    if (alerts.length === 0) return emptyState("No alerts", "Anything scoring above the alert level will show up here straight away.");
+    return alerts.map(
+      (alert) => html`<${AlertRow}
+        key=${alert.id}
+        alert=${seen.has(alert.id) ? { ...alert, acknowledged: true } : alert}
+        onAcknowledged=${(/** @type {string} */ id) => setSeen((current) => new Set(current).add(id))}
+      />`,
+    );
+  };
+
+  return html`<${Fragment}>
+    ${pageHead("Alerts", "Raised the moment a dangerous email is checked, so nobody has to be watching the screen.")}
+    <div class="stack">${body()}</div>
+  </>`;
 }

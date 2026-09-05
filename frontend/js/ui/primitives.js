@@ -1,24 +1,24 @@
 // @ts-check
 /** Presentational pieces shared by every view. Each returns markup and holds no state. */
-import { attr, html } from "../dom.js";
 import { clampPercent } from "../format.js";
 import { categoryOf, severityOf } from "../labels.js";
+import { Fragment, html } from "../react.js";
 
-/** @typedef {import('../dom.js').Renderable} Renderable */
 /** @typedef {import('../labels.js').Tone} Tone */
 
 const GAUGE_ARC_LENGTH = Math.PI * 80;
 
 /**
- * @param {Renderable} text
+ * @param {unknown} text
  * @param {Tone} [tone]
- * @param {{ mono?: boolean, title?: string }} [options]
+ * @param {{ mono?: boolean, title?: string, key?: string | number }} [options] `key` when chips are mapped from a list
  */
-export function chip(text, tone = "neutral", { mono = false, title = "" } = {}) {
-  return html`<span class="chip tone-${tone}${mono ? " chip--mono" : ""}"${attr("title", title)}>${text}</span>`;
+export function chip(text, tone = "neutral", { mono = false, title = "", key = undefined } = {}) {
+  return html`<span key=${key} class="chip tone-${tone}${mono ? " chip--mono" : ""}" title=${title || undefined}>${text}</span>`;
 }
 
 /**
+ * The threat category as a coloured chip.
  * @param {string | null | undefined} category
  */
 export function categoryChip(category) {
@@ -44,7 +44,7 @@ export function severityChip(severity) {
 export function check(label, value, outcome, why) {
   const tone = outcome === true ? "ok" : outcome === false ? "bad" : "neutral";
   const mark = outcome === true ? "✓" : outcome === false ? "✕" : "–";
-  return html`<span class="chip tone-${tone}" title="${why}">${mark} ${label} <span class="chip__value">${value}</span></span>`;
+  return html`<span class="chip tone-${tone}" title=${why}>${mark} ${label} <span class="chip__value">${value}</span></span>`;
 }
 
 /**
@@ -52,7 +52,7 @@ export function check(label, value, outcome, why) {
  * @param {Tone} tone
  */
 export function bar(value, tone) {
-  return html`<div class="bar tone-${tone}"><div class="bar__fill" style="--value:${clampPercent(value)}"></div></div>`;
+  return html`<div class="bar tone-${tone}"><div class="bar__fill" style=${{ "--value": String(clampPercent(value)) }}></div></div>`;
 }
 
 /**
@@ -69,18 +69,19 @@ export function riskBar(score, severity) {
  */
 export function gauge(score, severity) {
   const filled = (GAUGE_ARC_LENGTH * clampPercent(score)) / 100;
-  return html`<svg class="gauge tone-${severityOf(severity).tone}" viewBox="0 0 200 120" role="img" aria-label="Risk ${score} out of 100">
+  return html`<svg class="gauge tone-${severityOf(severity).tone}" viewBox="0 0 200 120" role="img" aria-label=${`Risk ${score} out of 100`}>
     <path class="gauge__track" d="M 20 100 A 80 80 0 0 1 180 100" />
-    <path class="gauge__value" d="M 20 100 A 80 80 0 0 1 180 100" stroke-dasharray="${filled} ${GAUGE_ARC_LENGTH}" />
+    <path class="gauge__value" d="M 20 100 A 80 80 0 0 1 180 100" stroke-dasharray=${`${filled} ${GAUGE_ARC_LENGTH}`} />
     <text class="gauge__score" x="100" y="90" text-anchor="middle">${score}</text>
     <text class="gauge__caption" x="100" y="112" text-anchor="middle">RISK OUT OF 100</text>
   </svg>`;
 }
 
 /**
+ * A titled card.
  * @param {string} title
- * @param {Renderable} body
- * @param {{ aside?: Renderable, note?: string }} [options] `aside` sits right of the title, `note` explains the section
+ * @param {unknown} body
+ * @param {{ aside?: unknown, note?: string }} [options] `aside` sits right of the title, `note` explains the section
  */
 export function section(title, body, { aside = null, note = "" } = {}) {
   return html`<section class="card card--pad section">
@@ -109,11 +110,15 @@ export function kpi(label, value, tone) {
 
 /**
  * An empty value renders as a dash rather than a blank row.
- * @param {Array<[string, Renderable]>} pairs
+ * @param {Array<[string, unknown]>} pairs
  */
 export function kv(pairs) {
   return html`<dl class="kv">${pairs.map(
-    ([key, value]) => html`<dt>${key}</dt><dd>${value === null || value === undefined || value === "" ? html`<span class="muted">—</span>` : value}</dd>`,
+    ([key, value], index) =>
+      html`<${Fragment} key=${key + index}
+        ><dt>${key}</dt>
+        <dd>${value === null || value === undefined || value === "" ? html`<span class="muted">—</span>` : value}</dd></${Fragment}
+      >`,
   )}</dl>`;
 }
 
@@ -121,12 +126,12 @@ export function kv(pairs) {
  * @param {number} [count]
  */
 export function skeleton(count = 3) {
-  return html`${Array.from({ length: count }, () => html`<div class="skeleton"></div>`)}`;
+  return html`${Array.from({ length: count }, (_, index) => html`<div key=${index} class="skeleton"></div>`)}`;
 }
 
 /**
  * @param {string} title
- * @param {Renderable} [hint]
+ * @param {unknown} [hint]
  */
 export function emptyState(title, hint = "") {
   return html`<div class="card empty"><div class="empty__title">${title}</div><div class="hint empty__hint">${hint}</div></div>`;
@@ -134,11 +139,12 @@ export function emptyState(title, hint = "") {
 
 /**
  * @param {string} message
+ * @param {() => void} [onRetry]
  */
-export function errorState(message) {
+export function errorState(message, onRetry) {
   return html`<div class="card empty">
     <div class="empty__title">Could not load this page</div>
     <div class="hint empty__hint">${message}</div>
-    <button class="btn" type="button" data-retry>Try again</button>
+    ${onRetry && html`<button class="btn" type="button" onClick=${onRetry}>Try again</button>`}
   </div>`;
 }

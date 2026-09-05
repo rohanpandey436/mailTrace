@@ -1,8 +1,9 @@
 // @ts-check
 /** "Where it came from": the Received chain as a list, and the same hops on a map. */
-import { $$, html, must } from "../../dom.js";
 import { flag, formatDate, place } from "../../format.js";
-import { createRouteMap } from "../../ui/map.js";
+import { html, useState } from "../../react.js";
+import { session } from "../../state.js";
+import { RouteMap } from "../../ui/map.js";
 import { chip } from "../../ui/primitives.js";
 
 /** @typedef {import('../../types.js').AnalysisResult} AnalysisResult */
@@ -26,17 +27,15 @@ function location(geo) {
   if (!geo || (!geo.country && !geo.isp)) return null;
   return html`<div class="hop__geo">
     ${flag(geo.country_code)} ${place([geo.city, geo.country])}${geo.isp ? ` · ${geo.isp}` : ""}
-    ${geo.is_tor_exit && chip("Tor", "bad")}
-    ${geo.blacklists.length > 0 && chip("on a blocklist", "bad")}
+    ${geo.is_tor_exit && chip("Tor", "bad")} ${geo.blacklists.length > 0 && chip("on a blocklist", "bad")}
   </div>`;
 }
 
 /**
- * @param {Hop} hop
- * @param {boolean} origin
+ * @param {{ hop: Hop, origin: boolean, active: boolean, onSelect: () => void }} props
  */
-function hopRow(hop, origin) {
-  return html`<div class="hop${origin ? " is-origin" : ""}" data-hop="${hop.index}">
+function HopRow({ hop, origin, active, onSelect }) {
+  return html`<div class=${`hop${origin ? " is-origin" : ""}${active ? " is-active" : ""}`} onClick=${onSelect}>
     <div class="hop__head">
       <span class="mono muted">Step ${hop.index + 1}</span>
       ${origin && chip("STARTED HERE", "brand")}
@@ -69,47 +68,36 @@ function mapNote(hops, located, health) {
 }
 
 /**
- * @param {AnalysisResult} result
- * @param {Health | null} health
+ * @param {{ result: AnalysisResult }} props
  */
-export function traceTab(result, health) {
+export function TraceTab({ result }) {
   const { hops, originating_hop_index: originIndex, origin_reasoning: reasoning } = result.headers;
+  // One piece of state drives both panes, so clicking either highlights both.
+  const [selected, setSelected] = useState(/** @type {number | null} */ (null));
   const located = hops.filter((hop) => hop.geo !== null && hop.geo.lat !== null).length;
-  const path =
-    hops.length > 0
-      ? html`<div class="hops">${hops.map((hop) => hopRow(hop, hop.index === originIndex))}</div>`
-      : html`<div class="hint">This email carried no delivery record, so there is no path to show.</div>`;
+
   return html`<div class="grid grid--2">
     <section class="card card--pad">
       <h3 class="section__title">The journey this email took</h3>
       <p class="hint section__note">Read top to bottom. Each step is one mail server passing it along. ${reasoning}</p>
-      ${path}
+      ${hops.length > 0
+        ? html`<div class="hops">
+            ${hops.map(
+              (hop) => html`<${HopRow}
+                key=${hop.index}
+                hop=${hop}
+                origin=${hop.index === originIndex}
+                active=${hop.index === selected}
+                onSelect=${() => setSelected(hop.index)}
+              />`,
+            )}
+          </div>`
+        : html`<div class="hint">This email carried no delivery record, so there is no path to show.</div>`}
     </section>
     <section class="card card--pad">
       <h3 class="section__title">On the map</h3>
-      <p class="hint section__note">${mapNote(hops.length, located, health)}</p>
-      <div id="map" class="map"></div>
+      <p class="hint section__note">${mapNote(hops.length, located, session.health)}</p>
+      <${RouteMap} hops=${hops} originIndex=${originIndex} selected=${selected} onSelect=${setSelected} />
     </section>
   </div>`;
-}
-
-/**
- * Links the hop list to the map pins in both directions.
- * @param {HTMLElement} panel
- * @param {AnalysisResult} result
- * @returns {() => void} cleanup
- */
-export function mountRouteMap(panel, result) {
-  const rows = $$(".hop[data-hop]", panel);
-  /** @param {number} index */
-  const highlight = (index) => rows.forEach((row) => row.classList.toggle("is-active", Number(row.dataset.hop) === index));
-  const map = createRouteMap(must("#map", panel), result.headers.hops, result.headers.originating_hop_index, highlight);
-  for (const row of rows) {
-    row.addEventListener("click", () => {
-      const index = Number(row.dataset.hop);
-      highlight(index);
-      map.focus(index);
-    });
-  }
-  return map.destroy;
 }

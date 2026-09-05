@@ -14,43 +14,18 @@
   <link rel="stylesheet" href="css/vendor.css">
 </head>
 <body>
-  <div class="app">
-    <nav class="rail" aria-label="Main">
-      <a class="rail__brand" href="#/dashboard">
-        <span class="brand-mark">M</span>
-        <span><span class="brand-name">MailTrace</span><span class="brand-sub">Email threat forensics</span></span>
-      </a>
-      <a class="rail__link" href="#/dashboard" data-route="dashboard"><span>🏠</span><span>Home</span></a>
-      <a class="rail__link" href="#/cases" data-route="cases"><span>📥</span><span>Checked emails</span></a>
-      <a class="rail__link" href="#/campaigns" data-route="campaigns"><span>🔗</span><span>Linked attacks</span></a>
-      <a class="rail__link" href="#/alerts" data-route="alerts">
-        <span>🔔</span><span>Alerts</span><span id="nav-alert-count" class="chip chip--count" hidden></span>
-      </a>
-      <div class="rail__footer">SIH PS 26106<br>AI email threat detection, geolocation &amp; forensics</div>
-    </nav>
+  <!-- React renders the whole application into this element; see js/main.js. -->
+  <div id="root"></div>
 
-    <div class="app__main">
-      <header class="topbar">
-        <form id="search-form" class="topbar__search" role="search">
-          <input id="search" class="input" placeholder="Search by subject, sender, IP address or domain…" autocomplete="off" aria-label="Search checked emails">
-        </form>
-        <div class="topbar__tools">
-          <span id="net-badge" class="chip">…</span>
-          <label class="switch-label topbar__mask" title="Hides names, email addresses, phone numbers and ID numbers everywhere on screen">
-            <span>Hide personal info</span>
-            <span id="mask-switch" class="switch" role="switch" tabindex="0" aria-checked="false" aria-label="Hide personal information"></span>
-          </label>
-          <a href="#/alerts" class="btn btn--icon topbar__bell" title="Alerts">🔔<span id="bell-count" class="chip chip--count" hidden></span></a>
-        </div>
-      </header>
-      <main id="view" class="view"></main>
-    </div>
-  </div>
-
-  <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
-  <div id="tooltip" class="tooltip" hidden></div>
-  <input type="file" id="file-input" multiple hidden>
-
+  <!--
+    UMD bundles rather than a bundler: with React, ReactDOM and htm as globals,
+    js/ is a directory of ES modules the browser runs as written. That is what
+    keeps the frontend a set of static files FastAPI serves directly, with no
+    build step in CI and no Node on the deployment.
+  -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/htm/3.1.1/htm.umd.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.30.4/cytoscape.min.js"></script>
   <script type="module" src="js/main.js"></script>
