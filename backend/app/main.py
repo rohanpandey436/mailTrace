@@ -31,6 +31,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.requests import ClientDisconnect
 
+from . import tasks
 from .api import alerts, analyze, cases, reports
 from .config import Settings
 from .config import settings as default_settings
@@ -100,6 +101,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             # itself if the driver or the server is missing.
             app.state.store = Store(cfg.db_path, cfg.evidence_dir, database_url=cfg.database_url)
         alerts.broadcaster.bind(asyncio.get_running_loop())
+        # Tasks run against this Store, not one of their own. That is what
+        # makes eager execution and the embedded worker see the same database
+        # as the API - decisive in zero-persistence mode, where a second Store
+        # would be a second, empty in-memory database.
+        tasks.bind_store(app.state.store, cfg)
+        # The module-level Celery application was built from the environment at
+        # import time; this is where an injected Settings takes over.
+        tasks.configure(cfg)
+        tasks.start_embedded_worker(cfg)
         _warm_model(cfg)
         if cfg.zero_persistence:
             log.warning(
@@ -119,6 +129,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             yield
         finally:
             alerts.shutdown_webhooks()
+            tasks.unbind_store()
             app.state.store.close()
             log.info("MailTrace store closed")
 
@@ -173,6 +184,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             native_engine_version=parser.NATIVE_ENGINE_VERSION,
             native_engine_status=parser.NATIVE_ENGINE_STATUS,
             native_engine_sha256=parser.NATIVE_ENGINE_SHA256,
+            queue=tasks.queue_status(cfg),
         )
 
     _mount_dashboard(app, cfg.static_dir)

@@ -17,6 +17,13 @@ maxminddb>=2.6
 # optional at runtime: uninstall it, or set MAILTRACE_URL_MODEL=0, and the URL
 # pillar returns to the deterministic rules with identical output.
 xgboost>=2.1,<4
+# Celery task queue (app/tasks.py) with the Redis transport. Pure Python, ~10 MB
+# installed with kombu/billiard/vine, no broker required to import: with
+# MAILTRACE_REDIS_URL unset Celery runs eagerly in the request process and the
+# async endpoints still work. Set that variable and the same code becomes a
+# real queue against Redis, either with the worker this process embeds or with
+# workers running elsewhere (deploy/docker-compose.yml starts one).
+celery[redis]>=5.4,<6
 # ONNX Runtime serves the URL model from the graph committed at
 # app/ai/url_model.onnx (25 KB), so a deployment scores links without training
 # anything. 13 MB wheel. xgboost above still fits the model and remains the

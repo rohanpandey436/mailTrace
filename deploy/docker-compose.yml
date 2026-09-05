@@ -1,0 +1,88 @@
+# MailTrace with a real task queue: API, Redis and a separate Celery worker.
+#
+# Run from the REPOSITORY ROOT, because the image needs backend/, frontend/,
+# samples/ and engine/ together:
+#
+#     docker compose -f deploy/docker-compose.yml up --build
+#     open http://localhost:8000
+#
+# What this adds over `docker run mailtrace` (see Dockerfile): analysis happens
+# in a process that is not serving HTTP. Upload through the dashboard's bulk
+# path, or POST to /api/analyze/async, and the request returns job ids
+# immediately while the worker chews through them. Scale it:
+#
+#     docker compose -f deploy/docker-compose.yml up -d --scale worker=3
+#
+# The single-container deployment is still perfectly valid - with
+# MAILTRACE_REDIS_URL set and MAILTRACE_QUEUE_WORKERS at its default of 1, the
+# API process embeds a worker of its own. This file is the shape that scales
+# past one machine, and the one CI exercises.
+
+name: mailtrace
+
+services:
+  redis:
+    image: redis:7-alpine
+    # No persistence: the broker holds work in flight, never evidence. Every
+    # case, alert and custody record is in the database, so a lost Redis costs
+    # at most the messages queued in that moment - which the client can resubmit
+    # because it still has the files.
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: mailtrace:compose
+    ports:
+      - "8000:8000"
+    environment:
+      MAILTRACE_REDIS_URL: redis://redis:6379/0
+      # 0 = enqueue only. The worker service below does the analysis, which is
+      # the point of this file; leave it unset for one container that does both.
+      MAILTRACE_QUEUE_WORKERS: "0"
+      MAILTRACE_ENABLE_NETWORK: "false"
+    volumes:
+      - mailtrace-data:/app/backend/data
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  worker:
+    # The same image, started as a Celery worker instead of a web server. Same
+    # code, same models, same engine - so a case analysed here is identical to
+    # one analysed in the API process.
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: mailtrace:compose
+    command:
+      - celery
+      - -A
+      - app.tasks
+      - worker
+      - --queues=mailtrace.analysis
+      - --loglevel=info
+      # One message at a time per worker: analysis is CPU-bound, so concurrency
+      # here would contend rather than parallelise. Scale the service instead.
+      - --concurrency=1
+    environment:
+      MAILTRACE_REDIS_URL: redis://redis:6379/0
+      MAILTRACE_ENABLE_NETWORK: "false"
+    volumes:
+      # The same data directory as the API: with the default SQLite store both
+      # processes open the same file, which WAL mode handles on one host. Point
+      # MAILTRACE_DATABASE_URL at PostgreSQL and this volume stops mattering,
+      # which is what running workers on more than one machine requires.
+      - mailtrace-data:/app/backend/data
+    depends_on:
+      redis:
+        condition: service_healthy
+
+volumes:
+  mailtrace-data:

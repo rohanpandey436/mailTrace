@@ -11,6 +11,10 @@
 # WITH it, so both parsers are covered. The development machine has no OpenSSL
 # headers, so this is the only place the linked build is exercised at all.
 #
+# `queue` runs Redis and a Celery worker in a *separate process*, and proves a
+# message published by the API is analysed by that worker. The suite otherwise
+# runs Celery eagerly, which exercises the code but not the broker.
+#
 # `docker` builds and *runs* the deployment image, because a Dockerfile that has
 # never been built is a claim rather than an artefact - and this project's
 # development machine cannot run Docker (no hardware virtualisation).
@@ -153,6 +157,94 @@ jobs:
       - name: Run the suite on the native path
         working-directory: backend
         run: python -m pytest -q
+
+  queue:
+    name: Celery worker against Redis
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      MAILTRACE_REDIS_URL: redis://127.0.0.1:6379/0
+      # 0 embedded workers, so nothing in the pytest process can run the task.
+      # The only way a job completes is the worker started below picking it up:
+      # that is the whole point of this job, and without it the assertion would
+      # pass on a thread and prove nothing about the broker.
+      MAILTRACE_QUEUE_WORKERS: "0"
+      # The worker is a different process. It reads these same variables, which
+      # is what makes it write cases into the database the tests then read.
+      MAILTRACE_DATA_DIR: ${{ github.workspace }}/queue-data
+      MAILTRACE_ENABLE_NETWORK: "false"
+      MAILTRACE_ORG_DOMAINS: acme-corp.in
+      MAILTRACE_EXECUTIVES: "ceo,cfo,managing director,sarthak srivastava"
+      MAILTRACE_ALERT_THRESHOLD: "70"
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Start a Celery worker
+        # Backgrounded rather than run as a service container, because it has to
+        # be *this* code: the same package, the same models, the same settings.
+        run: |
+          celery -A app.tasks worker --queues=mailtrace.analysis --concurrency=1 --loglevel=info > worker.log 2>&1 &
+          echo $! > worker.pid
+          for attempt in $(seq 1 30); do
+            if grep -q "ready" worker.log; then
+              echo "worker ready after ${attempt}s"
+              exit 0
+            fi
+            if ! kill -0 "$(cat worker.pid)" 2>/dev/null; then
+              echo "the worker exited during startup; log follows" >&2
+              cat worker.log >&2
+              exit 1
+            fi
+            sleep 1
+          done
+          echo "the worker never reported ready; log follows" >&2
+          cat worker.log >&2
+          exit 1
+
+      - name: Run the queue tests
+        run: python -m pytest tests/test_queue.py -q
+
+      - name: Prove the worker did the work
+        # The test asserts the case exists; this asserts *where* it was
+        # analysed. Without this line a future change could quietly re-enable an
+        # in-process worker and the job would still pass.
+        run: |
+          grep -q "mailtrace.analyze_message" worker.log             || { echo "the worker never received a task; log follows" >&2; cat worker.log >&2; exit 1; }
+          echo "tasks executed by the external worker:"
+          grep -c "succeeded in" worker.log
+
+      - name: Worker log
+        if: always()
+        run: cat worker.log || true
 
   docker:
     name: build and run the deployment image

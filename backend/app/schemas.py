@@ -701,6 +701,48 @@ class AnalyzeResponse(BaseModel):
     alerts: list[Alert] = Field(default_factory=list)
 
 
+class JobSummary(BaseModel):
+    """What a finished analysis job reports back.
+
+    A summary rather than the whole ``AnalysisResult``: the case is already in
+    the database, so a client that wants the detail reads
+    ``/api/emails/{email_id}`` and gets it through the same masking every other
+    read applies.  A full result would also mean unmasked PII sitting in the
+    result backend until it expires.
+    """
+
+    email_id: str
+    filename: str
+    category: ThreatCategory
+    risk_score: int
+    severity: Severity
+    processing_ms: int
+    alert_id: str | None = None
+
+
+class JobStatus(BaseModel):
+    """``GET /api/jobs/{job_id}``: where one queued message has got to."""
+
+    job_id: str
+    filename: str = Field(default="", description="Echoed from the submission; blank when the id is unknown here")
+    state: str = Field(
+        description=(
+            "Celery's own vocabulary: PENDING, STARTED, SUCCESS, FAILURE, RETRY, REVOKED. "
+            "PENDING means the broker has never heard of this id, which covers both "
+            "'queued, not started' and 'no such job' - they are genuinely indistinguishable."
+        )
+    )
+    result: JobSummary | None = None
+    error: str | None = None
+
+
+class AsyncAnalyzeResponse(BaseModel):
+    """``POST /api/analyze/async``: accepted work, one job per message."""
+
+    jobs: list[JobStatus]
+    queue: str = Field(description="How these tasks execute; the same string /api/health reports")
+
+
 class CaseListResponse(BaseModel):
     items: list[CaseSummary]
     total: int
@@ -739,6 +781,7 @@ class HealthStatus(BaseModel):
     native_engine: bool = Field(description="Whether the C++ dissector is doing the MIME work")
     native_engine_version: str
     native_engine_status: str
+    queue: str = Field(default="", description="How background tasks execute: eager, or Redis with embedded/external workers")
     native_engine_sha256: str = Field(
         default="",
         description='Which SHA-256 the engine links: "openssl", "builtin", or "" when the engine is not in use',
