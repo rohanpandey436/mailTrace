@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import time
+import uuid
 from dataclasses import replace
 
 import pytest
@@ -54,24 +55,32 @@ def test_eager_mode_is_the_default(cfg):
     assert "eager" in tasks.queue_status(cfg)
 
 
-def test_reconfiguring_repoints_the_backend(cfg):
-    """configure() must move the live backend, not just the configuration.
+def test_reconfiguring_moves_the_live_connections(cfg):
+    """configure() must move what the application actually uses.
 
-    Celery caches the result backend on first use, so setting result_expires
-    and result_backend alone left the application publishing to one place and
-    reading from another - every job stayed PENDING forever. The fix reaches
-    into Celery internals, so this asserts the effect rather than the
-    mechanism: a release that renames those attributes fails here.
+    Both halves of this were real failures. Rewriting result_backend left the
+    cached backend behind, so results were written to Redis and read from
+    memory. Rewriting broker_url left the cached *producer pool* behind, so an
+    application that had been eager went on publishing into the in-memory
+    transport while correctly reporting a Redis broker - the message vanished
+    and every job read PENDING forever.
+
+    The fix is to build a new application rather than reconfigure one, so this
+    asserts the effect: after switching, the backend and the producer pool both
+    point at the new broker. Nothing here connects to anything.
     """
     tasks.configure(cfg)
     assert type(tasks.celery_app.backend).__name__ == "CacheBackend"
+    # Publishing once is what created the stale pool in the first place.
+    tasks.enqueue(b"From: a@b\r\nSubject: warm\r\n\r\nx\r\n", "warm.eml", "analyst")
+    assert tasks.celery_app.amqp.producer_pool.connections.connection.as_uri().startswith("memory://")
 
     with_broker = replace(cfg, redis_url="redis://127.0.0.1:6379/0")
     tasks.configure(with_broker)
     try:
-        # Constructed, not connected: nothing here talks to Redis.
         assert type(tasks.celery_app.backend).__name__ == "RedisBackend"
         assert tasks.celery_app.conf.task_always_eager is False
+        assert tasks.celery_app.amqp.producer_pool.connections.connection.as_uri().startswith("redis://")
     finally:
         tasks.configure(cfg)
     assert type(tasks.celery_app.backend).__name__ == "CacheBackend"
@@ -219,9 +228,13 @@ def test_a_real_worker_consumes_from_the_broker(sample):
     app = create_app(cfg)
     with TestClient(app) as client:
         assert "redis" in client.get("/api/health").json()["queue"]
+        # A name unique to this run. The database is whatever MAILTRACE_DATA_DIR
+        # points at, shared with the worker and not necessarily empty, so this
+        # test finds its own case rather than assuming it is the only one.
+        filename = f"phishing-{uuid.uuid4().hex[:8]}.eml"
         response = client.post(
             "/api/analyze/async",
-            files=[("files", ("phishing.eml", sample("phishing"), "message/rfc822"))],
+            files=[("files", (filename, sample("phishing"), "message/rfc822"))],
         )
         assert response.status_code == 202, response.text
         job_id = response.json()["jobs"][0]["job_id"]
@@ -237,5 +250,6 @@ def test_a_real_worker_consumes_from_the_broker(sample):
         assert state == "SUCCESS", f"job never completed (last state {state})"
 
         listing = client.get("/api/emails").json()
-        assert listing["total"] == 1
-        assert listing["items"][0]["category"] == "Phishing"
+        ours = [item for item in listing["items"] if item["filename"] == filename]
+        assert ours, f"{filename} is not in the case list: {listing}"
+        assert ours[0]["category"] == "Phishing"

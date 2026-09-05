@@ -45,7 +45,7 @@ import logging
 import threading
 from typing import TYPE_CHECKING, Any
 
-from celery import Celery
+from celery import Celery, shared_task
 from celery.result import AsyncResult
 
 from .config import Settings
@@ -161,39 +161,34 @@ celery_app = build_celery()
 
 
 def configure(cfg: Settings) -> None:
-    """Point the Celery application at ``cfg``'s broker.
+    """Point the task queue at ``cfg``'s broker, by building a new application.
 
     The module-level application is built from the environment at import time,
     because ``celery -A app.tasks worker`` has to work with no application
-    factory in sight.  ``create_app`` calls this so that an injected
-    ``Settings`` wins instead - which is what the test suite relies on, and
-    what makes ``create_app(Settings(redis_url=...))`` mean anything.
+    factory in sight.  ``create_app`` calls this so an injected ``Settings``
+    wins instead, which is what makes ``create_app(Settings(redis_url=...))``
+    mean anything.
 
-    Updated in place rather than rebuilt: the task is registered against this
-    application object, and replacing it would leave that registration behind.
+    Replaced rather than reconfigured, and the reason is worth recording.
+    Rewriting ``broker_url`` and ``result_backend`` on a live application does
+    not move it: Celery caches the result backend, the broker connection pool
+    and the producer pool on first use.  Both were observed - an application
+    that had been eager published into the in-memory transport while reporting
+    a Redis broker, so the message was silently dropped and every job read
+    PENDING forever; before that, results were written to Redis and read back
+    from memory.  Each fix invalidated one more private attribute.  A fresh
+    application has no cache to be stale, so this stops playing that game.
+
+    That is possible because the task is declared with ``shared_task``, which
+    registers it with every application rather than binding it to one.
     """
-    broker = cfg.redis_url.strip()
-    celery_app.conf.broker_url = broker or _MEMORY_BROKER
-    celery_app.conf.result_backend = broker or _MEMORY_BACKEND
-    celery_app.conf.task_always_eager = not broker
-    celery_app.conf.result_expires = cfg.queue_result_ttl
-
-    # Rewriting the URLs is not enough. Celery builds the result backend on
-    # first use and caches it, and keeps a pool of broker connections, so an
-    # application that has already published or read a result goes on talking
-    # to whatever it was pointed at when it started: it would publish to Redis
-    # and then look the result up in the in-memory backend, and every job would
-    # read PENDING forever. That was an observed CI failure, not a theory.
-    #
-    # Celery offers no public way to drop either cache - `backend` is a plain
-    # property with no deleter - so this reaches into two private attributes.
-    # test_reconfiguring_repoints_the_backend asserts the effect rather than the
-    # mechanism, so a Celery release that renames them fails there loudly
-    # instead of quietly restoring the bug.
-    celery_app.close()  # returns the broker connection pool
-    celery_app._backend_cache = None
-    if getattr(celery_app._local, "backend", None) is not None:
-        celery_app._local.backend = None
+    global celery_app
+    previous = celery_app
+    celery_app = build_celery(cfg)
+    # So the shared_task proxy and any bare AsyncResult resolve to the new one.
+    celery_app.set_default()
+    if previous is not None:
+        previous.close()
 
 
 def bind_store(store: Store, cfg: Settings) -> None:
@@ -234,10 +229,14 @@ def _task_store() -> Store:
         return _own_store
 
 
+# shared_task rather than @celery_app.task: it registers the task with every
+# Celery application, present and future, so configure() can build a new one
+# without leaving the registration behind on the old.
+#
 # Celery ships no type information for its decorator, so under strict mode it
 # would erase the signature of whatever it wraps. Ignored here rather than
 # loosening the settings for the module, so the body stays fully checked.
-@celery_app.task(name=ANALYZE_TASK, bind=True, queue=QUEUE_NAME)  # type: ignore[untyped-decorator]
+@shared_task(name=ANALYZE_TASK, bind=True, queue=QUEUE_NAME)  # type: ignore[untyped-decorator]
 def analyze_message(self: Any, raw_b64: str, filename: str, actor: str) -> dict[str, Any]:
     """Analyse one message and persist the case.
 
