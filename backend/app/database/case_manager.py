@@ -432,9 +432,17 @@ class Store:
         self._lock = threading.RLock()
         target = ":memory:" if self.in_memory else str(self.db_path)
         self._dialect = _make_dialect(target, database_url, on_disk=not self.in_memory)
+        #: Why the configured backend is not the one in use; "" when it is. Read
+        #: by /api/health, because a service quietly running on a different
+        #: database from the one it was configured with is not something anyone
+        #: should have to discover from a log file afterwards.
+        self.backend_note = "" if database_url.strip() else "MAILTRACE_DATABASE_URL is not set"
+        if database_url.strip() and not database_url.strip().startswith(POSTGRES_SCHEMES):
+            self.backend_note = "MAILTRACE_DATABASE_URL is set but is not a postgres:// or postgresql:// URL"
         try:
             self._conn = self._dialect.connect()
         except Exception as exc:  # noqa: BLE001 - an unreachable server must not stop the service
+            self.backend_note = f"{type(exc).__name__}: {exc}"[:400]
             log.error(
                 "PostgreSQL backend unavailable (%s: %s); falling back to SQLite at %s. "
                 "Install backend/requirements-pg.txt and check MAILTRACE_DATABASE_URL.",
