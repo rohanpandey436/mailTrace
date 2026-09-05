@@ -34,12 +34,12 @@ a genuine offline mode: with `MAILTRACE_ENABLE_NETWORK=false` every network
 enrichment degrades to a valid result marked `source="offline"` and no lookup is
 attempted.
 
-**The dashboard is not fully offline.** `frontend/` loads Leaflet 1.9.4 and
-Cytoscape 3.30.4 from `cdnjs.cloudflare.com`, the Inter font from Google Fonts
-and map tiles from `tile.openstreetmap.org`. Its own stylesheets and scripts are
-local, so without internet in the *browser* the page still loads, styled, and the
-API still answers, but the map and graph views do not draw. Plan for that if the
-venue Wi-Fi is unreliable, or use the API directly.
+**The dashboard is not offline.** `frontend/` loads React 18, ReactDOM and htm,
+plus Leaflet 1.9.4 and Cytoscape 3.30.4, from `cdnjs.cloudflare.com`, the Inter
+font from Google Fonts and map tiles from `tile.openstreetmap.org`. Its own
+stylesheets and modules are local, but React arrives over the network, so without
+internet in the *browser* the page does not render at all - the API still answers.
+Plan for that if the venue Wi-Fi is unreliable, or use the API directly.
 
 Section 9 lists exactly which capabilities are live by default and which are
 written but dormant. Read it before demoing.
@@ -382,10 +382,11 @@ mailtrace/
     tests/                  pytest suite (offline); 140 tests, 6 of them skipped without the C++ engine
     data/                   runtime, git-ignored: mailtrace.db, evidence/, model.joblib,
                             url_model.joblib  (the default MAILTRACE_DATA_DIR)
-  frontend/                 the analyst UI: no build step, no framework, served by FastAPI as static files
-    index.html              the page shell - navigation, top bar and the <main> the views render into
+  frontend/                 the analyst UI: React 18, no build step, served by FastAPI as static files
+    index.html              loads React/ReactDOM/htm as UMD bundles and mounts the app into #root
     css/                    tokens.css (every colour, size and radius), base, layout, components, vendor
-    js/                     ES modules: api.js, router.js, state.js, labels.js, ui/ (Leaflet map, Cytoscape graph), views/
+    js/react.js             React bound to htm, so components are tagged templates and need no transpiler
+    js/                     api.js, router.js (useRoute), hooks.js, state.js, labels.js, ui/, views/
     jsconfig.json           the JavaScript is type-checked (strict) against the contracts in js/types.js
   samples/                  five demo messages and their README
   engine/                   OPTIONAL C++20 parse extension - built and benchmarked, see engine/README.md
@@ -856,9 +857,10 @@ output on all five demo messages. See section 9 and
   `backend/app/ai/seed_corpus.json`. It is a corroborating signal and an
   explainability aid, not a production model; retrain it on real labelled mail
   before relying on its probabilities.
-- **The map and graph need internet.** Leaflet, Cytoscape, the Inter font and the
-  OpenStreetMap tiles are fetched from CDNs; the dashboard's own CSS and
-  JavaScript are local. The engine's offline mode does not extend to the browser.
+- **The dashboard needs internet.** React, ReactDOM, htm, Leaflet, Cytoscape, the
+  Inter font and the OpenStreetMap tiles are fetched from CDNs; only the
+  dashboard's own CSS and modules are local. The engine's offline mode does not
+  extend to the browser.
 - **Free geolocation API.** `ip-api.com` is free and needs no key, but is HTTP only,
   rate-limited (45 requests per minute), city-level at best, and places mobile or
   CGNAT addresses at the carrier's region rather than the device. Results are

@@ -19,10 +19,10 @@ mailtrace/
 │   │   └── api/             the URLs the browser calls
 │   └── tests/               140 automated tests
 ├── engine/src/parser.cpp    the C++20 parser
-├── frontend/
-│   ├── index.html           the page shell
+├── frontend/                a React 18 app with no build step
+│   ├── index.html           loads React and htm, mounts the app into #root
 │   ├── css/                 design tokens, base, layout, components
-│   └── js/                  the dashboard: api, router, state, ui/, views/
+│   └── js/                  react.js, api, router, hooks, state, ui/, views/
 ├── samples/                 five demo emails
 └── docs/                    this file
 ```
