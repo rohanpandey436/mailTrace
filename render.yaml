@@ -13,7 +13,11 @@ services:
     # deliberately non-fatal: if this builder has no usable toolchain the
     # backend falls back to the pure-Python parser, which produces identical
     # results, rather than failing the deploy. /api/health reports which one won.
-    buildCommand: pip install -r requirements.txt && { pip install ../engine || echo "native engine unavailable on this builder; using the Python parser"; }
+    # requirements-pg.txt brings psycopg so MAILTRACE_DATABASE_URL can point at
+    # Supabase. It stays a separate file because the service must also start
+    # with nothing but the SQLite file, and it does: an unset or unreachable
+    # URL logs the reason and falls back. /api/health reports which one won.
+    buildCommand: pip install -r requirements.txt -r requirements-pg.txt && { pip install ../engine || echo "native engine unavailable on this builder; using the Python parser"; }
     # Render sets PORT; app/config.py picks it up and binds every interface.
     startCommand: python run.py
     healthCheckPath: /api/health
@@ -38,3 +42,10 @@ services:
         value: "true"
       - key: MAILTRACE_LOOKUP_TIMEOUT
         value: "4"
+      # Supabase PostgreSQL. `sync: false` means Render prompts for the value in
+      # its own dashboard and keeps it there: the connection string carries the
+      # database password, so it must never be committed here. Leave it unset
+      # and the service runs on SQLite exactly as before, except that Render
+      # wipes data/ on every deploy - which is the reason to set it.
+      - key: MAILTRACE_DATABASE_URL
+        sync: false

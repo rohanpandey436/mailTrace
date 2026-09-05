@@ -62,6 +62,13 @@ warn_unreachable = true
 ignore_missing_imports = true
 files = ["app"]
 
+# transformers, optimum and datasets ship no type information, and this module
+# is a development CLI rather than part of the service. Checking it would mean
+# an ignore on nearly every line for no safety gained.
+[[tool.mypy.overrides]]
+module = "app.ai.transformer_trainer"
+disallow_untyped_calls = false
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"

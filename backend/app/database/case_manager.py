@@ -340,7 +340,19 @@ class _PostgresDialect:
         # autocommit mirrors sqlite3's isolation_level=None: the explicit
         # BEGIN/COMMIT in Store._tx is then the only transaction control, in
         # both engines.
-        conn = psycopg.connect(self.url, autocommit=True, row_factory=_pg_row_factory)
+        #
+        # prepare_threshold=None disables psycopg's automatic prepared
+        # statements.  Supabase hands out a connection *pooler* URL by default
+        # (``...pooler.supabase.com:6543``), and a pooler in transaction mode
+        # gives each statement whichever backend is free, so a statement
+        # prepared on one connection is missing on the next - which surfaces as
+        # an intermittent "prepared statement does not exist" once the pool
+        # starts reusing backends, not at startup where it would be noticed.
+        # The queries here are small and run once per request; losing the
+        # prepared-statement cache costs nothing measurable.
+        conn = psycopg.connect(
+            self.url, autocommit=True, row_factory=_pg_row_factory, prepare_threshold=None
+        )
         return _PgConnection(conn)
 
     def init_schema(self, conn: Connection) -> None:
