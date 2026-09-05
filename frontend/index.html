@@ -7,11 +7,14 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
-  <link rel="stylesheet" href="css/tokens.css">
-  <link rel="stylesheet" href="css/base.css">
-  <link rel="stylesheet" href="css/layout.css">
-  <link rel="stylesheet" href="css/components.css">
-  <link rel="stylesheet" href="css/vendor.css">
+  <!--
+    One stylesheet, built by Tailwind from css/tailwind.css - which imports the
+    design tokens, this project's reset and its component classes, and layers
+    Tailwind's own preflight and utilities around them. Committed, so no
+    toolchain is needed to serve the dashboard; `python frontend/build_css.py`
+    rebuilds it and CI checks it is not stale.
+  -->
+  <link rel="stylesheet" href="css/app.css">
 </head>
 <body>
   <!-- React renders the whole application into this element; see js/main.js. -->

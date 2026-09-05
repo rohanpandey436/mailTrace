@@ -12,3 +12,6 @@ demo_qr.png
 # Intermediate artefacts from app/ai/transformer_trainer.py; it removes them on
 # a clean run, but an interrupted one leaves several hundred MB behind.
 backend/app/ai/_distilroberta-*/
+
+# Tailwind's staleness check builds beside the committed stylesheet.
+frontend/css/app.check.css

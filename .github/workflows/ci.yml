@@ -98,6 +98,15 @@ jobs:
       - name: Run tests
         run: python -m pytest -q
 
+      - name: Check the stylesheet is not stale
+        # frontend/css/app.css is built by Tailwind and committed, because
+        # Render, the Docker image and a plain checkout all serve the dashboard
+        # with no toolchain. Committing build output is only safe if something
+        # checks it still matches its source, which is what this does: it
+        # downloads the pinned standalone CLI, rebuilds, and compares bytes.
+        working-directory: .
+        run: python frontend/build_css.py --check
+
   engine:
     name: C++20 engine linked against OpenSSL
     runs-on: ubuntu-latest

@@ -190,7 +190,9 @@ export function EmailView({ emailId }) {
         <div class="hint cluster cluster--loose">
           <span>
             From <b class="strong">${email.sender.display_name || "unnamed"}</b>
-            <span class="mono">&lt;${email.sender.address}&gt;</span>
+            <!-- Built as one expression: htm renders template text verbatim, so an
+                 HTML entity here would appear on screen as "&lt;" rather than "<". -->
+            <span class="mono">${`<${email.sender.address}>`}</span>
           </span>
           <span>Sent ${formatDate(email.date)}</span>
           <span class="mono">${result.filename}</span>

@@ -48,7 +48,7 @@ function Rail({ route, unread }) {
         <span>${icon}</span><span>${label}</span>${name === "alerts" && html`<${UnreadBadge} count=${unread} />`}
       </a>`,
     )}
-    <div class="rail__footer">SIH PS 26106<br />AI email threat detection, geolocation &amp; forensics</div>
+    <div class="rail__footer">SIH PS 26106<br />AI email threat detection, geolocation & forensics</div>
   </nav>`;
 }
 
