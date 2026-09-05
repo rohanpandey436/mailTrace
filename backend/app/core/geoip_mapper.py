@@ -415,6 +415,31 @@ def _apply_city_record(geo: GeoInfo, record: dict[str, Any]) -> None:
     # DNS, the ISP/org regexes and the Tor bulk exit list.
 
 
+#: A public address every GeoLite2-City build resolves, used to prove the
+#: database is not merely present but actually answering.
+_PROBE_IP = "8.8.8.8"
+
+
+def geoip_status(cfg: Settings) -> str:
+    """Where geolocation will actually come from, established by trying it.
+
+    Reporting the configured path would only say what was intended. A database
+    that is present but unreadable, of the wrong edition, or holding records
+    this module cannot use looks identical from the outside until a lookup
+    silently falls through to ip-api.com - so this performs one.
+    """
+    path = _text(getattr(cfg, "maxmind_db", ""))
+    if not path:
+        return "ip-api.com (no MaxMind database configured)"
+    if not Path(path).is_file():
+        return f"ip-api.com (no file at {path})"
+    if _maxmind_reader(path) is None:
+        return f"ip-api.com ({path} could not be opened; is maxminddb installed?)"
+    if maxmind_lookup(_PROBE_IP, cfg) is None:
+        return f"ip-api.com ({path} opened but returned nothing for {_PROBE_IP})"
+    return f"maxmind ({path})"
+
+
 def maxmind_lookup(ip: str, cfg: Settings) -> GeoInfo | None:
     """Geolocate one IP from the local GeoLite2 database at ``cfg.maxmind_db``.
 
