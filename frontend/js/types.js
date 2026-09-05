@@ -342,6 +342,36 @@
  */
 
 /**
+ * What a finished analysis job reports. A summary, not the whole result: the
+ * case is in the database by then, so the detail is read from /api/emails.
+ * @typedef {object} JobSummary
+ * @property {string} email_id
+ * @property {string} filename
+ * @property {string} category
+ * @property {number} risk_score
+ * @property {string} severity
+ * @property {number} processing_ms
+ * @property {string | null} alert_id
+ */
+
+/**
+ * One queued message. `state` is Celery's own vocabulary, passed through:
+ * PENDING, STARTED, SUCCESS, FAILURE, RETRY, REVOKED.
+ * @typedef {object} JobStatus
+ * @property {string} job_id
+ * @property {string} filename
+ * @property {string} state
+ * @property {JobSummary | null} [result]
+ * @property {string | null} [error]
+ */
+
+/**
+ * @typedef {object} AsyncAnalyzeResponse
+ * @property {JobStatus[]} jobs
+ * @property {string} queue how these tasks execute, as /api/health reports it
+ */
+
+/**
  * @typedef {object} EmailListResponse
  * @property {CaseSummary[]} items
  * @property {number} total

@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "mailtrace",
+      "runtimeExecutable": "../.venv/Scripts/python",
+      "runtimeArgs": ["run.py"],
+      "cwd": "backend",
+      "port": 8000
+    }
+  ]
+}

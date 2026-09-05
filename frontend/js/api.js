@@ -18,7 +18,9 @@ import { preferences } from "./state.js";
 /** @typedef {import('./types.js').CustodyVerification} CustodyVerification */
 /** @typedef {import('./types.js').DashboardStats} DashboardStats */
 /** @typedef {import('./types.js').EmailListResponse} EmailListResponse */
+/** @typedef {import('./types.js').AsyncAnalyzeResponse} AsyncAnalyzeResponse */
 /** @typedef {import('./types.js').Health} Health */
+/** @typedef {import('./types.js').JobStatus} JobStatus */
 /** @typedef {import('./types.js').LimeReport} LimeReport */
 
 /** @typedef {{ q?: string, category?: string, minRisk?: number, limit?: number, offset?: number }} ListQuery */
@@ -128,6 +130,26 @@ export const api = {
     for (const file of Array.from(files)) form.append("files", file, file.name);
     return /** @type {Promise<AnalyzeResponse>} */ (request("/api/analyze", { method: "POST", body: form }));
   },
+
+  /**
+   * The same upload through the Celery queue: returns job ids straight away
+   * instead of waiting for the analyses. Used for batches, where holding one
+   * request open for every message would time out long before the work did.
+   * @param {FileList | File[]} files
+   * @returns {Promise<AsyncAnalyzeResponse>}
+   */
+  analyzeFilesAsync: (files) => {
+    const form = new FormData();
+    for (const file of Array.from(files)) form.append("files", file, file.name);
+    return /** @type {Promise<AsyncAnalyzeResponse>} */ (request("/api/analyze/async", { method: "POST", body: form }));
+  },
+
+  /**
+   * Poll a whole batch in one request rather than one per job.
+   * @param {string[]} ids
+   * @returns {Promise<JobStatus[]>}
+   */
+  jobs: (ids) => /** @type {Promise<JobStatus[]>} */ (request(`/api/jobs?ids=${encodeURIComponent(ids.join(","))}`)),
 
   /**
    * @param {string} raw
