@@ -67,9 +67,7 @@ if TYPE_CHECKING:  # pragma: no cover - annotations only; the model packages are
 
 log = logging.getLogger("mailtrace.nlp")
 
-# --------------------------------------------------------------------------- #
 # Lexicons (lower-case; phrases allowed; matched on word boundaries)
-# --------------------------------------------------------------------------- #
 URGENCY = (
     "immediately", "urgent", "urgently", "within 24 hours", "within 48 hours", "within 72 hours", "asap",
     "as soon as possible", "right away", "act now", "final notice", "last chance", "expires today",
@@ -224,9 +222,7 @@ _PATTERNS: dict[str, re.Pattern[str]] = {
 }
 
 
-# --------------------------------------------------------------------------- #
 # Text helpers
-# --------------------------------------------------------------------------- #
 def normalize_text(subject: str, body: str) -> str:
     """NFKC-normalised, lower-case, whitespace-collapsed subject + body."""
     combined = f"{subject or ''}\n{body or ''}"
@@ -272,9 +268,7 @@ def _body_text(parsed: ParsedEmail) -> str:
     return ""
 
 
-# --------------------------------------------------------------------------- #
 # BEC patterns
-# --------------------------------------------------------------------------- #
 def _clamp01(value: float) -> float:
     return max(0.0, min(1.0, float(value)))
 
@@ -453,9 +447,7 @@ def _dedupe(items: list[str]) -> list[str]:
     return out[:8]
 
 
-# --------------------------------------------------------------------------- #
 # ML
-# --------------------------------------------------------------------------- #
 def _heuristic_probabilities(
     cred: int, fin: int, threat: int, reward: int, secrecy: int, authority: int, urgency: float,
     exec_conf: float, link_signal: bool, total_words: int,
@@ -550,9 +542,7 @@ def _run_model(text: str, cfg: Settings) -> _ModelOutcome:
     return None, {}, [], [], "unavailable", "unavailable", None
 
 
-# --------------------------------------------------------------------------- #
 # Entry point
-# --------------------------------------------------------------------------- #
 def _finding(fid: str, severity: Severity, title: str, detail: str, evidence: dict[str, object]) -> Finding:
     return Finding(id=fid, module="nlp", severity=severity, title=title, detail=detail, evidence=evidence)
 

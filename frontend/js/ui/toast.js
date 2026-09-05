@@ -1,7 +1,4 @@
 // @ts-check
-/**
- * Transient notifications in the corner of the screen.
- */
 import { html, mount, must } from "../dom.js";
 
 /** @typedef {'success' | 'error' | 'alert'} ToastKind */

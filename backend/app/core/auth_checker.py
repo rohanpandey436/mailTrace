@@ -64,9 +64,7 @@ _SPF_MX_LIMIT = 10
 _SPF_NESTING_LIMIT = 10
 
 
-# --------------------------------------------------------------------------- #
 # Small text helpers
-# --------------------------------------------------------------------------- #
 def _strip_comments(text: str) -> str:
     """Remove (possibly nested) parenthesised comments and collapse whitespace."""
     kept: list[str] = []
@@ -142,9 +140,7 @@ def _aligned(domain: str, sender_rd: str) -> bool | None:
     return registrable_domain(domain) == sender_rd
 
 
-# --------------------------------------------------------------------------- #
 # Header parsing
-# --------------------------------------------------------------------------- #
 def parse_authentication_results(headers: list[HeaderField]) -> dict[str, Any]:
     """Extract receiver verdicts from Authentication-Results, ARC-Authentication-
     Results and Received-SPF headers.
@@ -225,9 +221,7 @@ def parse_dkim_signature(headers: list[HeaderField]) -> dict[str, str]:
     return {}
 
 
-# --------------------------------------------------------------------------- #
 # Live SPF (simplified RFC 7208)
-# --------------------------------------------------------------------------- #
 class _SpfPermError(Exception):
     """Record is unusable (syntax, loops, lookup limit)."""
 
@@ -458,9 +452,7 @@ def live_spf(ip: str, domain: str, cfg: Settings, store: Any = None) -> tuple[st
     return result, notes
 
 
-# --------------------------------------------------------------------------- #
 # Live DKIM
-# --------------------------------------------------------------------------- #
 def live_dkim(raw: bytes, cfg: Settings) -> tuple[str, str, str, list[str]]:
     """Verify the first DKIM signature of ``raw`` with dkimpy.
 
@@ -520,9 +512,7 @@ def live_dkim(raw: bytes, cfg: Settings) -> tuple[str, str, str, list[str]]:
     return "unverifiable", d_domain, selector, notes
 
 
-# --------------------------------------------------------------------------- #
 # Live DMARC
-# --------------------------------------------------------------------------- #
 def live_dmarc(domain: str, cfg: Settings, store: Any = None) -> tuple[str, str]:
     """``(policy, record)`` of the DMARC record for ``domain`` (falling back to
     its registrable domain); ``('', '')`` offline, on failure or when absent."""
@@ -565,9 +555,7 @@ def live_dmarc(domain: str, cfg: Settings, store: Any = None) -> tuple[str, str]
     return policy, record
 
 
-# --------------------------------------------------------------------------- #
 # Evaluation
-# --------------------------------------------------------------------------- #
 def _boundary_hop(header_analysis: HeaderAnalysis, cfg: Settings) -> Hop | None:
     """Latest hop whose source is a public, non-organisation, non-trusted
     address: the connection the receiving boundary evaluated SPF against."""

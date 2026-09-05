@@ -1,9 +1,5 @@
 // @ts-check
-/**
- * The drop zone on the home page: choose or drop `.eml` files, or paste the
- * raw message source.  Either way the analysis runs and the browser lands on
- * the first result.
- */
+/** The drop zone: choose or drop `.eml` files, or paste the raw message source. */
 import { api, errorMessage } from "../api.js";
 import { html, must } from "../dom.js";
 import { plural } from "../format.js";
@@ -38,7 +34,6 @@ export function dropzone() {
 }
 
 /**
- * Wire the drop zone rendered by `dropzone()`.
  * @param {HTMLElement} zone
  * @param {HTMLInputElement} fileInput the page's hidden file input
  */

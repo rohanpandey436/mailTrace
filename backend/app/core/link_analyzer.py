@@ -47,9 +47,7 @@ from .knowledge import (
 
 log = logging.getLogger("mailtrace.urls")
 
-# --------------------------------------------------------------------------- #
 # Registrable domain (public-suffix aware, no network)
-# --------------------------------------------------------------------------- #
 _FALLBACK_SUFFIXES: frozenset[str] = frozenset({
     "co.in", "net.in", "org.in", "ac.in", "gov.in", "nic.in", "res.in", "edu.in", "firm.in", "gen.in", "ind.in",
     "co.uk", "org.uk", "ac.uk", "gov.uk", "me.uk", "ltd.uk", "plc.uk",
@@ -111,9 +109,7 @@ def registrable_domain(host: str) -> str:
     return host
 
 
-# --------------------------------------------------------------------------- #
 # Brand knowledge derived once
-# --------------------------------------------------------------------------- #
 BRAND_LEGIT_DOMAINS: frozenset[str] = frozenset(d.lower() for domains in BRANDS.values() for d in domains)
 _DOMAIN_TO_BRAND: dict[str, str] = {}
 for _key, _domains in BRANDS.items():
@@ -152,9 +148,7 @@ _RISK_VALUE: dict[str, float] = {"info": 0.0, "low": 0.2, "medium": 0.45, "high"
 _MAX_URLS = 60
 
 
-# --------------------------------------------------------------------------- #
 # Extraction
-# --------------------------------------------------------------------------- #
 _TEXT_URL_RE = re.compile(
     r"""
     (?:https?|ftp)://[^\s<>"'`\)\]]+                                   # explicit scheme
@@ -281,9 +275,7 @@ def _strip_tags(html: str) -> str:
     return _TAG_RE.sub(" ", html)
 
 
-# --------------------------------------------------------------------------- #
 # Normalisation
-# --------------------------------------------------------------------------- #
 _UNRESERVED = set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
 _PCT_RE = re.compile(r"%([0-9A-Fa-f]{2})")
 
@@ -337,9 +329,7 @@ def normalize_url(url: str) -> str:
     return urlunsplit((scheme, netloc, path, query, ""))
 
 
-# --------------------------------------------------------------------------- #
 # Lookalike detection
-# --------------------------------------------------------------------------- #
 def damerau_levenshtein(a: str, b: str) -> int:
     """Optimal-string-alignment distance (insert, delete, substitute, transpose)."""
     if a == b:
@@ -495,9 +485,7 @@ def is_lookalike(host: str, cfg: Settings) -> tuple[str, str]:
     return "", ""
 
 
-# --------------------------------------------------------------------------- #
 # Per-URL analysis
-# --------------------------------------------------------------------------- #
 _HOST_IN_TEXT_RE = re.compile(
     r"(?:(?:https?|ftp)://)?(?:www\.)?((?:[a-z0-9-]+\.)+[a-z]{2,24})(?:[/:?#]|$)", re.IGNORECASE
 )
@@ -704,9 +692,7 @@ def analyze_url(url: str, anchor_text: str, cfg: Settings) -> UrlInfo:
     return info
 
 
-# --------------------------------------------------------------------------- #
 # Whole-message analysis
-# --------------------------------------------------------------------------- #
 def _finding(fid: str, severity: Severity, title: str, detail: str, evidence: dict[str, object]) -> Finding:
     return Finding(id=fid, module="urls", severity=severity, title=title, detail=detail, evidence=evidence)
 

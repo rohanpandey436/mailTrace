@@ -1,8 +1,5 @@
 // @ts-check
-/**
- * Linked attacks: the list of campaigns, and one campaign with its members
- * and the merged relationship graph.
- */
+/** Linked attacks: the campaign list, and one campaign with its merged graph. */
 import { api } from "../api.js";
 import { html, mount, must } from "../dom.js";
 import { formatDate, plural } from "../format.js";

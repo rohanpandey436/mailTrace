@@ -1,8 +1,5 @@
 // @ts-check
-/**
- * "Where it came from": the delivery path rebuilt from the Received headers,
- * and the same hops on a map.
- */
+/** "Where it came from": the Received chain as a list, and the same hops on a map. */
 import { $$, html, must } from "../../dom.js";
 import { flag, formatDate, place } from "../../format.js";
 import { createRouteMap } from "../../ui/map.js";
@@ -57,7 +54,7 @@ function hopRow(hop, origin) {
 }
 
 /**
- * Why the map may be empty, in the user's terms.
+ * Why the map is empty, in the user's terms rather than the engine's.
  * @param {number} hops
  * @param {number} located
  * @param {Health | null} health
@@ -97,7 +94,7 @@ export function traceTab(result, health) {
 }
 
 /**
- * Draw the map for a mounted trace tab and link the hop list to its pins.
+ * Links the hop list to the map pins in both directions.
  * @param {HTMLElement} panel
  * @param {AnalysisResult} result
  * @returns {() => void} cleanup

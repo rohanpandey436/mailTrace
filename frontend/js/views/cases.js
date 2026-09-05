@@ -1,8 +1,5 @@
 // @ts-check
-/**
- * The case list: search, filter, page through everything that has been
- * checked, and export the same selection as CSV.
- */
+/** The case list: search, filter, page, and export the same selection as CSV. */
 import { api, errorMessage, urls } from "../api.js";
 import { $, attr, html, mount, must } from "../dom.js";
 import { plural } from "../format.js";

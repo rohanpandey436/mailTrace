@@ -96,9 +96,7 @@ _ALIAS_PHRASES: tuple[str, ...] = tuple(sorted(_BRAND_ALIASES, key=len, reverse=
 _BRAND_KEYS: tuple[str, ...] = tuple(sorted(BRANDS, key=len, reverse=True))
 
 
-# --------------------------------------------------------------------------- #
 # Low-level text helpers
-# --------------------------------------------------------------------------- #
 def _depth_map(text: str) -> list[int]:
     """Parenthesis nesting depth *before* each character of ``text``."""
     depths: list[int] = []
@@ -161,9 +159,7 @@ def _is_internal_host(host: str, cfg: Settings) -> bool:
     return _host_matches(host, cfg.org_domains) or _host_matches(host, cfg.trusted_relays)
 
 
-# --------------------------------------------------------------------------- #
 # Public helpers
-# --------------------------------------------------------------------------- #
 def is_private_ip(ip: str) -> bool:
     """RFC 1918, loopback, link-local, CGNAT (100.64/10), ULA, site-local,
     multicast, reserved and unspecified addresses.  IPv4-mapped and 6to4
@@ -221,9 +217,7 @@ def extract_ips(text: str) -> list[str]:
     return result
 
 
-# --------------------------------------------------------------------------- #
 # Received header parsing
-# --------------------------------------------------------------------------- #
 def _split_clauses(body: str) -> dict[str, str]:
     """Map each top-level clause keyword to its raw value (first occurrence
     wins).  Keywords inside parenthesised comments are ignored."""
@@ -342,9 +336,7 @@ def parse_received(value: str) -> dict[str, Any]:
     return {key: full[key] for key in keys}
 
 
-# --------------------------------------------------------------------------- #
 # Hop chain
-# --------------------------------------------------------------------------- #
 def _build_hops(infos: list[dict[str, Any]], cfg: Settings) -> list[Hop]:
     """Turn chronologically ordered parses into Hop models with per-hop anomalies."""
     hops: list[Hop] = []
@@ -481,9 +473,7 @@ def _select_origin(
     )
 
 
-# --------------------------------------------------------------------------- #
 # Identity checks
-# --------------------------------------------------------------------------- #
 def _message_id_domain(message_id: str) -> str:
     value = (message_id or "").strip().strip("<>").strip()
     if "@" not in value:
@@ -535,9 +525,7 @@ def _timing_sentence(hop: Hop) -> str:
     return f"{_hop_label(hop)} waited {delay / 3600:.1f} h after the previous hop"
 
 
-# --------------------------------------------------------------------------- #
 # Entry point
-# --------------------------------------------------------------------------- #
 def analyze_headers(parsed: ParsedEmail, cfg: Settings) -> HeaderAnalysis:
     """Reconstruct the routing chain, select the origin IP and check the
     identity headers for forgery.  Never raises on malformed input."""

@@ -202,7 +202,6 @@ def chain_hash(
     return hashlib.sha256(material.encode("utf-8")).hexdigest()
 
 
-# --------------------------------------------------------------------------- #
 # SQL dialects
 #
 # Everything in ``Store`` below is written once, in SQLite SQL with ``?``
@@ -212,7 +211,6 @@ def chain_hash(
 # ``_SqliteDialect`` is the identity: it hands the sqlite3 connection straight
 # back and emits exactly the SQL this module used before the split existed, so
 # the tested path is byte-for-byte unchanged.
-# --------------------------------------------------------------------------- #
 POSTGRES_SCHEMES = ("postgres://", "postgresql://")
 
 # A connection-like object: ``execute(sql, params) -> cursor``, ``executemany``

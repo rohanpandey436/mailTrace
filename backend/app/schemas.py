@@ -24,9 +24,7 @@ from pydantic import BaseModel, ConfigDict, Field
 ENGINE_VERSION = "1.0.0"
 
 
-# --------------------------------------------------------------------------- #
 # Enumerations
-# --------------------------------------------------------------------------- #
 class ThreatCategory(str, Enum):
     LEGITIMATE = "Legitimate"
     SUSPICIOUS = "Suspicious"
@@ -76,9 +74,7 @@ CaseStatus = Literal["open", "quarantined", "blocked"]
 CASE_STATUSES: tuple[CaseStatus, ...] = ("open", "quarantined", "blocked")
 
 
-# --------------------------------------------------------------------------- #
 # Building blocks
-# --------------------------------------------------------------------------- #
 class Finding(BaseModel):
     """One evidence-backed observation produced by any analyzer."""
 
@@ -164,9 +160,7 @@ class ParsedEmail(BaseModel):
     fuzzy: FuzzyDigest = Field(default_factory=FuzzyDigest, description="SimHash / TLSH digests used for campaign clustering")
 
 
-# --------------------------------------------------------------------------- #
 # Header / protocol analysis
-# --------------------------------------------------------------------------- #
 class GeoInfo(BaseModel):
     ip: str
     country: str = ""
@@ -240,9 +234,7 @@ class HeaderAnalysis(BaseModel):
     findings: list[Finding] = Field(default_factory=list)
 
 
-# --------------------------------------------------------------------------- #
 # Content analysis
-# --------------------------------------------------------------------------- #
 class UrlInfo(BaseModel):
     url: str
     normalized: str = ""
@@ -345,9 +337,7 @@ class NlpAnalysis(BaseModel):
     findings: list[Finding] = Field(default_factory=list)
 
 
-# --------------------------------------------------------------------------- #
 # Domain / infrastructure intelligence
-# --------------------------------------------------------------------------- #
 class DomainIntel(BaseModel):
     domain: str
     role: str = Field(default="", description="sender|reply_to|return_path|url|message_id")
@@ -385,9 +375,7 @@ class InfraAnalysis(BaseModel):
     findings: list[Finding] = Field(default_factory=list)
 
 
-# --------------------------------------------------------------------------- #
 # Correlation, attribution, graph
-# --------------------------------------------------------------------------- #
 class RelatedIncident(BaseModel):
     email_id: str
     subject: str = ""
@@ -434,9 +422,7 @@ class AttributionGraph(BaseModel):
     edges: list[GraphEdge] = Field(default_factory=list)
 
 
-# --------------------------------------------------------------------------- #
 # Verdict
-# --------------------------------------------------------------------------- #
 class RiskBreakdown(BaseModel):
     """The five terms of the Stage 4 threat score, each 0-100 before weighting.
 
@@ -464,9 +450,7 @@ class Verdict(BaseModel):
     recommended_actions: list[str] = Field(default_factory=list)
 
 
-# --------------------------------------------------------------------------- #
 # Chain of custody / alerts / campaigns
-# --------------------------------------------------------------------------- #
 class CustodyEvent(BaseModel):
     seq: int
     timestamp: datetime
@@ -511,9 +495,7 @@ class Campaign(BaseModel):
     countries: list[str] = Field(default_factory=list)
 
 
-# --------------------------------------------------------------------------- #
 # Top-level result
-# --------------------------------------------------------------------------- #
 class AnalysisResult(BaseModel):
     model_config = ConfigDict(use_enum_values=False)
 
@@ -688,9 +670,7 @@ class RawSubmission(BaseModel):
     filename: str = "pasted.eml"
 
 
-# --------------------------------------------------------------------------- #
 # API response envelopes
-# --------------------------------------------------------------------------- #
 class AnalyzeResponse(BaseModel):
     """``POST /api/analyze``: one result per message, plus any alerts they raised."""
 

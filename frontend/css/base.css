@@ -92,7 +92,7 @@ details > summary::-webkit-details-marker {
   border: 3px solid var(--color-paper);
 }
 
-/* Text helpers ----------------------------------------------------------- */
+/* Text helpers */
 .mono {
   font-family: var(--font-mono);
   font-size: 0.8rem;

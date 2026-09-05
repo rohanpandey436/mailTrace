@@ -1,8 +1,5 @@
 // @ts-check
-/**
- * Alerts: the list, the unread badge in the top bar and the rail, and the
- * "mark as seen" action.
- */
+/** Alerts: the list, the unread badges, and the "mark as seen" action. */
 import { api, errorMessage } from "../api.js";
 import { $, html, mount, must, on } from "../dom.js";
 import { formatDate } from "../format.js";
@@ -49,7 +46,7 @@ export async function alertsView(container) {
 }
 
 /**
- * Show a live alert at the top of the list, if the list is on screen.
+ * No-op unless the alert list is the view on screen.
  * @param {Alert} alert
  */
 export function prependAlert(alert) {

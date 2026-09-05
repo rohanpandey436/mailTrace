@@ -1,8 +1,8 @@
 // @ts-check
 /**
  * Plain-English names for everything the engine reports, with the technical
- * term in brackets where a panel would expect it.  Pure data: changing the
- * wording of the dashboard means changing this file and nothing else.
+ * term in brackets. Changing the dashboard's wording means changing this
+ * file and nothing else.
  *
  * Each entry names a *tone* ("bad", "ok"), never a colour; css/base.css maps
  * tones to the palette.

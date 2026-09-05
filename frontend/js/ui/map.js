@@ -1,10 +1,9 @@
 // @ts-check
 /**
- * The delivery-path map (Leaflet over OpenStreetMap tiles).
+ * The delivery-path map: one pin per located hop, joined in delivery order.
  *
- * One pin per hop that could be located, joined in delivery order; the
- * originating hop is drawn in the brand colour.  Colours come from the design
- * tokens through theme.js.
+ * Leaflet takes colour values rather than classes, so they come from the
+ * design tokens through theme.js.
  */
 import { esc } from "../dom.js";
 import { place } from "../format.js";

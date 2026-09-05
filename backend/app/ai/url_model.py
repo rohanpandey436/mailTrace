@@ -182,9 +182,7 @@ _BRAND_KEYS: tuple[str, ...] = tuple(sorted({k for k in BRANDS if len(k) >= 4}))
 _NAN = float("nan")
 
 
-# --------------------------------------------------------------------------- #
 # Feature engineering
-# --------------------------------------------------------------------------- #
 def shannon_entropy(value: str) -> float:
     """Shannon entropy of the character distribution of ``value``, bits/char.
 
@@ -305,9 +303,7 @@ def features_for(url: str, anchor: str, cfg: Settings, intel: DomainIntel | None
     return features(analyze_url(url, anchor, cfg), intel)
 
 
-# --------------------------------------------------------------------------- #
 # Dataset generation
-# --------------------------------------------------------------------------- #
 #: Prior used to fill the DomainIntel columns for synthesised hosts.  These are
 #: assumptions, not observations -- see the module docstring.
 _PRIOR_MISSING_RATE = 0.5          # fraction of rows with no enrichment at all
@@ -600,9 +596,7 @@ def build_dataset(cfg: Settings | None = None, seed: int = 20260905) -> tuple[li
     return x, y, meta
 
 
-# --------------------------------------------------------------------------- #
 # Fingerprint / persistence
-# --------------------------------------------------------------------------- #
 def _sha256_file(path: Path) -> str:
     try:
         return hashlib.sha256(Path(path).read_bytes()).hexdigest()
@@ -728,9 +722,7 @@ def _load_bundle(path: Path, fingerprint: str) -> XGBClassifier | None:
     return bundle.get("model")
 
 
-# --------------------------------------------------------------------------- #
 # Process-wide cache
-# --------------------------------------------------------------------------- #
 _lock = threading.Lock()
 _models: dict[str, XGBClassifier] = {}
 #: Fingerprints whose load/train already failed (xgboost missing, fit error).
@@ -784,9 +776,7 @@ def load_or_train(cfg: Settings | None = None) -> XGBClassifier | None:
         return model
 
 
-# --------------------------------------------------------------------------- #
 # Scoring
-# --------------------------------------------------------------------------- #
 @dataclass
 class UrlModelOutcome:
     """What the model concluded about one message's links."""
@@ -849,9 +839,7 @@ def score_urls(urls: Any, domain_intel: Any, cfg: Settings | None = None) -> Url
     )
 
 
-# --------------------------------------------------------------------------- #
 # CLI
-# --------------------------------------------------------------------------- #
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Train the MailTrace URL/domain risk model.")
     parser.add_argument("--out", type=Path, default=None, help="model output path")

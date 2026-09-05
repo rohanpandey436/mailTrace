@@ -2,10 +2,9 @@
 /**
  * The backend API, one function per endpoint.
  *
- * This is the only module that calls `fetch`.  Every request carries the
- * current PII-mask preference, every response is parsed here, and a failed
- * request becomes an `ApiError` carrying the server's message - so views
- * never see raw `Response` objects or JSON.
+ * The only module that calls `fetch`. Every request carries the PII-mask
+ * preference and a failure becomes an `ApiError`, so views never see a
+ * `Response` or raw JSON.
  */
 import { preferences } from "./state.js";
 

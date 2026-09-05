@@ -60,9 +60,7 @@ CASE_COLUMNS: tuple[str, ...] = (
 )
 
 
-# --------------------------------------------------------------------------- #
 # Cell rendering
-# --------------------------------------------------------------------------- #
 def _text(value: Any) -> str:
     """One cell's value as plain text, before the formula guard."""
     if value is None:
@@ -100,9 +98,7 @@ def _row(writer: Any, cells: Iterable[Any]) -> None:
     writer.writerow([sanitize_cell(cell) for cell in cells])
 
 
-# --------------------------------------------------------------------------- #
 # One case: header block + findings table
-# --------------------------------------------------------------------------- #
 def _geo_rows(geo: GeoInfo | None) -> list[tuple[str, Any]]:
     if geo is None:
         return [("IP", ""), ("Note", "No routable origin was identified in the Received chain")]
@@ -230,9 +226,7 @@ def render_report_csv(report: ForensicReport) -> str:
     return buffer.getvalue()
 
 
-# --------------------------------------------------------------------------- #
 # The case list
-# --------------------------------------------------------------------------- #
 def render_case_list_csv(rows: Iterable[CaseSummary]) -> str:
     """The case list as one row per case, in the order the store returned them."""
     buffer = io.StringIO()

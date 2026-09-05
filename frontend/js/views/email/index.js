@@ -165,8 +165,8 @@ function page(result) {
 }
 
 /**
- * Render one tab into the panel.  Returns a cleanup for tabs that hold
- * resources (the map, the graph, an in-flight request).
+ * Returns a cleanup for the tabs that hold resources: the map, the graph,
+ * and the evidence log's in-flight request.
  * @param {HTMLElement} panel
  * @param {AnalysisResult} result
  * @param {EmailTab} tab

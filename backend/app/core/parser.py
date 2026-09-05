@@ -97,9 +97,7 @@ class RawAttachment:
     is_inline: bool = False
 
 
-# --------------------------------------------------------------------------- #
 # Stage 2: the optional C++20 dissector
-# --------------------------------------------------------------------------- #
 # ``mailtrace_engine`` (engine/) splits raw bytes into headers and body-part
 # byte ranges.  It decodes nothing: no RFC 2047 words, no RFC 2231 parameters,
 # no charsets, no base64.  Everything it returns is fed into a real
@@ -430,9 +428,7 @@ def engine_status() -> dict[str, object]:
     }
 
 
-# --------------------------------------------------------------------------- #
 # Header helpers
-# --------------------------------------------------------------------------- #
 def _unfold(value: str) -> str:
     return " ".join(_FOLD_RE.sub(" ", value).split())
 
@@ -530,9 +526,7 @@ def _parse_date(value: str) -> datetime | None:
     return parsed.astimezone(UTC)
 
 
-# --------------------------------------------------------------------------- #
 # HTML -> text
-# --------------------------------------------------------------------------- #
 _BLOCK_TAGS = {
     "p", "div", "br", "li", "tr", "h1", "h2", "h3", "h4", "h5", "h6", "table", "ul", "ol",
     "blockquote", "section", "article", "header", "footer", "pre", "hr", "dd", "dt",
@@ -587,9 +581,7 @@ def html_to_text(html: str) -> str:
     return text.strip()
 
 
-# --------------------------------------------------------------------------- #
 # MIME walking
-# --------------------------------------------------------------------------- #
 def _python_message(raw: bytes) -> Message | None:
     """The reference parser: CPython's ``email`` package, unchanged.
 
@@ -715,9 +707,7 @@ def _basic_meta(att: RawAttachment) -> AttachmentMeta:
     )
 
 
-# --------------------------------------------------------------------------- #
 # Fuzzy hashing (Stage 5A)
-# --------------------------------------------------------------------------- #
 # SHA-256 answers "is this the same file?".  Campaign correlation needs "is this
 # the same message with a few words swapped?", which needs a digest whose output
 # moves a little when the input moves a little.  Two are produced:
@@ -851,9 +841,7 @@ def tlsh_diff(a_digest: str, b_digest: str) -> int:
     return _lenient(lambda: int(tlsh.diff(a_digest, b_digest)), _TLSH_UNCOMPARABLE)
 
 
-# --------------------------------------------------------------------------- #
 # Entry point
-# --------------------------------------------------------------------------- #
 def _finalise(
     parsed: ParsedEmail, attachments: list[RawAttachment], started: float
 ) -> tuple[ParsedEmail, list[RawAttachment]]:

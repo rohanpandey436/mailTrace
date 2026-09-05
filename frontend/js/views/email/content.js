@@ -1,9 +1,5 @@
 // @ts-check
-/**
- * "How it tries to trick you": pressure tactics, business-fraud patterns,
- * the trained model's view with its SHAP and LIME explanations, and the
- * message text itself.
- */
+/** "How it tries to trick you": pressure tactics, BEC patterns, SHAP and LIME. */
 import { html } from "../../dom.js";
 import { percent, signed } from "../../format.js";
 import { BEC_PATTERN, categoryOf } from "../../labels.js";

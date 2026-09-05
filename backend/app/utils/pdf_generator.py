@@ -190,9 +190,7 @@ thead{display:table-header-group}
 """
 
 
-# --------------------------------------------------------------------------- #
 # Plain-text helpers
-# --------------------------------------------------------------------------- #
 def _clean(text: object) -> str:
     """Collapse whitespace so a value never breaks the one-sentence-per-line summary."""
     return " ".join(str(text).split()) if text else ""
@@ -311,9 +309,7 @@ def _fmt_size(size: int) -> str:
     return f"{size / (1024 * 1024):.2f} MB"
 
 
-# --------------------------------------------------------------------------- #
 # Executive summary
-# --------------------------------------------------------------------------- #
 def _summary_message(result: AnalysisResult) -> str:
     email = result.email
     subject = _clean(email.subject) or "(no subject)"
@@ -513,9 +509,7 @@ def render_text_summary(result: AnalysisResult) -> str:
     return "\n".join(_clean(line) for line in lines)
 
 
-# --------------------------------------------------------------------------- #
 # Report assembly
-# --------------------------------------------------------------------------- #
 def _key_indicators(result: AnalysisResult) -> list[str]:
     email = result.email
     items: list[str] = []
@@ -633,9 +627,7 @@ def _legal_notes(result: AnalysisResult, custody: CustodyChain, masked: bool) ->
     ]
 
 
-# --------------------------------------------------------------------------- #
 # Section 65B(4) certificate
-# --------------------------------------------------------------------------- #
 # The four statutory particulars, in the order the section states them.  The
 # third element is the ForensicReport field that carries the prose.
 _CERT_CLAUSES: tuple[tuple[str, str, str], ...] = (
@@ -855,9 +847,7 @@ def build_report(
     return report
 
 
-# --------------------------------------------------------------------------- #
 # HTML building blocks (every dynamic value is escaped here)
-# --------------------------------------------------------------------------- #
 def _esc(value: object) -> str:
     if value is None:
         return ""
@@ -1020,9 +1010,7 @@ def _geo_cell(geo: GeoInfo | None) -> str:
     return "<br>".join(bits)
 
 
-# --------------------------------------------------------------------------- #
 # HTML sections
-# --------------------------------------------------------------------------- #
 def _cover(report: ForensicReport, result: AnalysisResult) -> str:
     verdict = result.verdict
     severity = _val(verdict.severity)
@@ -1737,9 +1725,7 @@ def render_html(report: ForensicReport) -> str:
     )
 
 
-# --------------------------------------------------------------------------- #
 # PDF rendering (reportlab platypus)
-# --------------------------------------------------------------------------- #
 _PDF_MARGIN = 38.0        # points
 _PDF_FRAME_PAD = 6.0      # SimpleDocTemplate insets its frame by this much on each side
 _PDF_FOOTER_SPACE = 20.0  # extra bottom margin reserved for the page footer
@@ -1821,9 +1807,7 @@ def _styles() -> dict[str, ParagraphStyle]:
     return _PDF_STYLES
 
 
-# --------------------------------------------------------------------------- #
 # PDF flowable helpers
-# --------------------------------------------------------------------------- #
 def _markup(text: str, style: str = "cell") -> Flowable:
     """Paragraph from mark-up that is already escaped (colour and bold wrappers)."""
     return Paragraph(text or "&nbsp;", _styles()[style])
@@ -1993,9 +1977,7 @@ def _geo_lines(geo: GeoInfo | None) -> list[str]:
     return bits or [geo.source or "unavailable"]
 
 
-# --------------------------------------------------------------------------- #
 # PDF sections (one function per section, mirroring the HTML report)
-# --------------------------------------------------------------------------- #
 def _pdf_cover(report: ForensicReport, result: AnalysisResult) -> list[Flowable]:
     verdict = result.verdict
     severity = _val(verdict.severity) or Severity.INFO.value

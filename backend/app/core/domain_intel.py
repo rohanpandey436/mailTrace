@@ -84,9 +84,7 @@ _REFER_RE = re.compile(r"^\s*(?:whois|refer)\s*:\s*(\S+)", re.IGNORECASE | re.MU
 _WHOIS_MAX_BYTES = 64 * 1024
 
 
-# --------------------------------------------------------------------------- #
 # Small helpers
-# --------------------------------------------------------------------------- #
 def _timeout(cfg: Settings) -> float:
     try:
         return max(0.5, float(cfg.lookup_timeout))
@@ -147,9 +145,7 @@ def _from_iso(value: object) -> datetime | None:
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 
-# --------------------------------------------------------------------------- #
 # WHOIS
-# --------------------------------------------------------------------------- #
 def _whois_query(server: str, query: str, timeout: float) -> str:
     chunks: list[bytes] = []
     total = 0
@@ -228,9 +224,7 @@ def whois_lookup(domain: str, cfg: Settings, store: Store | None) -> Mapping[str
     return result
 
 
-# --------------------------------------------------------------------------- #
 # DNS
-# --------------------------------------------------------------------------- #
 def dns_lookup(domain: str, cfg: Settings, store: Store | None) -> Mapping[str, object]:
     """A / MX / NS / SPF / DMARC records; ``{}`` when offline or unavailable."""
     if not cfg.enable_network or not domain or _is_ip(domain):
@@ -287,9 +281,7 @@ def dns_lookup(domain: str, cfg: Settings, store: Store | None) -> Mapping[str, 
     return result
 
 
-# --------------------------------------------------------------------------- #
 # Reputation
-# --------------------------------------------------------------------------- #
 def domain_reputation(domain: str, cfg: Settings, store: Store | None) -> list[str]:
     """Feeds/tags that flag the domain: 'urlhaus', 'disposable', 'suspicious_tld'."""
     tags: list[str] = []
@@ -326,9 +318,7 @@ def domain_reputation(domain: str, cfg: Settings, store: Store | None) -> list[s
     return tags + [t for t in remote if t not in tags]
 
 
-# --------------------------------------------------------------------------- #
 # Per-domain analysis
-# --------------------------------------------------------------------------- #
 def _finding(fid: str, severity: Severity, title: str, detail: str, evidence: dict[str, object]) -> Finding:
     return Finding(id=fid, module="domains", severity=severity, title=title, detail=detail, evidence=evidence)
 
@@ -474,9 +464,7 @@ def analyze_domain(domain: str, role: str, cfg: Settings, store: Store | None) -
     return intel
 
 
-# --------------------------------------------------------------------------- #
 # Target selection and batch execution
-# --------------------------------------------------------------------------- #
 def collect_domains(
     parsed: ParsedEmail, header_analysis: HeaderAnalysis, url_analysis: UrlAnalysis, cfg: Settings
 ) -> list[tuple[str, str]]:

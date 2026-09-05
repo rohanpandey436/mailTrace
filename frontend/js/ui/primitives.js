@@ -1,9 +1,5 @@
 // @ts-check
-/**
- * Small presentational pieces shared by every view: chips, bars, the gauge,
- * sections and the loading / empty / error states.  Each returns markup and
- * holds no state.
- */
+/** Presentational pieces shared by every view. Each returns markup and holds no state. */
 import { attr, html } from "../dom.js";
 import { clampPercent } from "../format.js";
 import { categoryOf, severityOf } from "../labels.js";
@@ -23,7 +19,6 @@ export function chip(text, tone = "neutral", { mono = false, title = "" } = {}) 
 }
 
 /**
- * The threat category as a coloured chip.
  * @param {string | null | undefined} category
  */
 export function categoryChip(category) {
@@ -53,7 +48,6 @@ export function check(label, value, outcome, why) {
 }
 
 /**
- * A horizontal 0-100 bar.
  * @param {number} value
  * @param {Tone} tone
  */
@@ -62,7 +56,6 @@ export function bar(value, tone) {
 }
 
 /**
- * A short bar with the score beside it, as used in tables.
  * @param {number} score
  * @param {string} severity
  */
@@ -71,7 +64,6 @@ export function riskBar(score, severity) {
 }
 
 /**
- * The half-circle risk gauge.
  * @param {number} score
  * @param {string} severity
  */
@@ -86,7 +78,6 @@ export function gauge(score, severity) {
 }
 
 /**
- * A titled card.
  * @param {string} title
  * @param {Renderable} body
  * @param {{ aside?: Renderable, note?: string }} [options] `aside` sits right of the title, `note` explains the section
@@ -117,7 +108,7 @@ export function kpi(label, value, tone) {
 }
 
 /**
- * A definition list.  An empty value renders as a dash.
+ * An empty value renders as a dash rather than a blank row.
  * @param {Array<[string, Renderable]>} pairs
  */
 export function kv(pairs) {
@@ -127,7 +118,6 @@ export function kv(pairs) {
 }
 
 /**
- * Placeholder blocks while data loads.
  * @param {number} [count]
  */
 export function skeleton(count = 3) {

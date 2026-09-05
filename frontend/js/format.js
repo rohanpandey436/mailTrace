@@ -1,7 +1,5 @@
 // @ts-check
-/**
- * Pure formatting functions.  No DOM, no state, no side effects.
- */
+/** Pure formatting functions. No DOM, no state, no side effects. */
 
 const KILOBYTE = 1024;
 const MEGABYTE = KILOBYTE * KILOBYTE;
@@ -37,7 +35,6 @@ export function percent(ratio) {
 }
 
 /**
- * Clamp a number into 0-100.
  * @param {number | null | undefined} value
  */
 export function clampPercent(value) {
@@ -63,7 +60,6 @@ export function plural(count, noun, plural = `${noun}s`) {
 }
 
 /**
- * A two-letter country code as its flag emoji, or nothing.
  * @param {string | null | undefined} countryCode
  */
 export function flag(countryCode) {
@@ -73,7 +69,7 @@ export function flag(countryCode) {
 }
 
 /**
- * "City, Country" from whatever parts are present.
+ * Joins the parts that are present, so a missing city does not leave a stray comma.
  * @param {Array<string | null | undefined>} parts
  */
 export function place(parts) {
@@ -81,7 +77,6 @@ export function place(parts) {
 }
 
 /**
- * A signed weight to three decimals, always with a sign.
  * @param {number} weight
  */
 export function signed(weight) {

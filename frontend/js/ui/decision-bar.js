@@ -2,11 +2,10 @@
 /**
  * The analyst decision bar on a case (Stage 6).
  *
- * Deliberately honest wording.  These buttons write the analyst's decision to
- * the tamper-evident evidence log and collect the indicators for whoever does
- * the enforcing; MailTrace holds no mailbox credentials and never touches a
- * mail gateway, so nothing here may imply that a message was actually moved,
- * deleted or blocked anywhere.
+ * The wording is deliberately honest: these buttons write a decision to the
+ * evidence log and gather indicators. MailTrace holds no mailbox credentials
+ * and never touches a mail gateway, so nothing here may imply that a message
+ * was moved, deleted or blocked anywhere.
  */
 import { api, errorMessage, urls } from "../api.js";
 import { $$, html, mount } from "../dom.js";

@@ -1,8 +1,7 @@
 /*
- * Ambient declarations for the two libraries loaded from a CDN in index.html.
- * Only the surface the dashboard uses is declared, so the type checker can
- * hold ui/map.js and ui/graph.js to the same standard as everything else
- * without a package manager.
+ * Ambient declarations for the two CDN libraries: only the surface the
+ * dashboard uses, so ui/map.js and ui/graph.js type-check without a package
+ * manager.
  */
 
 declare namespace L {

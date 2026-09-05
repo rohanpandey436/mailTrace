@@ -1,11 +1,9 @@
 // @ts-check
 /**
- * The relationship graph (Cytoscape.js).
+ * The relationship graph (Cytoscape.js): nodes coloured by type, sized by risk.
  *
- * Nodes are the things an email touches - addresses, domains, IPs, links,
- * attachments - coloured by type and sized by risk.  In a campaign view the
- * nodes sitting between two emails are the shared pieces of the attacker's
- * setup, which is exactly what an investigator follows.
+ * In a campaign view the nodes sitting between two emails are the shared
+ * pieces of the attacker's setup, which is what an investigator follows.
  */
 import { esc, html, mount, must } from "../dom.js";
 import { NODE_TYPE } from "../labels.js";
@@ -67,7 +65,7 @@ function stylesheet() {
 }
 
 /**
- * Draw `graph` into `container`.  Returns the function that tears it down.
+ * Returns the function that tears the graph down.
  * @param {HTMLElement} container
  * @param {AttributionGraph} graph
  * @returns {() => void}

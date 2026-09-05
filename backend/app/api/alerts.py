@@ -113,9 +113,7 @@ broadcaster = Broadcaster()
 router = APIRouter(prefix="/api/alerts", tags=["alerts"])
 
 
-# --------------------------------------------------------------------------- #
 # Outbound webhooks
-# --------------------------------------------------------------------------- #
 _webhook_lock = threading.Lock()
 _webhook_pool: ThreadPoolExecutor | None = None
 _webhook_inflight = 0

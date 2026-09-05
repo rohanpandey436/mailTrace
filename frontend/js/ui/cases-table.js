@@ -1,9 +1,5 @@
 // @ts-check
-/**
- * The case list table, shared by the home page, the case list and each
- * campaign.  Rows carry the case id; `bindCaseRows` (called once at boot)
- * turns a click anywhere on a row into navigation.
- */
+/** The case table, shared by the home page, the case list and each campaign. */
 import { html, on } from "../dom.js";
 import { formatDate } from "../format.js";
 import { DECISION } from "../labels.js";
@@ -40,7 +36,7 @@ function caseRow(item) {
 }
 
 /**
- * Open a case when its row is clicked.  Registered once, on the document.
+ * Registered once, on the document, so table markup carries no handlers.
  * @param {Document} root
  */
 export function bindCaseRows(root) {

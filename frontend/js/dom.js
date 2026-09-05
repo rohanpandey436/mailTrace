@@ -2,16 +2,14 @@
 /**
  * DOM helpers and the `html` template tag.
  *
- * Every piece of markup the dashboard builds goes through `html`, which
- * escapes each interpolated value.  Escaping is therefore the default and
- * forgetting it is impossible; the only way to insert markup unescaped is to
- * pass a `SafeHtml` - the result of another `html` call or of `raw()`.
+ * All markup goes through `html`, which escapes every interpolated value, so
+ * escaping is the default and forgetting it is impossible. The only way in
+ * unescaped is a `SafeHtml` from another `html` call or from `raw()`.
  */
 
 const ESCAPES = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
 
 /**
- * Escape a value for insertion into HTML text or an attribute value.
  * @param {unknown} value
  * @returns {string}
  */
@@ -82,7 +80,6 @@ export function attr(name, value) {
 }
 
 /**
- * Replace an element's content.
  * @param {Element} element
  * @param {Renderable} content
  */

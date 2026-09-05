@@ -1,8 +1,5 @@
 // @ts-check
-/**
- * "Evidence log": the hash-linked chain of custody for a case, and the
- * button that verifies the whole ledger.
- */
+/** "Evidence log": the hash-linked chain of custody, and the ledger check. */
 import { api, errorMessage } from "../../api.js";
 import { html, mount, must } from "../../dom.js";
 import { formatDate, truncate } from "../../format.js";
@@ -53,8 +50,8 @@ function custodyTab(result, chain) {
 }
 
 /**
- * Load and render the evidence log into `panel`.  Returns a cleanup that
- * cancels the render if the tab changes before the log arrives.
+ * Returns a cleanup that cancels the render if the tab changes before the
+ * log arrives.
  * @param {HTMLElement} panel
  * @param {AnalysisResult} result
  * @returns {() => void}

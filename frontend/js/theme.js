@@ -2,16 +2,15 @@
 /**
  * Read design tokens from css/tokens.css at runtime.
  *
- * The map and the graph are drawn by libraries that take colour values, not
- * class names.  They get those values from here, so the stylesheet stays the
- * single source of truth for the palette.
+ * The map and graph libraries take colour values, not class names. They read
+ * them from here, so the stylesheet stays the only source of the palette.
  */
 
 /** @type {Map<string, string>} */
 const cache = new Map();
 
 /**
- * The value of `--color-<name>`, e.g. `color("brand")`.
+ * `color("brand")` -> the value of `--color-brand`.
  * @param {string} name
  * @returns {string}
  */
@@ -25,7 +24,7 @@ export function color(name) {
 }
 
 /**
- * The strong colour of a tone, e.g. `toneColor("bad")`.
+ * The strong (not the soft) colour of a tone.
  * @param {import('./labels.js').Tone} tone
  */
 export function toneColor(tone) {

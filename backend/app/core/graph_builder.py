@@ -70,9 +70,7 @@ _ROLE_FINDINGS: dict[str, tuple[str, ...]] = {
 }
 
 
-# --------------------------------------------------------------------------- #
 # Small pure helpers
-# --------------------------------------------------------------------------- #
 def _name(severity: Any) -> str:
     """Plain severity string from an enum or a string."""
     return str(getattr(severity, "value", severity))
@@ -117,9 +115,7 @@ def _registrable(host: str) -> str:
     return (registrable_domain(host) or host).lower()
 
 
-# --------------------------------------------------------------------------- #
 # Builder: the single place where nodes and edges are deduplicated
-# --------------------------------------------------------------------------- #
 class _GraphBuilder:
     """Accumulates nodes keyed by id and edges keyed by (source, target, relation)."""
 
@@ -157,9 +153,7 @@ class _GraphBuilder:
         return AttributionGraph(nodes=list(self.nodes.values()), edges=list(self.edges.values()))
 
 
-# --------------------------------------------------------------------------- #
 # Per-entity risk and attributes
-# --------------------------------------------------------------------------- #
 def _url_domain(url: UrlInfo) -> str:
     """Registrable domain behind a link; IP-literal hosts have none."""
     if url.is_ip_literal:
@@ -224,9 +218,7 @@ def _ip_profile(
     return risk, attrs
 
 
-# --------------------------------------------------------------------------- #
 # Entry points
-# --------------------------------------------------------------------------- #
 def build_graph(
     email_id: str,
     parsed: ParsedEmail,

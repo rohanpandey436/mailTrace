@@ -107,9 +107,7 @@ _NATURALLY_COMPRESSED_MAGIC: set[str] = _ARCHIVE_MAGIC | _IMAGE_MAGIC | {"ooxml"
 _SNIFFABLE_IMAGE_EXTS: set[str] = {"png", "jpg", "jpeg", "gif"}
 
 
-# --------------------------------------------------------------------------- #
 # Entropy
-# --------------------------------------------------------------------------- #
 def shannon_entropy(data: bytes) -> float:
     """Shannon entropy of ``data`` in bits per byte over the 256-symbol alphabet.
 
@@ -155,9 +153,7 @@ def _entropy_escalates(extension: str, magic: str, high_entropy: bool) -> bool:
     return _image_claim_mismatch(extension, magic)
 
 
-# --------------------------------------------------------------------------- #
 # Content sniffing
-# --------------------------------------------------------------------------- #
 def _looks_text(sample: bytes) -> bool:
     if not sample or b"\x00" in sample:
         return False
@@ -239,9 +235,7 @@ def _ole_has_macros(data: bytes) -> bool:
     return _OLE_VBA_MARKERS[0] in data or (_OLE_VBA_MARKERS[1] in data and _OLE_VBA_MARKERS[2] in data)
 
 
-# --------------------------------------------------------------------------- #
 # Per-attachment analysis
-# --------------------------------------------------------------------------- #
 def _worse(current: str, candidate: str) -> str:
     return candidate if SEVERITY_ORDER[candidate] > SEVERITY_ORDER[current] else current
 
@@ -386,9 +380,7 @@ def analyze_attachment(att: RawAttachment, cfg: Settings) -> AttachmentMeta:
     )
 
 
-# --------------------------------------------------------------------------- #
 # Whole-message analysis
-# --------------------------------------------------------------------------- #
 def _finding(fid: str, severity: Severity, title: str, detail: str, evidence: dict[str, object]) -> Finding:
     return Finding(id=fid, module="attachments", severity=severity, title=title, detail=detail, evidence=evidence)
 

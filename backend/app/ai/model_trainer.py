@@ -104,9 +104,7 @@ _lock = threading.Lock()
 _models: dict[str, Pipeline] = {}
 
 
-# --------------------------------------------------------------------------- #
 # Corpus
-# --------------------------------------------------------------------------- #
 def compose_text(subject: str, body: str) -> str:
     return f"{(subject or '').strip()}\n{(body or '').strip()}".strip()
 
@@ -154,9 +152,7 @@ def load_csv(path: Path, subject_col: str, body_col: str, text_col: str, label_c
     return texts, labels
 
 
-# --------------------------------------------------------------------------- #
 # Model
-# --------------------------------------------------------------------------- #
 def build_pipeline() -> Pipeline:
     from sklearn.feature_extraction.text import TfidfVectorizer
     from sklearn.linear_model import LogisticRegression
@@ -290,9 +286,7 @@ def predict(pipeline: Pipeline, text: str) -> tuple[str, dict[str, float]]:
     return label, probs
 
 
-# --------------------------------------------------------------------------- #
 # Exact SHAP for the linear model
-# --------------------------------------------------------------------------- #
 def _class_weights(classifier: LogisticRegression, label: str) -> tuple[NDArray[np.float64], float]:
     """(coefficient row, intercept) of the decision function for ``label``.
 
@@ -436,9 +430,7 @@ def additivity_check(
     }
 
 
-# --------------------------------------------------------------------------- #
 # Optional transformer backend (DistilRoBERTa); off unless configured
-# --------------------------------------------------------------------------- #
 #: Token attributions from this backend are occlusion deltas, NOT Shapley
 #: values.  Anything that surfaces them must say so.
 TRANSFORMER_ATTRIBUTION = "occlusion"
@@ -588,9 +580,7 @@ def transformer_predict(text: str, cfg: Settings) -> tuple[str, dict[str, float]
         return None
 
 
-# --------------------------------------------------------------------------- #
 # CLI
-# --------------------------------------------------------------------------- #
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Train the MailTrace email classifier.")
     parser.add_argument("--csv", type=Path, help="CSV with subject/body (or text) and label columns")

@@ -18,7 +18,7 @@
   padding-bottom: 5rem;
 }
 
-/* Navigation rail --------------------------------------------------------- */
+/* Navigation rail */
 .rail {
   position: fixed;
   inset-inline: 0;
@@ -85,7 +85,7 @@
   color: var(--color-muted);
 }
 
-/* Top bar ---------------------------------------------------------------- */
+/* Top bar */
 .topbar {
   position: sticky;
   top: 0;
@@ -125,7 +125,7 @@
   right: -0.4rem;
 }
 
-/* View area -------------------------------------------------------------- */
+/* View area */
 .view {
   flex: 1;
   width: 100%;
@@ -213,7 +213,7 @@
   }
 }
 
-/* Composition primitives ------------------------------------------------- */
+/* Composition primitives */
 .stack {
   display: flex;
   flex-direction: column;

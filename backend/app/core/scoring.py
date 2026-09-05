@@ -80,9 +80,7 @@ _ATTACK_CATEGORIES: frozenset[ThreatCategory] = frozenset(
 _ROLE_LABELS: dict[str, str] = {"sender": "Sender", "reply_to": "Reply-To", "return_path": "Return-Path"}
 
 
-# --------------------------------------------------------------------------- #
 # Small pure helpers
-# --------------------------------------------------------------------------- #
 def _clamp(value: Any, low: float = 0.0, high: float = 100.0) -> float:
     """Coerce to float and clamp; NaN, None and garbage become ``low``."""
     try:
@@ -190,9 +188,7 @@ def _describe_url(url: UrlInfo) -> str:
     return f"{url.host or _short(url.url, 60)} [{url.risk.value}{reason}]"
 
 
-# --------------------------------------------------------------------------- #
 # Severity bands
-# --------------------------------------------------------------------------- #
 def severity_for(score: float, has_findings: bool = True) -> Severity:
     """<25 LOW, <50 MEDIUM, <75 HIGH, else CRITICAL; a zero score with no
     findings at all is INFO."""
@@ -208,9 +204,7 @@ def severity_for(score: float, has_findings: bool = True) -> Severity:
     return Severity.CRITICAL
 
 
-# --------------------------------------------------------------------------- #
 # Component scores (0-100)
-# --------------------------------------------------------------------------- #
 def _authentication_score(auth: AuthResult, sender_domain: str, cfg: Settings) -> float:
     spf, dkim, dmarc = auth.spf.lower(), auth.dkim.lower(), auth.dmarc.lower()
     score = 0.0
@@ -434,9 +428,7 @@ def _breakdown_line(breakdown: RiskBreakdown, risk: int) -> str:
     return f"Weighted risk {risk}/100 = {parts}."
 
 
-# --------------------------------------------------------------------------- #
 # Rule policy
-# --------------------------------------------------------------------------- #
 def _pressure_cues(
     parsed: ParsedEmail, header_analysis: HeaderAnalysis, nlp: NlpAnalysis, sender_domain: str, sender_free: bool
 ) -> list[str]:
@@ -581,9 +573,7 @@ def rule_classify(
     ]
 
 
-# --------------------------------------------------------------------------- #
 # Dual validation
-# --------------------------------------------------------------------------- #
 def fuse_category(
     rule_cat: ThreatCategory,
     ml_cat: ThreatCategory,
@@ -608,9 +598,7 @@ def fuse_category(
     return rule_cat, _clamp(confidence, 0.0, 1.0), agreement
 
 
-# --------------------------------------------------------------------------- #
 # Attribution
-# --------------------------------------------------------------------------- #
 def _attribution_indicators(
     parsed: ParsedEmail,
     header_analysis: HeaderAnalysis,
@@ -766,9 +754,7 @@ def attribute_source(
     )
 
 
-# --------------------------------------------------------------------------- #
 # Recommended actions
-# --------------------------------------------------------------------------- #
 def recommended_actions(
     category: ThreatCategory,
     findings: list[Finding],
@@ -860,9 +846,7 @@ def recommended_actions(
     return _unique(actions)[:10]
 
 
-# --------------------------------------------------------------------------- #
 # Findings merge
-# --------------------------------------------------------------------------- #
 def collect_findings(*finding_lists: Iterable[Finding] | None) -> list[Finding]:
     """Merge finding lists, dedupe by (module, id) keeping the first, and sort
     by severity descending, then module, then id."""
@@ -881,9 +865,7 @@ def collect_findings(*finding_lists: Iterable[Finding] | None) -> list[Finding]:
     return merged
 
 
-# --------------------------------------------------------------------------- #
 # Optional XGBoost URL model
-# --------------------------------------------------------------------------- #
 def _score_urls_with_model(
     url_analysis: UrlAnalysis, domain_intel: list[DomainIntel], cfg: Settings
 ) -> tuple[Any, Finding | None]:
@@ -934,9 +916,7 @@ def _score_urls_with_model(
     return outcome, finding
 
 
-# --------------------------------------------------------------------------- #
 # Entry point
-# --------------------------------------------------------------------------- #
 def evaluate(
     parsed: ParsedEmail,
     header_analysis: HeaderAnalysis,

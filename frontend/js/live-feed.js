@@ -2,12 +2,10 @@
 /**
  * Live alerts.
  *
- * The WebSocket at /api/alerts/ws is preferred: it survives proxies that
- * buffer text/event-stream and does not count against the browser's
- * per-origin limit on SSE connections.  If the handshake fails, or the socket
- * closes later, /api/alerts/stream takes over.  Both are fed by the same
- * server-side broadcaster and carry identical Alert JSON, so exactly one of
- * them needs to be connected and it does not matter which.
+ * The WebSocket is preferred: it survives proxies that buffer
+ * text/event-stream and does not count against the browser's per-origin SSE
+ * limit. SSE takes over if the handshake fails or the socket drops later.
+ * Both carry identical Alert JSON, so exactly one needs to be connected.
  */
 import { urls } from "./api.js";
 import { preferences } from "./state.js";

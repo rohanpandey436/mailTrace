@@ -10,20 +10,17 @@
 :root {
   color-scheme: light;
 
-  /* Surfaces and lines */
   --color-paper: #f7f8fa;
   --color-card: #ffffff;
   --color-line: #e3e6eb;
   --color-line-soft: #eef1f5;
   --color-line-strong: #cdd3dc;
 
-  /* Text */
   --color-ink: #1a2130;
   --color-ink-soft: #4a5568;
   --color-muted: #697586;
   --color-on-brand: #ffffff;
 
-  /* Brand */
   --color-brand: #d9480f;
   --color-brand-strong: #c03d0b;
   --color-brand-soft: #fff4ed;
@@ -77,7 +74,6 @@
   --space-8: 2rem;
   --space-10: 2.5rem;
 
-  /* Radius */
   --radius-sm: 8px;
   --radius-md: 10px;
   --radius-lg: 14px;
@@ -104,6 +100,5 @@
   --graph-height-tall: 520px;
   --gauge-width: 11rem;
 
-  /* Motion */
   --duration: 150ms;
 }

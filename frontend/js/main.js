@@ -1,8 +1,5 @@
 // @ts-check
-/**
- * Entry point.  Registers the views, wires the shell (search, PII switch,
- * health badge, alert badge), then starts the router and the live feed.
- */
+/** Entry point: register the views, wire the shell, start the router and the feed. */
 import { api } from "./api.js";
 import { $$, activatable, html, mount, must } from "./dom.js";
 import { truncate } from "./format.js";

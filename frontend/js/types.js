@@ -2,9 +2,8 @@
 /**
  * The shapes the backend returns, mirrored from backend/app/schemas.py.
  *
- * Only the fields the dashboard reads are declared.  This file has no runtime
- * content: it exists so every module can import precise types with
- * `import('./types.js').AnalysisResult` and the checker can hold them to it.
+ * Only the fields the dashboard reads are declared. No runtime content: it
+ * exists so `import('./types.js').AnalysisResult` resolves to a real type.
  */
 
 /** @typedef {'Legitimate' | 'Suspicious' | 'Impersonated' | 'Phishing' | 'Fraud-Related'} ThreatCategory */

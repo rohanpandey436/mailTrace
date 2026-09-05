@@ -1,8 +1,5 @@
 // @ts-check
-/**
- * "Links & files": every link with where it really goes, and every
- * attachment with what it really is.
- */
+/** "Links & files": where each link really goes, and what each file really is. */
 import { html } from "../../dom.js";
 import { formatBytes, truncate } from "../../format.js";
 import { chip, section, severityChip } from "../../ui/primitives.js";

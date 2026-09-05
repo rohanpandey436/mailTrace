@@ -1,7 +1,5 @@
 // @ts-check
-/**
- * Home: the drop zone, the headline numbers and the most recent cases.
- */
+/** Home: the drop zone, the headline numbers and the most recent cases. */
 import { api } from "../api.js";
 import { html, mount, must } from "../dom.js";
 import { categoryOf } from "../labels.js";

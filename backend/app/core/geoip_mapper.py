@@ -144,9 +144,7 @@ _maxmind_readers: dict[str, Any] = {}
 _maxmind_asn_siblings: dict[str, str] = {}
 
 
-# --------------------------------------------------------------------------- #
 # Small utilities
-# --------------------------------------------------------------------------- #
 def _parse_ip(value: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
     """Parse an IP literal as written in headers ('[1.2.3.4]', '[IPv6:::1]');
     IPv4-mapped IPv6 collapses to the IPv4 address.  None when not an address."""
@@ -226,9 +224,7 @@ def _registrable(host: str) -> str:
         return ".".join(text.split(".")[-2:])
 
 
-# --------------------------------------------------------------------------- #
 # Public lookups
-# --------------------------------------------------------------------------- #
 def is_public_ip(ip: str) -> bool:
     """True for globally routable unicast addresses (IPv4 or IPv6)."""
     addr = _parse_ip(ip)
@@ -296,9 +292,7 @@ def _geo_from_ip_api(ip: str, payload: dict[str, Any]) -> GeoInfo:
     )
 
 
-# --------------------------------------------------------------------------- #
 # MaxMind GeoLite2 (local database, preferred source)
-# --------------------------------------------------------------------------- #
 def _db_key(path: str) -> str:
     """Cache key for a database path: absolute, case-folded on Windows."""
     try:
@@ -651,9 +645,7 @@ def enrich_ip(ip: str, cfg: Settings, store: Store | None, full: bool) -> GeoInf
     return geo
 
 
-# --------------------------------------------------------------------------- #
 # Infrastructure analysis
-# --------------------------------------------------------------------------- #
 def _public_ips_in_order(header_analysis: HeaderAnalysis, origin: str) -> list[str]:
     """Unique public IPs worth enriching: origin first, then the hops in
     chronological order, then X-Originating-IP."""
@@ -794,9 +786,7 @@ def _botnet_indicators(header_analysis: HeaderAnalysis, origin_geo: GeoInfo | No
     return indicators
 
 
-# --------------------------------------------------------------------------- #
 # Findings
-# --------------------------------------------------------------------------- #
 def _finding(fid: str, severity: Severity, title: str, detail: str, evidence: dict[str, Any]) -> Finding:
     return Finding(id=fid, module=MODULE, severity=severity, title=title, detail=detail, evidence=evidence)
 
@@ -906,9 +896,7 @@ def _trail_finding(hops: list[Hop]) -> Finding | None:
     )
 
 
-# --------------------------------------------------------------------------- #
 # Entry point
-# --------------------------------------------------------------------------- #
 def analyze_infrastructure(header_analysis: HeaderAnalysis, cfg: Settings, store: Store | None) -> InfraAnalysis:
     """Enrich the public IPs of the Received chain (``hop.geo`` is set in
     place), then derive infrastructure flags, score and findings."""

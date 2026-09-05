@@ -1,8 +1,5 @@
 // @ts-check
-/**
- * "Domains & servers": the originating computer, earlier emails that share
- * something with this one, and every domain involved.
- */
+/** "Domains & servers": the originating computer, prior related cases, every domain. */
 import { html } from "../../dom.js";
 import { flag, place, truncate } from "../../format.js";
 import { DOMAIN_ROLE } from "../../labels.js";

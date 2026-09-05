@@ -1,8 +1,5 @@
 // @ts-check
-/**
- * "What we found": the findings, the five-pillar score breakdown, the
- * recommended actions and the background notes.
- */
+/** "What we found": findings, the five-pillar breakdown, actions, background notes. */
 import { html } from "../../dom.js";
 import { plural } from "../../format.js";
 import { MODULE, PILLARS, categoryOf, toneForScore } from "../../labels.js";

@@ -2,10 +2,9 @@
 /**
  * Hash router.
  *
- * A view is an async function that fills a container and may return a
- * cleanup function (the map and the graph hold resources that must be
- * released).  The router runs the previous view's cleanup before rendering
- * the next, and turns a thrown error into an error state with a retry.
+ * A view fills a container and may return a cleanup function. The router runs
+ * the previous view's cleanup before rendering the next, and turns a thrown
+ * error into an error state with a retry.
  */
 import { $, mount } from "./dom.js";
 import { errorState } from "./ui/primitives.js";

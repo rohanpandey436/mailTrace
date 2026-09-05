@@ -1,10 +1,9 @@
 // @ts-check
 /**
- * Application state.
+ * `preferences` survive a reload (localStorage); `session` lives for the page.
  *
- * `preferences` survive a reload (localStorage); `session` lives for the
- * page.  Both are plain objects that views read directly - at this size a
- * store with subscriptions would be ceremony, not clarity.
+ * Both are plain objects the views read directly: at this size a store with
+ * subscriptions would be ceremony, not clarity.
  */
 
 /** @typedef {import('./types.js').Health} Health */
