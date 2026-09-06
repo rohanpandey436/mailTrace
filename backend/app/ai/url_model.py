@@ -464,8 +464,15 @@ def build_dataset(cfg: Settings | None = None, seed: int = 20260905) -> tuple[li
 
 # Fingerprint / persistence
 def _sha256_file(path: Path) -> str:
+    """Hash one fingerprint input, ignoring line endings.
+
+    A Windows checkout stores source files with CRLF and a Linux one with LF,
+    so hashing raw bytes yields a different fingerprint per platform and the
+    committed graph is refused on whichever machine did not export it.
+    """
     try:
-        return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+        raw = Path(path).read_bytes()
+        return hashlib.sha256(raw.replace(b"\r\n", b"\n")).hexdigest()
     except OSError:
         return ""
 

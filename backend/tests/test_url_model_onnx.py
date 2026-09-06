@@ -59,3 +59,32 @@ def test_scoring_path_prefers_the_graph_when_it_matches(session_cfg, monkeypatch
     finally:
         url_model._models.clear()
         url_model._failed.clear()
+
+
+def test_fingerprint_ignores_line_endings(tmp_path):
+    """The same source must hash the same on Windows and Linux.
+
+    A Windows checkout stores source with CRLF and a Linux one with LF. Hashing
+    raw bytes made the fingerprint platform-dependent, so the committed graph
+    was refused in CI and the URL pillar fell back to the booster.
+    """
+    lf = tmp_path / "lf.py"
+    crlf = tmp_path / "crlf.py"
+    lf.write_bytes(b"BRANDS = {\n    'sbi': 'onlinesbi.sbi',\n}\n")
+    crlf.write_bytes(b"BRANDS = {\r\n    'sbi': 'onlinesbi.sbi',\r\n}\r\n")
+
+    assert url_model._sha256_file(lf) == url_model._sha256_file(crlf)
+
+
+def test_the_committed_graph_matches_the_deployed_configuration():
+    """The shipped graph must be usable by the deployment that ships it.
+
+    render.yaml sets MAILTRACE_ORG_DOMAINS, and the org domains are part of the
+    fingerprint, so a graph exported with different ones is silently refused.
+    """
+    from dataclasses import replace
+
+    from app.config import Settings
+
+    deployed = replace(Settings(), org_domains=["acme-corp.in"])
+    assert onnx_url.load(url_model.dataset_fingerprint(deployed)) is not None
