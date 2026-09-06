@@ -1,14 +1,4 @@
-"""
-Shared FastAPI dependencies.
-
-The application factory places the live ``Settings`` and ``Store`` on
-``app.state``; the ``Annotated`` aliases below hand them to path operations,
-so a handler declares ``store: StoreDep`` and never touches a module-level
-singleton (tests inject their own configuration through
-``create_app(settings)``).  PII-mask resolution and the two helpers that mask
-list rows and alerts also live here so every router applies exactly the same
-privacy policy at the API boundary.
-"""
+"""Shared FastAPI dependencies."""
 from __future__ import annotations
 
 from typing import Annotated

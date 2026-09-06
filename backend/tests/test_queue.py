@@ -1,8 +1,4 @@
-"""
-The Celery queue: eager execution, the job endpoints and, when a broker is
-configured, a worker that consumes from it.  The broker test is skipped without
-``MAILTRACE_REDIS_URL``; CI sets it and starts a separate worker process.
-"""
+"""The Celery queue: eager execution, the job endpoints and, when a broker is configured, a worker that consumes from it.  The broker test is skipped without"""
 from __future__ import annotations
 
 import os
@@ -48,11 +44,7 @@ def test_eager_mode_is_the_default(cfg):
 
 
 def test_reconfiguring_moves_the_live_connections(cfg):
-    """configure() must move the live backend and producer pool, not just the settings.
-
-    Celery caches both on first use; rewriting the URLs left them pointing at
-    the old broker.  Nothing here connects to anything.
-    """
+    """configure() must move the live backend and producer pool, not just the settings."""
     tasks.configure(cfg)
     assert type(tasks.celery_app.backend).__name__ == "CacheBackend"
     # Publishing creates the producer pool.
@@ -177,12 +169,7 @@ def test_task_result_carries_no_message_content(client, sample):
 
 @requires_broker
 def test_a_real_worker_consumes_from_the_broker(sample):
-    """Publish here, consume in a Celery worker, read the case back.
-
-    With MAILTRACE_QUEUE_WORKERS=0 nothing in this process can run the task,
-    so the job only completes if the separate worker picked it up.  Settings
-    come from the environment so both processes share one database.
-    """
+    """Publish here, consume in a Celery worker, read the case back."""
     from app.config import Settings
 
     cfg = Settings.from_env()

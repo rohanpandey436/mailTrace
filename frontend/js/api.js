@@ -1,11 +1,4 @@
 // @ts-check
-/**
- * The backend API, one function per endpoint.
- *
- * The only module that calls `fetch`. Every request carries the PII-mask
- * preference and a failure becomes an `ApiError`, so views never see a
- * `Response` or raw JSON.
- */
 import { preferences } from "./state.js";
 
 /** @typedef {import('./types.js').AnalysisResult} AnalysisResult */

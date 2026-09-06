@@ -1,27 +1,4 @@
-"""
-Analysis pipeline.
-
-Orchestrates every analyzer in a fixed order and fuses their output into one
-AnalysisResult.  The pipeline is synchronous (the web layer runs it in a
-thread pool); network-bound enrichment runs concurrently inside it and is
-fault-tolerant: an enrichment failure degrades the result, it never aborts
-the analysis.
-
-Order of operations
--------------------
-1. parse            -> ParsedEmail + raw attachment bytes
-2. headers          -> Received chain, origin IP, forged-field checks
-3. auth             -> SPF / DKIM / DMARC (Authentication-Results + live)
-4. urls             -> link extraction, needed by two of the three engines
-5. the three intelligence engines, concurrently:
-     3A  attachments + nlp   (entropy, intent, ML classification, SHAP)
-     3B  geoip               (origin trace, VPN/TOR, hop timing)
-     3C  domains             (WHOIS age, DNS/MX, lookalikes, reputation)
-6. threat_intel.correlate        (threat-intel + prior-incident correlation)
-7. scoring          -> verdict, attribution, merged findings
-8. graph            -> relationship graph
-9. persist, cluster into campaign, chain-of-custody events
-"""
+"""Analysis pipeline."""
 from __future__ import annotations
 
 import logging
@@ -60,11 +37,7 @@ def analyze_bytes(
     cfg: Settings | None = None,
     actor: str = "system",
 ) -> AnalysisResult:
-    """Run the full analysis on one RFC 822 message.
-
-    ``store`` may be None (pure analysis, nothing persisted, no campaign
-    correlation).  ``actor`` is recorded in the chain of custody.
-    """
+    """Run the full analysis on one RFC 822 message."""
     from ..utils import virustotal
     from . import (
         ai_engine,
@@ -95,32 +68,16 @@ def analyze_bytes(
     header_analysis.auth = auth_result
     header_analysis.findings.extend(auth_findings)
 
-    # 4. Link extraction -------------------------------------------------
-    # Cheap, offline, and a prerequisite of two of the three engines below:
-    # the AI core scores the lure links, and the domain engine enriches the
-    # hosts they point at.
     url_analysis = link_analyzer.analyze_urls(parsed, cfg)
     domain_targets = domain_intel.collect_domains(parsed, header_analysis, url_analysis, cfg)
 
     def run_ai_core() -> tuple[AttachmentAnalysis, NlpAnalysis]:
-        """Engine 3A: attachment inspection (including Shannon entropy) and the
-        NLP/ML intent analysis that consumes it.
-
-        The optional VirusTotal hash lookup runs last, so a network stall can
-        only delay the attachment findings and never the NLP verdict.  With no
-        ``MAILTRACE_VIRUSTOTAL_KEY`` configured it returns without making a
-        request, which is the deployed default.
-        """
+        """Engine 3A: attachment inspection (including Shannon entropy) and the"""
         atts = file_analyzer.analyze_attachments(raw_attachments, cfg)
         content = ai_engine.analyze_content(parsed, url_analysis, atts, cfg)
         virustotal.enrich(atts, raw_attachments, cfg, store)
         return atts, content
 
-    # 5. The three intelligence engines, genuinely in parallel ------------
-    # 3A is CPU-bound (vectorising and classifying) while 3B and 3C are almost
-    # entirely waiting on DNS, WHOIS and HTTP, so overlapping them turns the sum
-    # of their times into roughly the slowest one. Each is isolated: a failure
-    # degrades that engine's contribution and never aborts the analysis.
     with ThreadPoolExecutor(max_workers=3, thread_name_prefix="mt-engine") as pool:
         fut_ai = pool.submit(run_ai_core)          # 3A - AI core
         fut_infra = pool.submit(geoip_mapper.analyze_infrastructure, header_analysis, cfg, store)  # 3B - GeoIP/route
@@ -129,9 +86,6 @@ def analyze_bytes(
         infra = _safe_result(fut_infra, InfraAnalysis(), "geoip")
         domain_results: list[DomainIntel] = _safe_result(fut_domains, [], "domains")
 
-    # 6. Threat-intel / prior-incident correlation ------------------------
-    # cfg is passed explicitly so the fuzzy-matching thresholds come from this
-    # analysis's settings rather than the module-level singleton.
     intel = threat_intel.correlate(
         email_id, parsed, header_analysis, url_analysis, att_analysis, domain_results, infra, store, cfg
     )

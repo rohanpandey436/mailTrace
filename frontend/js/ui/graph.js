@@ -1,15 +1,4 @@
 // @ts-check
-/**
- * The relationship graph (Cytoscape.js): nodes coloured by type, sized by risk.
- *
- * In a campaign view the nodes sitting between two emails are the shared pieces
- * of the attacker's setup, which is what an investigator follows.
- *
- * Cytoscape owns its container's DOM, so React owns only the container and the
- * tooltip: the instance is built in an effect and destroyed on unmount, and
- * hover state is lifted into React so the tooltip is a component rather than
- * innerHTML written from an event handler.
- */
 import { NODE_TYPE } from "../labels.js";
 import { Fragment, html, useEffect, useRef, useState } from "../react.js";
 import { color, toneColor } from "../theme.js";

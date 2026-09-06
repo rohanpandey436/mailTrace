@@ -1,37 +1,4 @@
-"""
-Content analysis: lexicon features, social-engineering cues, BEC pattern
-detection and the ML classifier (dual validation partner of the rule engine).
-
-Approach
---------
-1. The subject and body are normalised (NFKC, lower-case, collapsed
-   whitespace) and scanned with phrase-aware, word-boundary lexicons for
-   urgency, threat/fear, financial, credential, authority, secrecy, reward,
-   scarcity and curiosity language.
-2. Four BEC patterns are scored from combinations of those hits plus
-   structural signals (links, attachments, sender/Reply-To relationship,
-   display name): payment diversion, fake invoice, credential harvesting and
-   executive impersonation.  Evidence lists quote the phrases actually found.
-3. The classifier (``app.ai.model_trainer``) supplies a category, class probabilities
-   and signed token-level attributions.  Two backends, picked in this order:
-
-   * ``transformer`` - a DistilRoBERTa (or other) sequence-classification model,
-     used only when ``Settings.transformer_model`` is set.  Its attributions are
-     occlusion deltas, not Shapley values, so the method is named in
-     ``ml_model`` and in the finding evidence.  Off by default: `transformers`
-     and `torch` are not in requirements.txt (see ``app/ai/model_trainer.py``).
-   * ``linear`` - the bundled TF-IDF + logistic-regression model, whose
-     attributions are *exact* SHAP values ``phi_i = w_i * (x_i - E[x_i])``.
-
-   When scikit-learn is unavailable the module degrades to a documented
-   heuristic probability estimate, ``ml_backend="unavailable"`` and no weights.
-3b. A second, independent explanation - LIME - is available for the linear
-   backend, but is **not** computed here: it costs several times the whole rest
-   of the analysis, so ``app/core/explanations.py`` builds it on demand.  This
-   module produces only what is free, which is exact SHAP.
-4. ``score`` blends the model's non-legitimate mass, urgency, the strongest
-   BEC pattern and cue diversity into one 0-1 content score.
-"""
+"""Content analysis: lexicon features, social-engineering cues, BEC pattern detection and the ML classifier (dual validation partner of the rule engine)."""
 from __future__ import annotations
 
 import logging
@@ -191,9 +158,6 @@ _WORD_RE = re.compile(r"\S+")
 
 def _compile(lexicon: tuple[str, ...]) -> re.Pattern[str]:
     phrases = sorted({p.lower() for p in lexicon}, key=len, reverse=True)
-    # re.escape leaves spaces alone (3.7+) but older versions escaped them; a
-    # phrase may span a line break in the normalised text, so allow any run of
-    # whitespace between words.
     alternatives = "|".join(re.escape(p).replace(r"\ ", " ").replace(" ", r"\s+") for p in phrases)
     return re.compile(rf"(?<![\w-])(?:{alternatives})(?![\w-])", re.IGNORECASE)
 
@@ -319,10 +283,6 @@ def detect_bec_patterns(
     action = _hits("payment_action", text)
     conf = 0.0
     evidence: list[str] = []
-    # All three legs are required: the message must name banking details, say
-    # they are new/changed, AND ask for a payment to be made.  Without the
-    # payment leg this is a credential-phishing pattern ("confirm your account
-    # number", "update your details"), not a diversion of funds.
     if bank and change and action:
         conf = 0.4
         evidence += bank[:2] + change[:2] + action[:2]
@@ -446,10 +406,7 @@ def _heuristic_probabilities(
     cred: int, fin: int, threat: int, reward: int, secrecy: int, authority: int, urgency: float,
     exec_conf: float, link_signal: bool, total_words: int,
 ) -> dict[str, float]:
-    """Rules-only stand-in for the classifier when scikit-learn is missing:
-    each class accumulates weight from its characteristic cues, 'Legitimate'
-    gets a fixed prior that dominates when few cues fire, and the weights are
-    normalised to sum to one."""
+    """Rules-only stand-in for the classifier when scikit-learn is missing:"""
     weights = {
         "Phishing": 1.0 * cred + (2.0 if link_signal else 0.0) + 0.5 * threat,
         "Fraud-Related": 1.0 * fin + 0.7 * reward + 0.5 * secrecy,
@@ -463,22 +420,13 @@ def _heuristic_probabilities(
 
 #: How many signed token attributions are carried on the report.
 _SHAP_TOP_K = 12
-#: What produced ``NlpAnalysis.shap_weights`` for each backend. The transformer
-#: string mirrors ``train.TRANSFORMER_ATTRIBUTION``: those values are honest
-#: leave-one-token-out deltas, not Shapley values.
 _ATTRIBUTION_METHOD = {"linear": "exact-shap-linear", "transformer": "occlusion", "unavailable": "none"}
 
 _ModelOutcome = tuple[str | None, dict[str, float], list[str], list[tuple[str, float]], str, str]
 
 
 def _run_bundled_transformer(text: str) -> _ModelOutcome | None:
-    """The bundled DistilRoBERTa, or None so the caller uses the linear model.
-
-    Off unless MAILTRACE_TRANSFORMER is set; see ``Settings.transformer_enabled``
-    for the measurement behind that default. Its attributions are occlusion
-    deltas rather than SHAP - a transformer has no closed form - and the backend
-    name carries that through to the UI and the report.
-    """
+    """The bundled DistilRoBERTa, or None so the caller uses the linear model."""
     try:
         from ..ai import transformer
     except ImportError:  # pragma: no cover - ships with the app
@@ -498,17 +446,7 @@ def _run_bundled_transformer(text: str) -> _ModelOutcome | None:
 
 
 def _run_model(text: str, cfg: Settings) -> _ModelOutcome:
-    """(label, probabilities, top terms, token attributions, model name, backend).
-
-    The optional transformer is tried first and falls back silently; the linear
-    model is the default.  ``label`` is None only when neither backend ran, and
-    the caller then uses the rule heuristic.
-
-    Exact SHAP is computed here because it is a closed-form read of the model's
-    own coefficients and costs microseconds.  LIME is not: it fits a surrogate
-    over ~160 perturbations, so it is built on demand by
-    ``app/core/explanations.py`` instead.
-    """
+    """(label, probabilities, top terms, token attributions, model name, backend)."""
     try:
         from ..ai import model_trainer as train
     except ImportError as exc:  # pragma: no cover - the package ships with the app
@@ -522,8 +460,6 @@ def _run_model(text: str, cfg: Settings) -> _ModelOutcome:
 
     model_id = (getattr(cfg, "transformer_model", "") or "").strip()
     if model_id:
-        # Never fatal: transformer_predict returns None on any failure (packages
-        # absent, download blocked, OOM) so analysis continues on the linear model.
         outcome = train.transformer_predict(text, cfg)
         if outcome is not None:
             label, probs, attributions = outcome

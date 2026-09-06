@@ -1,38 +1,4 @@
-"""
-Forensic report generation.
-
-Turns one persisted AnalysisResult plus its chain-of-custody ledger into a
-ForensicReport (the JSON artefact served by the API) and renders that report
-either as a self-contained printable HTML document or as a paginated PDF,
-both intended for hand-over to legal teams and law enforcement.
-
-Approach
---------
-* Everything in the report is a projection of the AnalysisResult and the
-  CustodyChain passed in.  Nothing is re-derived or looked up, so a report is
-  reproducible from stored data alone and this module depends on no analyzer.
-* The executive summary is composed one sentence per topic (message, verdict,
-  claimed identity, origin, authentication, lures, attribution, campaign) so a
-  non-technical reader can follow the case without reading the tables.
-* Every report carries a Section 65B(4) certificate (Indian Evidence Act 1872;
-  Section 63(4) of the Bharatiya Sakshya Adhiniyam 2023).  Its four clauses are
-  written from the facts of this analysis alone - filenames, Message-ID, the
-  ingestion and analysis timestamps, the engine version, the runtime, and the
-  span and event count of the custody ledger.  The tool states nothing it
-  cannot attest to: the signatory's name and position stay blank so a
-  responsible official can complete and sign them.
-* HTML rendering is plain string assembly: inline CSS, no scripts, no external
-  assets, A4 print rules with page breaks between major sections, and every
-  dynamic value passes through html.escape.  Hashes and URLs are monospace with
-  word-break so nothing is truncated or hidden.
-* PDF rendering uses reportlab's platypus on A4 with the same sections and the
-  same numbering.  Every dynamic value goes through ``_pdf_escape`` (platypus
-  parses a mini-HTML, so a raw '&' or '<' from a hostile message would break
-  the build) and every cell is a Paragraph, so 64-character hashes and long
-  URLs wrap inside their column instead of running off the page.
-* Optional values (dates, geolocation, coordinates, ages, delays) render as an
-  em dash rather than "None".
-"""
+"""Forensic report generation."""
 from __future__ import annotations
 
 import html
@@ -114,8 +80,6 @@ _DKIM_TEXT: dict[str, str] = {
     "none": "no DKIM signature was present",
 }
 
-# Stage 4 scoring pillars, in RiskBreakdown field order, with the label and the
-# one-line explanation shown in the report.
 _PILLARS: tuple[tuple[str, str, str], ...] = (
     ("auth", "Auth", "SPF, DKIM, DMARC, alignment, forged sender fields"),
     ("text", "Text", "NLP intent, BEC patterns, social-engineering language"),
@@ -627,9 +591,6 @@ def _legal_notes(result: AnalysisResult, custody: CustodyChain, masked: bool) ->
     ]
 
 
-# Section 65B(4) certificate
-# The four statutory particulars, in the order the section states them.  The
-# third element is the ForensicReport field that carries the prose.
 _CERT_CLAUSES: tuple[tuple[str, str, str], ...] = (
     ("a", "Identification of the electronic record and how it was produced", "statement_of_record"),
     ("b", "The computer that produced the record and its regular use", "computer_description"),
@@ -637,8 +598,6 @@ _CERT_CLAUSES: tuple[tuple[str, str, str], ...] = (
     ("d", "Derivation of the contents and their preservation unaltered", "integrity_statement"),
 )
 
-# Signature block. A field name means "print the value if the caller supplied
-# one, otherwise leave a ruled line"; an empty name is always a ruled line.
 _SIGNATURE_FIELDS: tuple[tuple[str, str], ...] = (
     ("Name of signatory", "signatory_name"),
     ("Position held (person responsible for the operation of the computer)", "signatory_position"),
@@ -789,14 +748,7 @@ def build_section_65b(
     generated_at: datetime,
     masked: bool,
 ) -> Section65BCertificate:
-    """Statement of the Section 65B(4) particulars for one analysed message.
-
-    Only facts the tool observed are stated: the file and Message-ID, the
-    ingestion and analysis timestamps, the engine version and runtime, the
-    digests taken at ingestion and the span, size and validity of the custody
-    ledger.  ``signatory_name`` and ``signatory_position`` are deliberately
-    left empty - the certificate is executed by a person, not by this program.
-    """
+    """Statement of the Section 65B(4) particulars for one analysed message."""
     ingested = _first_event(custody, "ingested")
     ingested_at = ingested.timestamp if ingested is not None else None
     return Section65BCertificate(
@@ -820,11 +772,7 @@ def build_report(
     masked: bool,
     generated_by: str = "system",
 ) -> ForensicReport:
-    """Assemble the forensic report for one analysis.
-
-    ``masked`` states whether ``result`` has already been passed through PII
-    masking; this function never masks anything itself.
-    """
+    """Assemble the forensic report for one analysis."""
     now = datetime.now(UTC)
     is_masked = masked or result.masked
     report_id = f"RPT-{result.id}-{now:%Y%m%d%H%M}"
@@ -1749,13 +1697,7 @@ _PDF_STYLES: dict[str, ParagraphStyle] = {}
 
 
 def _pdf_escape(value: object) -> str:
-    """Escape one dynamic value for platypus' mini-HTML parser.
-
-    Every dynamic value that reaches a Paragraph passes through here: platypus
-    parses its input as mark-up, so an unescaped '&' or '<' arriving from a
-    hostile subject line, header or URL would abort the build or silently eat
-    the rest of the cell.  Control characters have no glyph and are dropped.
-    """
+    """Escape one dynamic value for platypus' mini-HTML parser."""
     if value is None:
         return ""
     if isinstance(value, Enum):
@@ -1864,12 +1806,7 @@ def _authp(outcome: str) -> Flowable:
 
 
 def _cw(*fractions: float) -> list[float]:
-    """Column widths from relative fractions, normalised to the printable width.
-
-    The width is the frame's, not the page's: the document template insets its
-    frame by ``_PDF_FRAME_PAD`` on each side, so measuring from the page margin
-    would push every table that much past the right margin.
-    """
+    """Column widths from relative fractions, normalised to the printable width."""
     total = A4[0] - 2 * (_PDF_MARGIN + _PDF_FRAME_PAD)
     scale = sum(fractions) or 1.0
     return [total * fraction / scale for fraction in fractions]
@@ -2144,8 +2081,6 @@ def _pdf_signature_block(cert: Section65BCertificate) -> list[Flowable]:
         rows.append([_para(label, "sig"), _para(value, "sig")])
         if not value:
             ruled.append(index)
-    # Minimum (not fixed) heights: the rows must be tall enough to sign in, but a
-    # long label still gets the space it needs instead of being clipped.
     table = Table(rows, colWidths=_cw(0.42, 0.58), minRowHeights=[25] * len(rows), hAlign="LEFT", splitByRow=1)
     commands: list[tuple[object, ...]] = [
         ("VALIGN", (0, 0), (-1, -1), "BOTTOM"),
@@ -2721,8 +2656,6 @@ def _pdf_appendix(result: AnalysisResult) -> list[Flowable]:
     email = result.email
     flowables: list[Flowable] = [_para("Full header block", "h3")]
     if email.headers:
-        # One paragraph per header: a single huge flowable could not be split
-        # across pages, and every value wraps inside the printable width.
         flowables.extend(
             _markup(f"<b>{_pdf_escape(field.name)}</b>: {_pdf_escape(field.value)}", "pre")
             for field in email.headers

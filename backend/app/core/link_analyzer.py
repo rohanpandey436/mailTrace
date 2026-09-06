@@ -1,26 +1,4 @@
-"""
-URL extraction and analysis.
-
-Approach
---------
-* ``extract_urls`` pulls links from the HTML part (``<a>``/``<area>`` hrefs with
-  their anchor text, ``<form action>``, ``<iframe src>``) and from the plain-text
-  part (explicit ``scheme://`` links, ``www.`` links and bare domains that carry
-  a path).  Results are de-duplicated on the normalised URL.
-* ``analyze_url`` turns one link into a ``UrlInfo`` with every deception
-  technique it exhibits: IP literals (including decimal/hex forms), shorteners,
-  punycode, the ``user@host`` trick, anchor/href mismatch, obfuscation
-  (percent-encoded hosts, base64 query blobs, redirect parameters, nested
-  schemes, brand names buried in sub-domains), risky TLDs, executable paths
-  and credential-harvest keywords.
-* ``is_lookalike`` detects deceptive domains against the brand list, the
-  protected organisation and configured brands using six techniques
-  (punycode, homoglyph, typosquat, TLD swap, extra token, sub-domain abuse).
-* ``registrable_domain`` (public-suffix aware, offline) is the single helper
-  every other module uses to compare "organisational" domains.
-
-Everything is pure and offline; the module never raises on garbage input.
-"""
+"""URL extraction and analysis."""
 from __future__ import annotations
 
 import base64
@@ -80,11 +58,7 @@ def _is_ip(value: str) -> bool:
 
 
 def registrable_domain(host: str) -> str:
-    """Return the organisational (registrable) domain of ``host``.
-
-    ``mail.google.com`` -> ``google.com``; ``a.b.sbi.co.in`` -> ``sbi.co.in``;
-    IP literals are returned unchanged; empty input -> ``""``.  Never raises.
-    """
+    """Return the organisational (registrable) domain of ``host``."""
     host = (host or "").strip().lower().rstrip(".")
     if not host:
         return ""
@@ -127,8 +101,6 @@ _REDIRECT_KEYS: frozenset[str] = frozenset({
     "forward", "to", "ref", "rurl", "redir", "location",
 })
 _MULTI_CHAR_CONFUSABLES: tuple[tuple[str, str], ...] = (("rn", "m"), ("vv", "w"), ("cl", "d"))
-# Multi-tenant SaaS platforms where "<customer>.<platform>" is normal, so the
-# protected organisation's own name in a sub-domain is not sub-domain abuse.
 _SAAS_TENANT_DOMAINS: frozenset[str] = frozenset({
     "zendesk.com", "freshdesk.com", "freshservice.com", "atlassian.net", "myshopify.com",
     "salesforce.com", "force.com", "hubspot.com", "hubspotemail.net", "mailchimp.com",
@@ -231,8 +203,7 @@ def _keep(url: str) -> bool:
 
 
 def extract_urls(text: str, html: str) -> list[tuple[str, str]]:
-    """Return ``(url, anchor_text)`` pairs from both message parts, deduplicated
-    on the normalised URL (first occurrence wins, anchor text back-filled)."""
+    """Return ``(url, anchor_text)`` pairs from both message parts, deduplicated"""
     found: dict[str, tuple[str, str]] = {}
 
     def add(url: str, anchor: str) -> None:
@@ -289,9 +260,7 @@ def _unquote_unreserved(value: str) -> str:
 
 
 def normalize_url(url: str) -> str:
-    """Lower-case scheme/host, drop the fragment and default ports, decode
-    percent-escapes of unreserved characters, add ``http://`` when the scheme
-    is missing.  Returns ``""`` for input that is not a URL at all."""
+    """Lower-case scheme/host, drop the fragment and default ports, decode"""
     url = (url or "").strip()
     if not url:
         return ""
@@ -329,8 +298,6 @@ def normalize_url(url: str) -> str:
     return urlunsplit((scheme, netloc, path, query, ""))
 
 
-# Lookalike detection
-#: The largest edit distance ``is_lookalike`` will call a typosquat.
 _MAX_TYPOSQUAT_DISTANCE = 2
 
 
@@ -377,8 +344,7 @@ def _sld(registrable: str) -> str:
 
 
 def _candidates(cfg: Settings) -> dict[str, tuple[str, frozenset[str]]]:
-    """key -> (display name, legitimate domains).  Brands first, then the
-    protected organisation and configured extra brands."""
+    """key -> (display name, legitimate domains).  Brands first, then the"""
     result: dict[str, tuple[str, frozenset[str]]] = {}
     for key, domains in BRANDS.items():
         result[key] = (key, frozenset(d.lower() for d in domains))
@@ -408,11 +374,7 @@ def _token_contains(sld: str, key: str) -> bool:
 
 
 def is_lookalike(host: str, cfg: Settings) -> tuple[str, str]:
-    """Return ``(imitated, technique)`` or ``("", "")``.
-
-    Legitimate brand domains and their sub-domains, and the protected
-    organisation's own domains, are never flagged.
-    """
+    """Return ``(imitated, technique)`` or ``("", "")``."""
     host = (host or "").strip().lower().rstrip(".")
     if not host or _is_ip(host):
         return "", ""
@@ -451,20 +413,12 @@ def is_lookalike(host: str, cfg: Settings) -> tuple[str, str]:
         if suffix and f"{folded}.{suffix}" in all_legit:
             return result(_DOMAIN_TO_BRAND.get(f"{folded}.{suffix}", f"{folded}.{suffix}"), "homoglyph")
 
-    # 3. typosquat -------------------------------------------------------
-    # Distance-1 edits must keep the first character (paypa1, amazonn, gooogle);
-    # distance-2 edits are only accepted against long brand names.
     multichar = _fold_multichar(_fold_homoglyphs(sld))
     for key, (name, legit) in candidates.items():
         if len(key) < 5 or sld == key or rd in legit:
             continue
         if multichar == key:
             return result(name, "typosquat")
-        # Both accepted distances below require a shared first character, and an
-        # edit distance is never smaller than the length difference. Checking
-        # those first skips the O(len(sld) * len(key)) matrix for the brands that
-        # could not match anyway - which, across a few hundred brand domains, is
-        # nearly all of them. Neither test changes which domains are flagged.
         if sld[0] != key[0] or abs(len(sld) - len(key)) > _MAX_TYPOSQUAT_DISTANCE:
             continue
         distance = damerau_levenshtein(sld, key)
@@ -506,8 +460,7 @@ _B64_RE = re.compile(r"^[A-Za-z0-9+/_-]{16,}={0,2}$")
 
 
 def _anchor_host(anchor_text: str) -> str:
-    """Host named by visible link text such as 'https://onlinesbi.sbi' or
-    'www.paypal.com/secure'; '' when the text is an ordinary label."""
+    """Host named by visible link text such as 'https://onlinesbi.sbi' or"""
     text = (anchor_text or "").strip().lower()
     if not text:
         return ""

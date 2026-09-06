@@ -1,26 +1,4 @@
-"""
-Tests for the optional C++ dissector integration (engine/, Stage 2 PARSE-C++).
-
-The extension is optional, so this file is written to be useful either way: six
-parity tests run only when ``mailtrace_engine`` is importable and skip
-otherwise, while everything else exercises the contract on any host, compiler
-or not.  What is tested is everything that decides whether shipping it is safe:
-
-* ``_MirrorEngine`` is a pure-Python transcription of the algorithm in
-  engine/src/parser.cpp: the same line splitting, the same header-block rule, the
-  same boundary grammar, the same "the newline before a boundary belongs to the
-  boundary" rule, the same decline conditions.  Running it against CPython's own
-  ``email`` parser on the real samples and on hostile input checks that the
-  algorithm the C++ implements is the right one.  It does *not* check that the
-  C++ implements it correctly; that is what the six ``@requires_extension``
-  parity tests at the end of this file are for, and they need a build.
-* The adapter in ``app.core.parser`` - tree rebuilding, structural
-  cross-checking, the import-time self-check and every fallback path - is the
-  code that will actually run in production, and it is tested directly.
-
-The headline assertion is the boring one: with the engine installed,
-``parse_email`` must return exactly what it returns without it.
-"""
+"""Tests for the optional C++ dissector integration (engine/, Stage 2 PARSE-C++)."""
 from __future__ import annotations
 
 import sys
@@ -30,9 +8,6 @@ import pytest
 
 from app.core import parser
 
-# --------------------------------------------------------------------------- #
-# Pure-Python mirror of engine/src/parser.cpp
-# --------------------------------------------------------------------------- #
 _MAX_DEPTH = 30
 _MAX_NODES = 2000
 _WS = b" \t\n\r\f\v"
@@ -59,7 +34,7 @@ def _trailing_eol(line: bytes) -> int:
 
 
 def _is_header_block_line(line: bytes) -> bool:
-    """feedparser.headerRE = r'^(From |[\\041-\\071\\073-\\176]*:|[\\t ])'"""
+    """feedparser.headerRE = r'^(From |[\041-\071\073-\176]*:|[\t ])'"""
     if not line:
         return False
     if line[0:1] in (b" ", b"\t"):
@@ -338,9 +313,6 @@ def _make_engine(dissect, version: str = "mirror-1.0.0", schema: int = 1) -> typ
     return module
 
 
-# --------------------------------------------------------------------------- #
-# Fixtures
-# --------------------------------------------------------------------------- #
 HOSTILE: tuple[bytes, ...] = (
     b"",
     b"\x00\xff\xfe garbage",
@@ -377,15 +349,7 @@ HOSTILE: tuple[bytes, ...] = (
 
 @pytest.fixture(autouse=True)
 def _neutral_kill_switch(monkeypatch):
-    """Keep the ambient MAILTRACE_NATIVE_ENGINE out of this module.
-
-    Every test here asserts on the activation path, and the kill-switch short
-    circuits it with its own status string. Left alone, running the suite with
-    MAILTRACE_NATIVE_ENGINE=0 - the obvious way to check the Python fallback
-    still works - breaks a third of this file for reasons unrelated to what the
-    tests are about. ``test_env_switch_blocks_activation`` sets the variable
-    itself, so the switch is still covered.
-    """
+    """Keep the ambient MAILTRACE_NATIVE_ENGINE out of this module."""
     monkeypatch.delenv("MAILTRACE_NATIVE_ENGINE", raising=False)
 
 
@@ -434,9 +398,6 @@ def _comparable(raw: bytes) -> tuple:
     return payload, [(a.filename, a.content_type, a.data, a.content_id, a.is_inline) for a in attachments]
 
 
-# --------------------------------------------------------------------------- #
-# The engine is genuinely optional
-# --------------------------------------------------------------------------- #
 def test_module_flags_exist_and_are_honest():
     assert isinstance(parser.NATIVE_ENGINE, bool)
     assert isinstance(parser.NATIVE_ENGINE_VERSION, str)
@@ -474,9 +435,6 @@ def test_env_switch_blocks_activation(monkeypatch, restore_engine):
     assert "disabled" in parser.NATIVE_ENGINE_STATUS
 
 
-# --------------------------------------------------------------------------- #
-# Identical results, which is the whole point
-# --------------------------------------------------------------------------- #
 def test_samples_parse_identically_with_the_engine(sample, mirror):
     for key in ("phishing", "bec", "legit", "fraud", "ceo"):
         raw = sample(key)
@@ -521,9 +479,6 @@ def test_engine_is_actually_used_when_active(sample, mirror):
     assert parser._native_stats["native"] == before + 1
 
 
-# --------------------------------------------------------------------------- #
-# Every way the engine can be wrong, and the fallback that catches it
-# --------------------------------------------------------------------------- #
 def test_declined_message_falls_back(sample, restore_engine):
     parser._native = _make_engine(lambda raw: {"schema": 1, "ok": False, "reason": "nope", "root": {}})
     parser.NATIVE_ENGINE = True
@@ -636,13 +591,7 @@ def test_self_check_rejects_an_engine_that_declines_everything(restore_engine):
 
 
 def test_unimportable_engine_is_simply_absent(restore_engine, monkeypatch):
-    """A missing extension must leave the parser on its Python path, quietly.
-
-    Popping the module out of ``sys.modules`` is not enough to simulate this:
-    once the extension is genuinely installed the import simply succeeds again.
-    Binding the name to ``None`` is what makes the import statement itself
-    raise ImportError, so this holds whether or not the engine is built.
-    """
+    """A missing extension must leave the parser on its Python path, quietly."""
     monkeypatch.setitem(sys.modules, "mailtrace_engine", None)
     monkeypatch.setattr(parser, "_native", None)
     parser.NATIVE_ENGINE = False
@@ -652,9 +601,6 @@ def test_unimportable_engine_is_simply_absent(restore_engine, monkeypatch):
     assert "not installed" in parser.NATIVE_ENGINE_STATUS
 
 
-# --------------------------------------------------------------------------- #
-# The self-check fixtures are worth something on their own
-# --------------------------------------------------------------------------- #
 def test_self_check_fixtures_cover_the_awkward_shapes():
     joined = b"".join(fixture for fixture, _ in parser._SELF_CHECK_FIXTURES)
     assert b"multipart/mixed" in joined and b"multipart/alternative" in joined
@@ -665,12 +611,6 @@ def test_self_check_fixtures_cover_the_awkward_shapes():
     assert any(not required for _, required in parser._SELF_CHECK_FIXTURES)
 
 
-# --------------------------------------------------------------------------- #
-# Parity against the real extension.  Skipped until somebody builds it
-# (see engine/README.md); this is the check that a build is actually correct,
-# as opposed to the checks above, which only prove the algorithm and the
-# adapter are right.
-# --------------------------------------------------------------------------- #
 try:  # pragma: no cover - depends on whether the extension was built
     import mailtrace_engine as _real_engine
 except Exception:  # noqa: BLE001

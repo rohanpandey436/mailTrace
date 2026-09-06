@@ -1,10 +1,4 @@
 // @ts-check
-/**
- * The shapes the backend returns, mirrored from backend/app/schemas.py.
- *
- * Only the fields the dashboard reads are declared. No runtime content: it
- * exists so `import('./types.js').AnalysisResult` resolves to a real type.
- */
 
 /** @typedef {'Legitimate' | 'Suspicious' | 'Impersonated' | 'Phishing' | 'Fraud-Related'} ThreatCategory */
 /** @typedef {'info' | 'low' | 'medium' | 'high' | 'critical'} Severity */

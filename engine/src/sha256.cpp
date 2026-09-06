@@ -16,8 +16,6 @@
 namespace mailtrace {
 namespace {
 
-// FIPS 180-4 section 4.2.2: first 32 bits of the fractional parts of the cube
-// roots of the first 64 primes.
 constexpr std::array<std::uint32_t, 64> kRoundConstants = {
     0x428a2f98u, 0x71374491u, 0xb5c0fbcfu, 0xe9b5dba5u, 0x3956c25bu, 0x59f111f1u,
     0x923f82a4u, 0xab1c5ed5u, 0xd807aa98u, 0x12835b01u, 0x243185beu, 0x550c7dc3u,
@@ -32,8 +30,6 @@ constexpr std::array<std::uint32_t, 64> kRoundConstants = {
     0x90befffau, 0xa4506cebu, 0xbef9a3f7u, 0xc67178f2u};
 
 [[nodiscard]] constexpr std::uint32_t rotr(std::uint32_t value, unsigned bits) noexcept {
-    // `bits` is always 1..31 at every call site below, so the UB-prone
-    // shift-by-32 case cannot arise.
     return (value >> bits) | (value << (32u - bits));
 }
 
@@ -47,8 +43,6 @@ constexpr char kHexDigits[] = "0123456789abcdef";
 }  // namespace
 
 Sha256::Sha256() noexcept {
-    // FIPS 180-4 section 5.3.3: fractional parts of the square roots of the
-    // first eight primes.
     state_ = {0x6a09e667u, 0xbb67ae85u, 0x3c6ef372u, 0xa54ff53au,
               0x510e527fu, 0x9b05688cu, 0x1f83d9abu, 0x5be0cd19u};
 }
@@ -186,9 +180,6 @@ std::string Sha256::to_hex(const Digest& digest) {
 std::string Sha256::hex() const { return to_hex(digest()); }
 
 #ifdef MAILTRACE_USE_OPENSSL
-// Every hash the engine produces goes through this one-shot form, so it is the
-// whole OpenSSL surface. The implementation above stays compiled and tested
-// for builds without OpenSSL headers.
 const char* sha256_backend() noexcept { return "openssl"; }
 
 std::string sha256_hex(const std::uint8_t* data, std::size_t len) {

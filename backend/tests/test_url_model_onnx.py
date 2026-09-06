@@ -1,14 +1,4 @@
-"""The ONNX graph must score exactly what the booster it was exported from scores.
-
-XGBoost fits the URL model; ONNX Runtime serves it.  That is only sound while
-the two agree to within rounding, so this exports a graph from a freshly fitted
-booster and compares them over the whole generated dataset.
-
-The fingerprint check is tested too.  ``dataset_fingerprint`` covers
-``org_domains``, because the dataset contains typosquats of the protected
-organisation's own domain - so a graph exported for one deployment must be
-refused by another rather than quietly scoring the wrong thing.
-"""
+"""The ONNX graph must score exactly what the booster it was exported from scores."""
 from __future__ import annotations
 
 import pytest
@@ -20,8 +10,6 @@ pytest.importorskip("onnxmltools", reason="exporting the graph is a development 
 pytest.importorskip("xgboost", reason="the booster is what the graph is exported from")
 numpy = pytest.importorskip("numpy")
 
-#: A float32 conversion is faithful, not approximate; more than rounding noise
-#: means the export drifted from the booster.
 TOLERANCE = 1e-5
 
 

@@ -121,15 +121,7 @@ def _typosquat_pruned(sld: str, key: str) -> bool:
 
 
 def test_typosquat_prune_is_exact(cfg):
-    """The prune in stage 3 of ``is_lookalike`` must flag exactly what it used to.
-
-    Stage 3 refuses to compute an edit distance when the first characters differ
-    or the lengths lie further apart than the largest distance it accepts. That
-    is what took the lookalike scan off the critical path - it was 17 ms of a
-    31 ms analysis - so it has to be provably equivalent, not roughly so. This
-    runs both forms over every brand key and each of its single-edit neighbours
-    and requires that they agree on every pair.
-    """
+    """The prune in stage 3 of ``is_lookalike`` must flag exactly what it used to."""
     keys = [key for key in _candidates(cfg) if len(key) >= 5]
     assert len(keys) > 50, "the brand table should be large enough for this to mean something"
 
@@ -157,8 +149,6 @@ def test_typosquat_prune_is_exact(cfg):
             skipped += sld[0] != key[0] or abs(len(sld) - len(key)) > _MAX_TYPOSQUAT_DISTANCE
 
     assert matched > 0, "the comparison should still be finding typosquats"
-    # The point of the change: nearly every pair now costs two integer compares
-    # instead of an O(len(sld) * len(key)) matrix.
     assert skipped / pairs > 0.9, f"only {skipped}/{pairs} pairs pruned"
 
 

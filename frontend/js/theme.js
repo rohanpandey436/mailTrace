@@ -1,10 +1,4 @@
 // @ts-check
-/**
- * Read design tokens from css/tokens.css at runtime.
- *
- * The map and graph libraries take colour values, not class names. They read
- * them from here, so the stylesheet stays the only source of the palette.
- */
 
 /** @type {Map<string, string>} */
 const cache = new Map();

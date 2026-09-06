@@ -1,12 +1,4 @@
 // @ts-check
-/**
- * `preferences` survive a reload (localStorage); `session` lives for the page.
- *
- * Both are plain objects the views read directly: at this size a store with
- * subscriptions would be ceremony, not clarity. The one exception is the unread
- * alert count, which the live feed writes and three parts of the shell display,
- * so it is a tiny observable store instead.
- */
 
 /** @typedef {import('./types.js').Health} Health */
 /** @typedef {'findings' | 'trace' | 'content' | 'links' | 'domains' | 'graph' | 'custody'} EmailTab */
@@ -60,10 +52,6 @@ export const session = {
   emailTab: "findings",
 };
 
-/**
- * The unread alert count: written by the live feed and by the alerts view,
- * read by the bell, the rail badge and the alerts view itself.
- */
 function createUnreadStore() {
   let count = 0;
   /** @type {Set<() => void>} */

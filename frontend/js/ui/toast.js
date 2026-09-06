@@ -1,12 +1,4 @@
 // @ts-check
-/**
- * Transient notifications.
- *
- * `toast()` is called from event handlers, from the live alert feed and from
- * `catch` blocks - places that are not React components and have no hooks. So
- * the queue lives in this module and `<Toasts/>` subscribes to it: the call
- * signature stays the same everywhere, and React still owns the DOM.
- */
 import { html, useEffect, useState } from "../react.js";
 
 /** @typedef {'success' | 'error' | 'alert'} ToastKind */

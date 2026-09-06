@@ -1,18 +1,4 @@
 // @ts-check
-/**
- * React, bound to `htm`, so components are written as tagged templates.
- *
- * There is no build step and no Node in the deployment: React, ReactDOM and htm
- * arrive as UMD scripts from the CDN, and `html` below is htm bound to
- * `React.createElement`. That gives JSX's semantics - nesting, expressions,
- * components as tags - from a plain ES module the browser runs as-is, which is
- * what keeps `frontend/` a directory of static files that FastAPI serves
- * directly and CI never has to build.
- *
- * `h` normalises the handful of places where HTML attribute names and React
- * prop names disagree, so the markup reads as HTML rather than as React:
- * `class`, `for`, and `style` written as a string.
- */
 
 /** @type {ReactNS.Static} */
 const React = /** @type {any} */ (globalThis).React;

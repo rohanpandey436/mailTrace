@@ -1,18 +1,4 @@
-"""
-LIME, computed when someone asks to see it.
-
-LIME never changes a verdict.  It fits a local surrogate to explain a decision
-the engine has already made, and it costs 26-130 ms per message - several times
-the whole rest of the analysis.  Running it on the ingest path would push
-Stage 1-5 from about 20 ms to well over 100 ms for an artefact most messages
-are never opened to look at.
-
-So it is built here instead: on request, and cached in the store, so the second
-viewer of a case pays nothing.  ``attach`` puts it back into an ``AnalysisResult``
-for the forensic report, where the explanation belongs in the record rather than
-only on a screen.  Exact SHAP still runs on every message - it is a closed-form
-read of the model's own coefficients and costs microseconds.
-"""
+"""LIME, computed when someone asks to see it."""
 from __future__ import annotations
 
 import logging
@@ -30,8 +16,6 @@ log = logging.getLogger("mailtrace.explanations")
 
 #: How many surrogate coefficients are carried on the report.
 TOP_K = 12
-#: Explanations are deterministic for a given message and model, so they never
-#: need to expire; the ceiling only bounds the cache table.
 CACHE_TTL_SECONDS = 30 * 24 * 3600
 
 
@@ -44,8 +28,6 @@ def _compute(result: AnalysisResult, cfg: Settings) -> LimeReport:
     unavailable = LimeReport(email_id=result.id, category=result.nlp.ml_category)
     if not cfg.lime_enabled:
         return unavailable
-    # Only the linear backend is supported: with a transformer the neighbourhood
-    # would be 160 forward passes, which is minutes rather than milliseconds.
     if result.nlp.ml_backend != "linear":
         return unavailable
     try:
@@ -100,13 +82,7 @@ def lime_report(result: AnalysisResult, cfg: Settings, store: Store | None = Non
 
 
 def finding(report: LimeReport) -> Finding:
-    """The report's evidence entry.
-
-    SHAP and LIME are independent: SHAP reads the linear model's coefficients
-    exactly, LIME fits a fresh surrogate to what the whole pipeline does when
-    words are removed.  Overlap between them is corroboration, so it is stated
-    as a count rather than implied.
-    """
+    """The report's evidence entry."""
     summary = ", ".join(f"{weight.token} {weight.weight:+.3f}" for weight in report.weights[:5])
     return Finding(
         id="lime_explanation",
@@ -132,11 +108,7 @@ def finding(report: LimeReport) -> Finding:
 
 
 def attach(result: AnalysisResult, cfg: Settings, store: Store | None = None) -> AnalysisResult:
-    """``result`` with the LIME fields and evidence entry filled in.
-
-    Used on the report path, so a forensic PDF carries both explanations even
-    though only SHAP is computed during ingest.  The input is not modified.
-    """
+    """``result`` with the LIME fields and evidence entry filled in."""
     report = lime_report(result, cfg, store)
     if not report.available:
         return result

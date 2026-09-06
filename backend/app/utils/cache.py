@@ -1,16 +1,4 @@
-"""
-Read-through cache shared by every enrichment engine.
-
-GeoIP, DNS, WHOIS, blocklist and VirusTotal answers are cached in the
-``Store`` so a second message from the same server costs no second round
-trip.  The cache is an optimisation and nothing more: when there is no store
-(a bare ``analyze_bytes`` call from a test or a CLI), when the entry is
-missing, or when the database itself is unavailable, the engines simply do
-the lookup.  That is why the two helpers here never raise.  The store may be
-SQLite or PostgreSQL, whose error hierarchies differ and neither of which is
-allowed to interrupt an analysis, so the guard is deliberately broad and
-lives in exactly one place.
-"""
+"""Read-through cache shared by every enrichment engine."""
 from __future__ import annotations
 
 import logging

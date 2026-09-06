@@ -1,17 +1,4 @@
 // @ts-check
-/**
- * Live alerts.
- *
- * The WebSocket is preferred: it survives proxies that buffer
- * text/event-stream and does not count against the browser's per-origin SSE
- * limit. SSE takes over if the handshake fails or the socket drops later.
- * Both carry identical Alert JSON, so exactly one needs to be connected.
- *
- * One connection is shared by every subscriber, because the shell wants alerts
- * for the badge and a toast while the alerts view wants them for its list, and
- * two sockets would deliver each alert twice. The feed is masked at connection
- * time, so changing the PII preference reconnects.
- */
 import { urls } from "./api.js";
 import { preferences } from "./state.js";
 

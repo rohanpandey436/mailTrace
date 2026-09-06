@@ -1,38 +1,4 @@
-"""
-Fine-tune DistilRoBERTa for the five MailTrace classes and export it to ONNX int8.
-
-A development tool, not part of the service: it needs ``torch``, ``transformers``
-and ``optimum``, none of which are runtime dependencies.  What it produces -
-an int8 ONNX graph and its tokenizer - is what the service loads, through
-``app/ai/transformer.py`` and ``onnxruntime`` alone.
-
-Why two stages
---------------
-The seed corpus is 249 messages.  Fine-tuning an 82M-parameter model on that
-directly memorises it.  So the run is staged:
-
-1. **Binary pre-training** on a public phishing corpus (~18k messages), which
-   teaches the encoder what phishing language looks like at all.
-2. **Five-class fine-tuning** on the seed corpus, which teaches it the
-   distinctions MailTrace reports.
-
-Stage 1 is skipped with ``--skip-pretrain`` when the public dataset cannot be
-reached; the model is then weaker and the CLI says so.
-
-Why int8
---------
-``distilroberta-base`` is ~330 MB in float32, which does not fit beside
-everything else on a 512 MB instance.  Dynamic int8 quantisation takes it to
-about 80 MB with a small, *measured* accuracy cost - the CLI prints the
-before/after so the trade is a number rather than a hope.  Unlike the URL
-model, a transformer is almost entirely MatMul, which is exactly what dynamic
-quantisation is for.
-
-Usage
------
-    python -m app.ai.transformer_trainer --out app/ai/distilroberta-onnx
-    python -m app.ai.transformer_trainer --skip-pretrain --epochs 4
-"""
+"""Fine-tune DistilRoBERTa for the five MailTrace classes and export it to ONNX int8."""
 from __future__ import annotations
 
 import argparse
@@ -52,8 +18,6 @@ log = logging.getLogger("mailtrace.ml.transformer")
 BASE_MODEL = "distilroberta-base"
 #: Public binary phishing corpus used for stage 1.
 PRETRAIN_DATASET = "zefang-liu/phishing-email-dataset"
-#: Long enough for a subject plus the opening of a body, which is where the
-#: lure lives; every extra token costs quadratically in attention.
 MAX_TOKENS = 192
 SEED = 42
 

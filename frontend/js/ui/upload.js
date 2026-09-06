@@ -26,8 +26,6 @@ export function Dropzone() {
   const [status, setStatus] = useState("");
   const [over, setOver] = useState(false);
   const [busy, setBusy] = useState(false);
-  // Polling outlives a single render, so navigating away mid-batch must stop
-  // it rather than keep calling setState on a component that is gone.
   const gone = useRef(false);
   useEffect(() => () => {
     gone.current = true;

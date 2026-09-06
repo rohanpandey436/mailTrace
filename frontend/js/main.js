@@ -151,8 +151,6 @@ function App() {
   const route = useRoute();
   const unread = useStore(unreadAlerts);
   const [health, setHealth] = useState(/** @type {Health | null} */ (null));
-  // Re-mounts every view when PII masking changes, because the masking is
-  // applied by the server and every response in hand is now the wrong one.
   const [maskEpoch, setMaskEpoch] = useState(0);
 
   useEffect(() => {

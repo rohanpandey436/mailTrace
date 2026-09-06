@@ -1,28 +1,4 @@
-"""
-Received-chain reconstruction and header-forgery analysis.
-
-Approach
---------
-* Every ``Received`` header is split into its top-level clauses (``from``,
-  ``by``, ``via``, ``with``, ``id``, ``for``) using a parenthesis-depth scan,
-  so keywords that occur inside comments such as ``(envelope-from <x>)`` or
-  cipher names like ``TLS_ECDHE_RSA_WITH_AES_256`` never derail the parse.
-* The connecting address of a hop is taken from the receiver-written comment
-  literal first (``(host [1.2.3.4])``), then from a bare address literal
-  (``from [10.0.0.5]``), then from any address in the clause (Exchange /
-  Microsoft 365 write ``(2603:10b6::12)`` without brackets).  This ordering
-  makes Gmail, Microsoft 365, Postfix, Exim, Sendmail, qmail, Amazon SES and
-  Zimbra formats yield the same answer.
-* Hops are re-ordered chronologically (index 0 = earliest) and annotated with
-  timing, privacy, TLS, HELO/rDNS and ordering anomalies.
-* Origin selection walks upward from the earliest hop to the first public,
-  non-trusted address; ``X-Originating-IP`` style headers are the fallback.
-* Identity checks compare the registrable domains of From / Reply-To /
-  Return-Path / Message-ID and look for brand or executive impersonation in
-  the display name.
-
-Everything in this module is offline and deterministic.
-"""
+"""Received-chain reconstruction and header-forgery analysis."""
 from __future__ import annotations
 
 import ipaddress
@@ -161,10 +137,7 @@ def _is_internal_host(host: str, cfg: Settings) -> bool:
 
 # Public helpers
 def is_private_ip(ip: str) -> bool:
-    """RFC 1918, loopback, link-local, CGNAT (100.64/10), ULA, site-local,
-    multicast, reserved and unspecified addresses.  IPv4-mapped and 6to4
-    addresses are judged by their embedded IPv4 address.  Unparseable input
-    is not private."""
+    """RFC 1918, loopback, link-local, CGNAT (100.64/10), ULA, site-local,"""
     try:
         addr = ipaddress.ip_address(ip.strip())
     except ValueError:
@@ -191,9 +164,7 @@ def _is_public_ip(ip: str) -> bool:
 
 
 def extract_ips(text: str) -> list[str]:
-    """Every IPv4/IPv6 literal in ``text`` (public and private) in order of
-    appearance, without duplicates.  Candidates are validated with
-    ``ipaddress`` so timestamps, MAC addresses and version strings drop out."""
+    """Every IPv4/IPv6 literal in ``text`` (public and private) in order of"""
     if not text:
         return []
     text = _IPV6_PREFIX_RE.sub("", text)
@@ -219,8 +190,7 @@ def extract_ips(text: str) -> list[str]:
 
 # Received header parsing
 def _split_clauses(body: str) -> dict[str, str]:
-    """Map each top-level clause keyword to its raw value (first occurrence
-    wins).  Keywords inside parenthesised comments are ignored."""
+    """Map each top-level clause keyword to its raw value (first occurrence"""
     depths = _depth_map(body)
     matches = [m for m in _CLAUSE_RE.finditer(body) if depths[m.start()] == 0]
     clauses: dict[str, str] = {}
@@ -257,8 +227,6 @@ def _parse_from_clause(clause: str) -> tuple[str, str, str]:
             comment_literal = comment_literal or ip
         else:
             bare_literal = bare_literal or ip
-    # The receiver-written comment literal is authoritative; a bare literal is
-    # the client's own HELO claim; anything else is a last resort.
     from_ip = comment_literal or bare_literal
     if not from_ip:
         candidates = extract_ips(clause)
@@ -295,8 +263,7 @@ def _parse_timestamp(value: str) -> datetime | None:
 
 
 def _parse_received_full(value: str) -> dict[str, Any]:
-    """Tolerant parse of one Received header.  Superset of ``parse_received``
-    with the extra keys ``rdns``, ``tls``, ``authenticated``, ``parsed``, ``raw``."""
+    """Tolerant parse of one Received header.  Superset of ``parse_received``"""
     text = " ".join((value or "").split())
     depths = _depth_map(text)
     split_at = -1
@@ -328,9 +295,7 @@ def _parse_received_full(value: str) -> dict[str, Any]:
 
 
 def parse_received(value: str) -> dict[str, Any]:
-    """Parse one Received header into ``from_host``, ``from_ip``, ``by_host``,
-    ``protocol``, ``hop_id``, ``timestamp`` (aware UTC datetime or None) and
-    ``for_addr``.  Never raises."""
+    """Parse one Received header into ``from_host``, ``from_ip``, ``by_host``,"""
     full = _parse_received_full(value)
     keys = ("from_host", "from_ip", "by_host", "protocol", "hop_id", "timestamp", "for_addr")
     return {key: full[key] for key in keys}
@@ -393,8 +358,7 @@ def _build_hops(infos: list[dict[str, Any]], cfg: Settings) -> list[Hop]:
 
 
 def _flag_forged_order(hops: list[Hop], cfg: Settings) -> None:
-    """A hop claiming delivery *by* an organisation server that sits earlier
-    than a hop received *from* an external relay was injected by the sender."""
+    """A hop claiming delivery *by* an organisation server that sits earlier"""
     for position, hop in enumerate(hops):
         if not _is_internal_host(hop.by_host, cfg):
             continue
@@ -527,8 +491,7 @@ def _timing_sentence(hop: Hop) -> str:
 
 # Entry point
 def analyze_headers(parsed: ParsedEmail, cfg: Settings) -> HeaderAnalysis:
-    """Reconstruct the routing chain, select the origin IP and check the
-    identity headers for forgery.  Never raises on malformed input."""
+    """Reconstruct the routing chain, select the origin IP and check the"""
     received = [h.value for h in parsed.headers if h.name.lower() == "received"]
     # Header order is latest-first; reverse so that index 0 is the earliest hop.
     infos = [_parse_received_full(value) for value in reversed(received)]

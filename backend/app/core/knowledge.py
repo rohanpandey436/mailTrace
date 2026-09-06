@@ -1,8 +1,4 @@
-"""
-Shared reference data used by several analyzers (single source of truth so that
-headers, domains, urls and nlp modules never disagree about what a brand,
-free-mail provider, shortener or risky file type is).
-"""
+"""Shared reference data used by several analyzers (single source of truth so that headers, domains, urls and nlp modules never disagree about what a brand,"""
 from __future__ import annotations
 
 # brand keyword -> legitimate registrable domains.  Keys are lowercase, no spaces.

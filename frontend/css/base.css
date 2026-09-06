@@ -1,8 +1,3 @@
-/*
- * Base styles: a light reset, document defaults, text helpers and the tone
- * classes that give a component its colour.  Nothing here knows about any
- * particular screen.
- */
 *,
 *::before,
 *::after {
@@ -165,12 +160,6 @@ details > summary::-webkit-details-marker {
   white-space: nowrap;
 }
 
-/*
- * Tones.  A component carrying one of these classes reads --tone and
- * --tone-soft instead of a colour, so JavaScript passes a tone *name*
- * ("bad", "ok") and never a hex value.  The name-to-colour mapping is the
- * only place the two meet.
- */
 .tone-ok {
   --tone: var(--color-ok);
   --tone-soft: var(--color-ok-soft);

@@ -1,12 +1,4 @@
 // @ts-check
-/**
- * The delivery-path map: one pin per located hop, joined in delivery order.
- *
- * Leaflet owns its own DOM, so React owns only the container: the map is built
- * once in an effect, torn down when the component unmounts, and the selected
- * hop is pushed into it as a second effect. Leaflet takes colour values rather
- * than classes, so they come from the design tokens through theme.js.
- */
 import { esc } from "../dom.js";
 import { place } from "../format.js";
 import { html, useEffect, useRef } from "../react.js";
@@ -20,10 +12,6 @@ const TILE_MAX_ZOOM = 18;
 /** Where the map rests when nothing could be located. */
 const WORLD_CENTRE = /** @type {L.LatLngTuple} */ ([22, 20]);
 const WORLD_ZOOM = 2;
-/**
- * A single location would otherwise zoom to street level, which looks broken
- * and implies a precision IP geolocation does not have. Keep it country-scale.
- */
 const SINGLE_POINT_ZOOM = 5;
 const FIT_MAX_ZOOM = 8;
 const FIT_PADDING = 0.35;

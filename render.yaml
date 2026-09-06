@@ -1,38 +1,16 @@
-# Deployment description for Render (https://render.com).
-# Create the service with Blueprints -> New Blueprint Instance and point it at
-# this repository; Render reads this file and needs no further configuration.
 services:
   - type: web
     name: mailtrace
     runtime: python
     plan: free
-    # The Python service lives in backend/; the dashboard and demo messages sit
-    # beside it and are found relative to the package.
     rootDir: backend
-    # The second command compiles the optional C++20 parse engine. It is
-    # deliberately non-fatal: if this builder has no usable toolchain the
-    # backend falls back to the pure-Python parser, which produces identical
-    # results, rather than failing the deploy. /api/health reports which one won.
-    # requirements-pg.txt brings psycopg so MAILTRACE_DATABASE_URL can point at
-    # Supabase. It stays a separate file because the service must also start
-    # with nothing but the SQLite file, and it does: an unset or unreachable
-    # URL logs the reason and falls back. /api/health reports which one won.
     buildCommand: pip install -r requirements.txt -r requirements-pg.txt && python scripts/fetch_geolite2.py && { pip install ../engine || echo "native engine unavailable on this builder; using the Python parser"; }
     # Render sets PORT; app/config.py picks it up and binds every interface.
     startCommand: python run.py
     healthCheckPath: /api/health
     envVars:
-      # Pinned to 3.13 deliberately, not just for currency. The native parse
-      # engine reproduces CPython's own header handling, and `compat32`'s
-      # treatment of a value that begins on a continuation line changed between
-      # 3.12 and 3.13. On 3.12 the engine's self-check correctly notices the
-      # mismatch and falls back to the Python parser, so the service is right
-      # either way - but matching the development interpreter is what lets the
-      # C++ engine actually serve traffic.
       - key: PYTHON_VERSION
         value: "3.13.4"
-      # The organisation MailTrace is protecting. Change these to your own
-      # domain to make the impersonation checks meaningful for your mail.
       - key: MAILTRACE_ORG_DOMAINS
         value: acme-corp.in
       - key: MAILTRACE_EXECUTIVES
@@ -42,25 +20,11 @@ services:
         value: "true"
       - key: MAILTRACE_LOOKUP_TIMEOUT
         value: "4"
-      # Supabase PostgreSQL. `sync: false` means Render prompts for the value in
-      # its own dashboard and keeps it there: the connection string carries the
-      # database password, so it must never be committed here. Leave it unset
-      # and the service runs on SQLite exactly as before, except that Render
-      # wipes data/ on every deploy - which is the reason to set it.
       - key: MAILTRACE_DATABASE_URL
         sync: false
-      # MaxMind GeoLite2. The licence forbids redistributing the database, so it
-      # is not in the repository: the build downloads a copy with this key (see
-      # scripts/fetch_geolite2.py) and the service prefers it over ip-api.com,
-      # which is rate-limited to 45 requests a minute. Leave the key unset and
-      # geolocation works exactly as before, on ip-api.
       - key: MAXMIND_LICENSE_KEY
         sync: false
       - key: MAILTRACE_MAXMIND_DB
         value: /opt/render/project/src/backend/data/GeoLite2-City.mmdb
-      # Celery broker and result backend (app/tasks.py). Paste a Render Key Value
-      # instance's internal URL; the service then runs a worker in this process
-      # (MAILTRACE_QUEUE_WORKERS, default 1). Unset, the async endpoint still
-      # works: Celery executes eagerly. /api/health reports which.
       - key: MAILTRACE_REDIS_URL
         sync: false

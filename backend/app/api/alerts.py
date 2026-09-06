@@ -1,30 +1,4 @@
-"""
-Alert listing, acknowledgement, outbound webhooks and the live feed, which is
-served over both Server-Sent Events and a WebSocket.
-
-``Broadcaster`` is a tiny in-process fan-out: every live client owns an
-``asyncio.Queue``; ``publish`` may be called from worker threads (the analysis
-pipeline runs in a thread pool) and hops onto the event loop captured at
-startup with ``call_soon_threadsafe``.  ``maybe_alert`` is the single place
-that turns a finished analysis into a persisted, broadcast alert once the
-verdict crosses the configured risk threshold.
-
-``GET /stream`` (SSE) and ``WS /ws`` are two transports over that one
-broadcaster, carrying byte-identical Alert JSON.  Neither is a wrapper around
-the other and either can be used alone, so the dashboard prefers the WebSocket
-and falls back to SSE without any server-side coordination.
-
-Alert delivery has two independent channels and an alert always takes both:
-
-* the live feed (SSE or WebSocket), for a browser that has the dashboard open;
-* outbound webhooks (``MAILTRACE_WEBHOOK_URLS``), for a SIEM, Slack or any
-  other system that must hear about the alert whether or not anyone is
-  looking.  Webhook POSTs run on a small bounded thread pool so a slow or dead
-  endpoint delays nothing and can never grow the process without limit: at
-  most ``WEBHOOK_WORKERS`` sockets are open, at most ``WEBHOOK_MAX_INFLIGHT``
-  deliveries are outstanding, and each request is capped at
-  ``WEBHOOK_TIMEOUT`` seconds.
-"""
+"""Alert listing, acknowledgement, outbound webhooks and the live feed, which is served over both Server-Sent Events and a WebSocket."""
 from __future__ import annotations
 
 import asyncio
@@ -64,12 +38,7 @@ WEBHOOK_USER_AGENT = f"MailTrace/{ENGINE_VERSION}"
 
 
 class Broadcaster:
-    """Fan-out of alerts to live subscribers; ``publish`` is safe from any thread.
-
-    Both live transports - the SSE stream and the WebSocket - are subscribers
-    here and nothing else.  ``publish`` knows about neither, so an alert is
-    delivered identically whichever one (or both) a client is using.
-    """
+    """Fan-out of alerts to live subscribers; ``publish`` is safe from any thread."""
 
     def __init__(self) -> None:
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -138,12 +107,7 @@ def webhook_payload(alert: Alert, settings: Settings) -> dict[str, JsonValue]:
 
 
 def deliver_webhooks(alert: Alert, settings: Settings) -> None:
-    """POST ``alert`` to every configured webhook URL.  Blocking; never raises.
-
-    Called on the webhook pool by ``maybe_alert``; call it directly only when a
-    synchronous delivery is what you want (a test, or a CLI).  Each URL gets its
-    own warning on failure, with the HTTP status code when there was a response.
-    """
+    """POST ``alert`` to every configured webhook URL.  Blocking; never raises."""
     urls = [url for url in (settings.webhook_urls or []) if url]
     if not urls:
         return
@@ -171,14 +135,7 @@ def deliver_webhooks(alert: Alert, settings: Settings) -> None:
 
 
 def dispatch_webhooks(alert: Alert, settings: Settings) -> None:
-    """Hand the delivery to a background thread and return immediately.
-
-    The caller is a request worker thread, so nothing here may block on a
-    remote system.  The pool is created on first use (a deployment with no
-    webhooks configured never starts a thread) and load is shed with a warning
-    once ``WEBHOOK_MAX_INFLIGHT`` deliveries are already outstanding, so a dead
-    SIEM cannot make the queue grow without bound.
-    """
+    """Hand the delivery to a background thread and return immediately."""
     global _webhook_pool, _webhook_inflight
 
     if not [url for url in (settings.webhook_urls or []) if url]:
@@ -261,11 +218,7 @@ def list_alerts(
 
 @router.get("/stream")
 async def stream_alerts(request: Request, mask: MaskDep) -> StreamingResponse:
-    """SSE feed: ``event: alert`` per new alert, ``: ping`` heartbeat every 15 s.
-
-    The queue is polled in short slices so a vanished client is noticed within
-    a second and the stream ends cleanly instead of failing on its next write.
-    """
+    """SSE feed: ``event: alert`` per new alert, ``: ping`` heartbeat every 15 s."""
     queue = broadcaster.subscribe()
 
     async def events() -> AsyncIterator[str]:
@@ -291,12 +244,7 @@ async def stream_alerts(request: Request, mask: MaskDep) -> StreamingResponse:
 
 
 def _ws_mask(websocket: WebSocket) -> bool:
-    """Resolve ``?mask=`` for a WebSocket the way ``mask_param`` does for HTTP.
-
-    The HTTP dependency takes a ``Request``, which a WebSocket route never
-    receives, so the same two-step rule (explicit query parameter, else the
-    deployment default) is applied here by hand.
-    """
+    """Resolve ``?mask=`` for a WebSocket the way ``mask_param`` does for HTTP."""
     raw = websocket.query_params.get("mask")
     if raw is None:
         settings = getattr(getattr(websocket.app, "state", None), "settings", None)
@@ -306,24 +254,7 @@ def _ws_mask(websocket: WebSocket) -> bool:
 
 @router.websocket("/ws")
 async def alerts_websocket(websocket: WebSocket) -> None:
-    """Live alert feed over a WebSocket: one text frame of Alert JSON per alert.
-
-    The same ``Broadcaster`` and the same payload as ``GET /stream``; the SSE
-    endpoint is unchanged and both may be connected at once.  A client should
-    prefer this - a WebSocket survives proxies that buffer ``text/event-stream``
-    and browsers cap SSE connections per origin - and fall back to SSE when the
-    handshake fails, which is what ``frontend/js/live-feed.js`` does.
-
-    Keep-alive is left to the protocol: uvicorn sends WebSocket ping frames on
-    its own, so there is no application-level heartbeat frame for a client to
-    mistake for an alert.  Every frame this endpoint sends is an ``Alert``.
-
-    Disconnects: the socket is read in parallel with the alert queue purely so
-    a client going away is noticed at once rather than at the next alert, which
-    could be hours later.  The subscriber queue is removed in ``finally`` on
-    every exit path - clean close, abrupt drop, or server shutdown - so a
-    reconnecting browser cannot leave queues accumulating behind it.
-    """
+    """Live alert feed over a WebSocket: one text frame of Alert JSON per alert."""
     mask = _ws_mask(websocket)
     await websocket.accept()
     queue = broadcaster.subscribe()
@@ -335,8 +266,6 @@ async def alerts_websocket(websocket: WebSocket) -> None:
         while True:
             done, _ = await asyncio.wait({alert_task, receive_task}, return_when=asyncio.FIRST_COMPLETED)
             if receive_task in done:
-                # Anything the client sends is ignored; this side of the socket
-                # exists only to observe the close frame.
                 if receive_task.result().get("type") == "websocket.disconnect":
                     break
                 receive_task = asyncio.create_task(websocket.receive())

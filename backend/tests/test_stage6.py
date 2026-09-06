@@ -1,8 +1,4 @@
-"""
-Stage 6 OUTPUT + ACT: CSV reports, the WebSocket alert feed beside the
-unchanged SSE one, the optional VirusTotal hash lookup and the quick-bar
-decision endpoints.
-"""
+"""Stage 6 OUTPUT + ACT: CSV reports, the WebSocket alert feed beside the unchanged SSE one, the optional VirusTotal hash lookup and the quick-bar"""
 from __future__ import annotations
 
 import asyncio
@@ -61,9 +57,6 @@ def _alert(alert_id: str = "alr-test01") -> Alert:
     )
 
 
-# --------------------------------------------------------------------------- #
-# Formula-injection guard
-# --------------------------------------------------------------------------- #
 @pytest.mark.parametrize(
     "raw,expected",
     [
@@ -92,9 +85,6 @@ def test_sanitize_cell_guards_every_dangerous_prefix():
         assert csvexport.sanitize_cell(prefix + "payload").startswith(csvexport.FORMULA_GUARD)
 
 
-# --------------------------------------------------------------------------- #
-# Per-case report CSV
-# --------------------------------------------------------------------------- #
 def test_report_csv_has_header_block_and_findings_table(client, sample):
     result = _upload(client, sample("phishing"), "phishing.eml")
     response = client.get(f"/api/reports/{result['id']}?format=csv")
@@ -120,9 +110,6 @@ def test_report_csv_has_header_block_and_findings_table(client, sample):
     assert ("Origin", "IP") in fields
     assert [row[2] for row in rows if row and row[0] == "IOC"]
 
-    # The findings table follows the header block, one row per finding. A report
-    # carries one more than ingest produced: the LIME explanation, which is
-    # fitted on the report path rather than during analysis (core/explanations.py).
     header_index = rows.index(list(csvexport.FINDING_COLUMNS))
     finding_rows = [row for row in rows[header_index + 1:] if row]
     assert [row[2] for row in finding_rows] == [f["id"] for f in result["findings"]] + ["lime_explanation"]
@@ -166,9 +153,6 @@ def test_report_csv_404_for_unknown_case(client):
     assert client.get("/api/reports/does-not-exist?format=csv").status_code == 404
 
 
-# --------------------------------------------------------------------------- #
-# Case-list CSV
-# --------------------------------------------------------------------------- #
 def test_case_list_csv_exports_every_case(client, sample):
     phishing = _upload(client, sample("phishing"), "phishing.eml")
     legit = _upload(client, sample("legit"), "legit.eml")
@@ -215,9 +199,6 @@ def test_case_list_csv_route_is_not_shadowed_by_the_case_detail_route(client):
     assert client.get("/api/emails/export.csv").status_code == 200
 
 
-# --------------------------------------------------------------------------- #
-# Quick-bar decisions
-# --------------------------------------------------------------------------- #
 def test_quarantine_and_block_record_a_decision(client, sample):
     result = _upload(client, sample("phishing"), "phishing.eml")
     email_id = result["id"]
@@ -270,9 +251,6 @@ def test_store_rejects_an_unknown_status(store):
         store.set_case_status("whatever", "deleted")
 
 
-# --------------------------------------------------------------------------- #
-# Live alert feed: WebSocket, and the unchanged SSE stream
-# --------------------------------------------------------------------------- #
 def test_alert_websocket_streams_the_same_alert_json(client, sample):
     with client.websocket_connect("/api/alerts/ws") as websocket:
         assert alerts_api.broadcaster.subscriber_count() == 1
@@ -305,12 +283,7 @@ def test_several_websocket_clients_all_receive_the_alert(client):
 
 
 def test_both_live_transports_are_registered(client):
-    """Adding the WebSocket did not displace the SSE route.
-
-    WebSocket routes are not part of an OpenAPI document, so the socket is
-    proved to exist by the connection tests above and the HTTP stream by the
-    published schema.
-    """
+    """Adding the WebSocket did not displace the SSE route."""
     paths = client.get("/openapi.json").json()["paths"]
     assert "/api/alerts/stream" in paths
     assert "/api/emails/export.csv" in paths
@@ -322,16 +295,7 @@ def test_both_live_transports_are_registered(client):
 
 @pytest.mark.parametrize("mask", [False, True])
 def test_sse_stream_still_emits_alerts(mask):
-    """Drive the SSE endpoint's generator directly.
-
-    Reading an open SSE stream over ``TestClient`` and then closing it
-    deadlocks: the generator only stops when ``is_disconnected()`` turns true,
-    and the test transport only reports the disconnect once the response has
-    been fully consumed, which never happens for an endless stream.  That is a
-    property of the test client, not of the endpoint, so the endpoint's own
-    async generator is exercised here instead - preamble, event framing,
-    masking and the ``finally`` that releases the subscriber queue.
-    """
+    """Drive the SSE endpoint's generator directly."""
 
     class _Request:
         def __init__(self) -> None:
@@ -357,9 +321,6 @@ def test_sse_stream_still_emits_alerts(mask):
     assert alerts_api.broadcaster.subscriber_count() == 0
 
 
-# --------------------------------------------------------------------------- #
-# Optional VirusTotal hash lookup
-# --------------------------------------------------------------------------- #
 def _meta(name: str, digest: str, size: int = 1024) -> AttachmentMeta:
     return AttachmentMeta(filename=name, sha256=digest, size=size, extension=name.rsplit(".", 1)[-1])
 

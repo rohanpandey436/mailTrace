@@ -1,10 +1,4 @@
-"""
-Reverse DNS: the three outcomes and what each may cache.
-
-A PTR lookup has three results: a name, "no PTR", and "the resolver never
-answered".  Treating a timeout as an uncacheable "" meant every message from an
-address without a PTR paid the full lookup timeout again.
-"""
+"""Reverse DNS: the three outcomes and what each may cache."""
 from __future__ import annotations
 
 import socket

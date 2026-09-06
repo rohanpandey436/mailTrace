@@ -46,13 +46,6 @@ def test_unrelated_emails_stay_apart(sample, cfg, store):
     assert store.list_campaigns() == []
 
 
-# --------------------------------------------------------------------------- #
-# Threshold calibration
-# --------------------------------------------------------------------------- #
-# The substitutions a mail-merge campaign actually makes per victim. The
-# SimHash threshold in Settings is justified by the numbers this test measures,
-# so if the digest or the tokenisation ever changes, this fails rather than
-# silently letting campaigns stop clustering.
 _CAMPAIGN_EDITS = [
     (r"\bDear\b", "Hello"),
     (r"\b24 hours\b", "48 hours"),
@@ -64,12 +57,7 @@ _CAMPAIGN_EDITS = [
 
 
 def test_simhash_threshold_calibration(sample, cfg):
-    """Rewritten bodies must stay inside the threshold, unrelated ones outside.
-
-    Measured on the bundled samples: six campaign-style substitutions move a
-    body by at most 9 bits, while genuinely unrelated samples sit at 20 or more.
-    The shipped threshold of 12 lives in that gap.
-    """
+    """Rewritten bodies must stay inside the threshold, unrelated ones outside."""
     import re
 
     from app.core.parser import hamming_distance, parse_email, simhash_hex

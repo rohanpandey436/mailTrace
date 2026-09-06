@@ -1,31 +1,4 @@
-"""
-Relationship graph for one analysed email and for a whole campaign.
-
-Approach
---------
-``build_graph`` projects an analysis into a small typed graph whose node ids are
-stable IOC keys (``ip:1.2.3.4``, ``domain:paypa1.com``, ``attachment:<sha256>``),
-so graphs of different emails can be overlaid: after ``merge_graphs`` every node
-carrying ``shared_by >= 2`` is a pivot point that binds several messages.
-
-* Node ids are always ``"<type>:<key>"`` with a normalised key (lower-case
-  address / host / domain, lower-case hash hex, raw IP literal).
-* Node risk comes from the analyzer that judged the entity: the verdict for the
-  email, ``UrlInfo.risk`` / ``AttachmentMeta.risk`` for links and files, the
-  domain's own findings for domains (CRITICAL override for lookalike,
-  newly-registered and blocklisted domains), geo and threat-intel flags for IPs
-  (Tor / blocklisted = CRITICAL, proxy / hosting = MEDIUM) and, for addresses,
-  the header/auth findings that concern that address role, never lower than the
-  address's own domain.
-* Nodes are deduplicated by id and edges by (source, target, relation).
-
-``merge_graphs`` unions member graphs (highest risk per node, blank attributes
-filled from later members), counts the members that contain each node and, when
-a Campaign is given, links every email node to the ``campaign:<id>`` node.
-
-Pure and offline: no I/O, deterministic for identical input, tolerant of empty
-sub-reports (no hops, no links, no attachments, no geo enrichment).
-"""
+"""Relationship graph for one analysed email and for a whole campaign."""
 from __future__ import annotations
 
 import logging
@@ -124,8 +97,7 @@ class _GraphBuilder:
         self.edges: dict[tuple[str, str, str], GraphEdge] = {}
 
     def add(self, node: GraphNode) -> str:
-        """Insert ``node`` or merge it into the node with the same id: the
-        higher risk wins and blank attributes are filled from the newcomer."""
+        """Insert ``node`` or merge it into the node with the same id: the"""
         existing = self.nodes.get(node.id)
         if existing is None:
             self.nodes[node.id] = node
@@ -162,9 +134,7 @@ def _url_domain(url: UrlInfo) -> str:
 
 
 def _domain_risk(info: DomainIntel | None, url_risk: Severity) -> Severity:
-    """Contract override first (lookalike / newly registered / blocklisted are
-    CRITICAL), otherwise the worst domain finding, never below the risk of the
-    links that point at the domain."""
+    """Contract override first (lookalike / newly registered / blocklisted are"""
     if info is None:
         return url_risk
     newly = info.age_days is not None and info.age_days < NEWLY_REGISTERED_DAYS and not info.is_free_mail
@@ -192,8 +162,7 @@ def _ip_profile(
     infra: InfraAnalysis,
     intel: ThreatIntel,
 ) -> tuple[Severity, dict[str, Any]]:
-    """Risk and attributes of one public IP from its geo record, the threat
-    intel tables and (for the origin) the infrastructure flags."""
+    """Risk and attributes of one public IP from its geo record, the threat"""
     blacklists = _unique([*(geo.blacklists if geo is not None else []), *intel.ip_blacklists.get(ip, [])])
     tor = bool(geo is not None and geo.is_tor_exit) or ip in intel.tor_exits or (is_origin and infra.tor_exit)
     abusive = geo is not None and geo.abuse_confidence is not None and geo.abuse_confidence >= ABUSE_CONFIDENCE_CRITICAL
@@ -345,9 +314,7 @@ def build_graph(
 
 
 def merge_graphs(graphs: list[AttributionGraph], campaign: Campaign | None = None) -> AttributionGraph:
-    """Union of member graphs; nodes present in two or more members carry
-    ``shared_by`` (the campaign's pivot points) and, when ``campaign`` is
-    given, every email node is linked ``member_of`` the campaign node."""
+    """Union of member graphs; nodes present in two or more members carry"""
     builder = _GraphBuilder()
     members: dict[str, int] = {}
     for graph in graphs:

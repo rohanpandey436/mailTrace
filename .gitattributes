@@ -1,16 +1,5 @@
-# Line-ending policy. Later rules win, so the general case comes first and the
-# exceptions follow.
 * text=auto
 
-# Email fixtures must never be converted. RFC 5322 line endings are part of the
-# message: the parser's header folding, boundary matching and body hashing all
-# read the exact bytes, the C++ engine is checked byte-for-byte against
-# CPython's parser on these files, and app/ai/url_model.py hashes them into the
-# dataset fingerprint that decides whether the committed ONNX graph still
-# describes its own inputs.
-#
-# Without this a Windows checkout (autocrlf) and a Linux one see different
-# bytes for the same fixture, and the ONNX fingerprint differs by platform.
 *.eml -text
 
 # Model artefacts and databases are binary; a byte changed is a file broken.
@@ -18,6 +7,4 @@
 *.mmdb binary
 *.joblib binary
 
-# Tailwind's committed output is byte-compared in CI, and Tailwind copies the
-# source stylesheets through verbatim, so all of them need one line ending.
 frontend/css/*.css -text

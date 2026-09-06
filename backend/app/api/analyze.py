@@ -1,21 +1,4 @@
-"""
-Ingestion and case endpoints.
-
-Uploaded files (multipart ``files``) and pasted raw messages share one
-``_process`` helper: the handler validates the payload size, then a worker
-thread runs ``pipeline.analyze_bytes`` (analysis and database access are
-synchronous), raises an alert when the verdict crosses the threshold and
-masks PII on the way out when requested.  Files are processed sequentially so
-the store never interleaves writes from a single request.
-
-``POST /api/analyze/async`` is the same ingestion through the Celery queue in
-``app/tasks.py``: it answers with job ids instead of results, which is what a
-mailbox export of several hundred messages needs.  The jobs endpoints below
-poll them.
-
-Handlers here only translate HTTP into calls on the domain layer; the analyst
-decision logic lives in ``app/core/decisions.py``.
-"""
+"""Ingestion and case endpoints."""
 from __future__ import annotations
 
 import hashlib
@@ -58,8 +41,6 @@ _MAX_FILENAME = 200
 _CATEGORIES = {category.value for category in ThreatCategory}
 _SOURCE_TYPES = set(get_args(SourceType))
 
-# Bulk CSV export: a ceiling on rows so one request cannot pin the process, and
-# the page size the store already allows per query.
 MAX_EXPORT_ROWS = 5000
 _EXPORT_PAGE = 500
 
@@ -117,11 +98,7 @@ def _process(
 
 
 class CaseFilters:
-    """The filters ``GET /api/emails`` and its CSV export share.
-
-    Plain strings rather than enums, so the blank values HTML forms and curl
-    users send (``category=``) mean "no filter" instead of failing validation.
-    """
+    """The filters ``GET /api/emails`` and its CSV export share."""
 
     def __init__(
         self,
@@ -199,12 +176,7 @@ async def analyze_upload_async(
     files: Annotated[list[UploadFile], File(description="One or more RFC 822 messages (.eml / .txt)")],
     actor: ActorParam = DEFAULT_ACTOR,
 ) -> AsyncAnalyzeResponse:
-    """Queue messages for analysis and return job ids.
-
-    Messages are validated here, not in the worker, so an empty or oversized
-    payload is refused before anything is enqueued.  No ``mask`` parameter:
-    the case is read back through ``/api/emails/{id}``, which masks.
-    """
+    """Queue messages for analysis and return job ids."""
     if len(files) > MAX_ASYNC_FILES:
         raise HTTPException(
             status_code=413,
@@ -272,8 +244,6 @@ def list_emails(
     return CaseListResponse(items=rows, total=total)
 
 
-# Registered before ``/emails/{email_id}``: FastAPI matches routes in order, and
-# the path parameter would otherwise swallow the literal "export.csv".
 @router.get("/emails/export.csv")
 def export_emails_csv(
     filters: FiltersDep,
@@ -281,18 +251,7 @@ def export_emails_csv(
     mask: MaskDep,
     limit: Annotated[int, Query(ge=1, le=MAX_EXPORT_ROWS, description="Hard cap on exported rows")] = MAX_EXPORT_ROWS,
 ) -> Response:
-    """The case list as a CSV, with the same filters ``GET /api/emails`` accepts.
-
-    Intended for bulk analysis in a spreadsheet or a notebook, so it pages past
-    the 500-row ceiling ``list_cases`` puts on a single query, up to
-    ``MAX_EXPORT_ROWS``.  Every cell is passed through the formula-injection
-    guard in ``app/utils/csv_exporter.py``.
-
-    Honest scope note: this exports *case metadata*, not evidence, so unlike a
-    per-case report it writes no custody event - there is no single email the
-    event would belong to.  Exporting one case's evidence (``format=csv`` on
-    the report endpoint, or the raw ``.eml``) is recorded as it always was.
-    """
+    """The case list as a CSV, with the same filters ``GET /api/emails`` accepts."""
     rows: list[CaseSummary] = []
     while len(rows) < limit:
         page, total = filters.page(store, limit=min(_EXPORT_PAGE, limit - len(rows)), offset=len(rows))
@@ -327,8 +286,6 @@ def get_raw(email_id: str, store: StoreDep, settings: SettingsDep) -> Response:
     raw = store.get_raw(email_id)
     if raw is None:
         if settings.zero_persistence:
-            # Say why, rather than implying the case never existed or handing back
-            # an empty download: in this mode the message was analysed and dropped.
             raise NotFound(
                 f"the raw message for email {email_id} is not available: MailTrace is running in "
                 "zero-persistence mode, so no copy of it was ever written to disk"
@@ -344,26 +301,15 @@ def get_raw(email_id: str, store: StoreDep, settings: SettingsDep) -> Response:
     )
 
 
-# Stage 6 quick-bar.  What these record, and what they deliberately do not do,
-# is documented once in app/core/decisions.py.
 @router.post("/emails/{email_id}/quarantine")
 def quarantine_email(email_id: str, store: StoreDep, actor: ActorParam = DEFAULT_ACTOR) -> CaseDecision:
-    """Record a decision to quarantine this message and return its IOCs.
-
-    Writes a ``quarantine_decision`` event to the chain of custody and sets the
-    case status to ``quarantined``.  It does not quarantine anything in a mail
-    system.
-    """
+    """Record a decision to quarantine this message and return its IOCs."""
     return decisions.record(store, email_id, "quarantine", actor)
 
 
 @router.post("/emails/{email_id}/block")
 def block_email(email_id: str, store: StoreDep, actor: ActorParam = DEFAULT_ACTOR) -> CaseDecision:
-    """Record a decision to block this sender/infrastructure and return its IOCs.
-
-    Writes a ``block_decision`` event to the chain of custody and sets the case
-    status to ``blocked``.  It does not add anything to a real block list.
-    """
+    """Record a decision to block this sender/infrastructure and return its IOCs."""
     return decisions.record(store, email_id, "block", actor)
 
 
@@ -375,12 +321,7 @@ def get_decision(email_id: str, store: StoreDep) -> CaseDecision:
 
 @router.get("/emails/{email_id}/explanation")
 async def get_explanation(email_id: str, store: StoreDep, settings: SettingsDep) -> LimeReport:
-    """The LIME explanation for a case, fitted on the first request and cached.
-
-    Kept off the ingest path deliberately: the surrogate costs several times the
-    rest of the analysis and changes no verdict, so it is built when a person
-    actually opens the case.  See ``app/core/explanations.py``.
-    """
+    """The LIME explanation for a case, fitted on the first request and cached."""
     result = decisions.load_case(store, email_id)
     return await run_in_threadpool(explanations.lime_report, result, settings, store)
 

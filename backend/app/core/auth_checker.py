@@ -1,31 +1,4 @@
-"""
-SPF / DKIM / DMARC evaluation.
-
-Approach
---------
-* ``Authentication-Results`` (and ``ARC-Authentication-Results`` /
-  ``Received-SPF``) headers written by the receiving server are parsed first;
-  they reflect what the boundary MTA observed on the pristine message.
-* When network enrichment is enabled the verdicts are re-derived live:
-  - SPF: a simplified RFC 7208 evaluator (``all``, ``ip4``, ``ip6``, ``a``,
-    ``mx``, ``include``, ``redirect=``; ``exists``/``ptr``/macros are treated
-    as no-match) run against the address that connected to the receiving
-    organisation's boundary and the Return-Path domain, with the 10-lookup
-    limit and include/redirect loop protection.
-  - DKIM: ``dkimpy`` verification of the raw message with a dnspython-backed
-    key lookup bounded by ``cfg.lookup_timeout``.
-  - DMARC: the ``_dmarc`` TXT record of the From domain (``p=`` policy).
-* Merge policy: a conclusive live result wins; an inconclusive one falls back
-  to Authentication-Results.  The single exception is a live DKIM *fail* that
-  contradicts a receiver-recorded DKIM *pass* for the same signing domain:
-  exported evidence is frequently re-encoded after delivery, so the receiver's
-  verdict is kept and the discrepancy is noted.
-* Relaxed alignment compares registrable domains; DMARC is computed from the
-  aligned results when no Authentication-Results verdict exists.
-
-Every network call is guarded by ``cfg.enable_network``, bounded by
-``cfg.lookup_timeout`` and can never raise to the caller.
-"""
+"""SPF / DKIM / DMARC evaluation."""
 from __future__ import annotations
 
 import ipaddress
@@ -142,13 +115,7 @@ def _aligned(domain: str, sender_rd: str) -> bool | None:
 
 # Header parsing
 def parse_authentication_results(headers: list[HeaderField]) -> dict[str, Any]:
-    """Extract receiver verdicts from Authentication-Results, ARC-Authentication-
-    Results and Received-SPF headers.
-
-    Returns ``{'spf': (result, domain), 'dkim': (result, domain, selector),
-    'dmarc': (result, policy)}``; absent methods carry empty strings.  The
-    topmost header (added by the final receiver) wins; among several DKIM
-    verdicts in one header a ``pass`` is preferred."""
+    """Extract receiver verdicts from Authentication-Results, ARC-Authentication-"""
     spf: tuple[str, str] = ("", "")
     dkim: tuple[str, str, str] = ("", "", "")
     dmarc: tuple[str, str] = ("", "")
@@ -406,10 +373,7 @@ class _SpfEvaluator:
 
 
 def live_spf(ip: str, domain: str, cfg: Settings, store: Any = None) -> tuple[str, list[str]]:
-    """Evaluate SPF for ``ip`` sending on behalf of ``domain``.
-
-    Returns ``(result, notes)`` with result in pass | fail | softfail | neutral
-    | none | temperror | permerror | unverifiable.  Never raises."""
+    """Evaluate SPF for ``ip`` sending on behalf of ``domain``."""
     domain = (domain or "").strip().lower().rstrip(".")
     if not cfg.enable_network:
         return "unverifiable", ["network enrichment disabled; SPF not evaluated"]
@@ -454,11 +418,7 @@ def live_spf(ip: str, domain: str, cfg: Settings, store: Any = None) -> tuple[st
 
 # Live DKIM
 def live_dkim(raw: bytes, cfg: Settings) -> tuple[str, str, str, list[str]]:
-    """Verify the first DKIM signature of ``raw`` with dkimpy.
-
-    Returns ``(result, d_domain, selector, notes)`` with result pass | fail |
-    unverifiable (no signature, no key, DNS error, library missing) | none
-    when no DKIM-Signature exists.  Never raises."""
+    """Verify the first DKIM signature of ``raw`` with dkimpy."""
     notes: list[str] = []
     try:
         message = BytesParser(policy=email_policy.compat32).parsebytes(raw, headersonly=True)
@@ -514,8 +474,7 @@ def live_dkim(raw: bytes, cfg: Settings) -> tuple[str, str, str, list[str]]:
 
 # Live DMARC
 def live_dmarc(domain: str, cfg: Settings, store: Any = None) -> tuple[str, str]:
-    """``(policy, record)`` of the DMARC record for ``domain`` (falling back to
-    its registrable domain); ``('', '')`` offline, on failure or when absent."""
+    """``(policy, record)`` of the DMARC record for ``domain`` (falling back to"""
     domain = (domain or "").strip().lower().rstrip(".")
     if not cfg.enable_network or not domain or not _DOMAIN_RE.match(domain):
         return "", ""
@@ -557,8 +516,7 @@ def live_dmarc(domain: str, cfg: Settings, store: Any = None) -> tuple[str, str]
 
 # Evaluation
 def _boundary_hop(header_analysis: HeaderAnalysis, cfg: Settings) -> Hop | None:
-    """Latest hop whose source is a public, non-organisation, non-trusted
-    address: the connection the receiving boundary evaluated SPF against."""
+    """Latest hop whose source is a public, non-organisation, non-trusted"""
     for hop in reversed(header_analysis.hops):
         if (
             hop.from_ip and not hop.is_private_ip
@@ -579,8 +537,7 @@ def evaluate_auth(
     cfg: Settings,
     raw: bytes | None = None,
 ) -> tuple[AuthResult, list[Finding]]:
-    """Combine receiver-recorded and live SPF/DKIM/DMARC verdicts into an
-    AuthResult plus findings.  Never raises."""
+    """Combine receiver-recorded and live SPF/DKIM/DMARC verdicts into an"""
     notes: list[str] = []
     recorded = parse_authentication_results(parsed.headers)
     ar_spf, ar_spf_domain = recorded["spf"]
@@ -617,8 +574,6 @@ def evaluate_auth(
     elif live_spf_result:
         spf, spf_source = "unverifiable", "live"
     else:
-        # No receiver verdict and no live evaluation: there is no SPF evidence
-        # at all, which the merge policy reports as "none".
         spf, spf_source = "none", ("offline" if not cfg.enable_network else "none")
     spf_aligned = _aligned(spf_domain, sender_rd)
 

@@ -15,14 +15,8 @@
 namespace mailtrace {
 namespace {
 
-// Refuse anything nested deeper than this and let Python handle it.  CPython's
-// feedparser recurses once per nesting level and would raise RecursionError on
-// a pathological message; declining well before that keeps the two parsers in
-// agreement instead of racing each other to a different failure.
 constexpr std::size_t kMaxDepth = 30;
 
-// Likewise for absurd part counts.  The Python caller applies its own limit of
-// 500 parts, so any message this parser accepts is one Python would also walk.
 constexpr std::size_t kMaxNodes = 2000;
 
 constexpr std::string_view kAsciiSpace = " \t\n\r\f\v";
@@ -76,16 +70,6 @@ constexpr std::string_view kAsciiSpace = " \t\n\r\f\v";
     return s.size() >= prefix.size() && s.compare(0, prefix.size(), prefix) == 0;
 }
 
-// ---------------------------------------------------------------------------
-// Line handling
-//
-// CPython feeds the message through io.StringIO(newline='') and calls
-// readlines(), which recognises "\r\n", "\r" and "\n" as terminators and keeps
-// them attached to the line.  Reproduced exactly.
-// ---------------------------------------------------------------------------
-
-/// End offset (exclusive, terminator included) of the line beginning at `pos`.
-/// Requires pos < s.size(); always returns a value strictly greater than `pos`.
 [[nodiscard]] std::size_t line_end(std::string_view s, std::size_t pos) noexcept {
     while (pos < s.size()) {
         const char c = s[pos];
@@ -100,8 +84,6 @@ constexpr std::string_view kAsciiSpace = " \t\n\r\f\v";
     return s.size();
 }
 
-/// Length of the trailing line terminator of `line`, or 0.  Mirrors
-/// feedparser's NLCRE_eol = r'(\r\n|\r|\n)\Z'.
 [[nodiscard]] std::size_t trailing_eol_length(std::string_view line) noexcept {
     if (line.size() >= 2 && line[line.size() - 2] == '\r' && line[line.size() - 1] == '\n') {
         return 2;
@@ -112,12 +94,6 @@ constexpr std::string_view kAsciiSpace = " \t\n\r\f\v";
     return 0;
 }
 
-/// feedparser.headerRE = r'^(From |[\041-\071\073-\176]*:|[\t ])'
-///
-/// The character class is 0x21..0x39 plus 0x3b..0x7e, i.e. printable ASCII
-/// excluding space and ':'.  Greedy matching never needs to backtrack here:
-/// the class cannot contain ':', so the first character outside it is the only
-/// candidate for the required colon.
 [[nodiscard]] bool is_header_block_line(std::string_view line) noexcept {
     if (line.empty()) {
         return false;
@@ -145,19 +121,6 @@ constexpr std::string_view kAsciiSpace = " \t\n\r\f\v";
     return !line.empty() && (line[0] == '\r' || line[0] == '\n');
 }
 
-// ---------------------------------------------------------------------------
-// Boundary matching
-//
-// feedparser builds:
-//     separator   = '--' + boundary
-//     boundaryendRE = r'(?P<end>--)?(?P<ws>[ \t]*)(?P<linesep>\r\n|\r|\n)?$'
-//     match       = line.startswith(separator) and boundaryendRE.match(line, len(separator))
-//
-// `$` matches at end of string or immediately before a final '\n', hence the
-// second acceptance test below.  `(--)?` is greedy; skipping it can never
-// rescue a match that taking it loses, because '-' is neither whitespace nor a
-// line separator, so a plain greedy scan is equivalent.
-// ---------------------------------------------------------------------------
 struct BoundaryMatch {
     bool matched = false;
     bool is_end = false;
@@ -191,10 +154,6 @@ struct BoundaryMatch {
     return result;
 }
 
-/// Offset of the first line at or after `pos` that matches any active
-/// separator, or `body.size()`.  This reproduces feedparser's stack of
-/// false-EOF matchers, which RFC 2046 section 5.1.2 requires: an outer
-/// boundary terminates an inner part.
 [[nodiscard]] std::size_t find_region_end(std::string_view body, std::size_t pos,
                                           const std::vector<std::string>& separators) noexcept {
     while (pos < body.size()) {
@@ -209,10 +168,6 @@ struct BoundaryMatch {
     }
     return body.size();
 }
-
-// ---------------------------------------------------------------------------
-// Structured header parameters
-// ---------------------------------------------------------------------------
 
 void replace_all(std::string& text, std::string_view needle, std::string_view replacement) {
     if (needle.empty()) {
@@ -239,9 +194,6 @@ void replace_all(std::string& text, std::string_view needle, std::string_view re
     return std::string(value);
 }
 
-/// Split a structured header value into ';'-separated segments, ignoring
-/// separators inside a double-quoted string.  The first segment (the media
-/// type or disposition token) is not a parameter and is skipped by callers.
 [[nodiscard]] std::vector<std::string_view> split_parameters(std::string_view value) {
     std::vector<std::string_view> segments;
     std::size_t start = 0;
@@ -282,9 +234,6 @@ bool header_parameter(std::string_view header_value, std::string_view name, std:
         const std::string_view segment = segments[i];
         const std::size_t equals = segment.find('=');
         if (equals == std::string_view::npos) {
-            // A bare attribute.  CPython's _get_params_preserve stores it with
-            // an empty value rather than dropping it, and get_param then
-            // returns "" -- which is not the same as "absent".
             if (iequals(strip(segment, kAsciiSpace), name)) {
                 out.clear();
                 return true;
@@ -302,9 +251,6 @@ bool header_parameter(std::string_view header_value, std::string_view name, std:
 
 namespace {
 
-/// Message.get_boundary(): the parameter value, unquoted (once by
-/// _unquotevalue and again by collapse_rfc2231_value), then right-stripped
-/// because RFC 2046 lets a boundary begin but not end in whitespace.
 [[nodiscard]] bool boundary_parameter(std::string_view content_type, std::string& out) {
     std::string value;
     if (!header_parameter(content_type, "boundary", value)) {
@@ -315,9 +261,6 @@ namespace {
     return true;
 }
 
-/// Message.get_content_type(): media type up to the first ';', trimmed and
-/// lower-cased; anything that is not exactly one "type/subtype" degrades to
-/// text/plain.  `default_type` is returned when the header is absent.
 [[nodiscard]] std::string content_type_of(const std::vector<HeaderField>& headers,
                                           std::string_view default_type) {
     const HeaderField* field = find_header(headers, "content-type");
@@ -357,11 +300,6 @@ struct Context {
 Node parse_node(std::string_view region, std::string_view default_type,
                 const std::vector<std::string>& ancestors, std::size_t depth, Context& ctx);
 
-/// Collect the header block of `region` and return the offset at which the
-/// body starts.  Mirrors feedparser._parsegen's header loop plus
-/// _parse_headers, declining on the three defect paths whose recovery
-/// behaviour is awkward to reproduce (unix-from lines, a leading continuation
-/// line, and a header line with an empty name).
 [[nodiscard]] std::size_t parse_header_block(std::string_view region, std::vector<HeaderField>& out,
                                              Context& ctx) {
     std::vector<std::string_view> lines;
@@ -370,9 +308,6 @@ Node parse_node(std::string_view region, std::string_view default_type,
         const std::size_t end = line_end(region, pos);
         const std::string_view line = region.substr(pos, end - pos);
         if (!is_header_block_line(line)) {
-            // A bare newline is the RFC header/body separator and is consumed.
-            // Anything else is a MissingHeaderBodySeparatorDefect: the line is
-            // pushed back and becomes the first line of the body.
             if (is_blank_line(line)) {
                 pos = end;
             }
@@ -387,18 +322,6 @@ Node parse_node(std::string_view region, std::string_view default_type,
     }
     const std::size_t body_start = pos;
 
-    // compat32.header_source_parse:
-    //
-    //     name, value = sourcelines[0].split(':', 1)
-    //     value = ''.join((value, *sourcelines[1:])).lstrip(' \t\r\n')
-    //     return (name, value.rstrip('\r\n'))
-    //
-    // Note the lstrip happens *after* the join and includes CR and LF, so
-    // "Subject:\r\n continued" yields "continued", not "\r\n continued".
-    // Older CPython releases lstripped only the first line and only blanks;
-    // the import-time self-check in backend/app/core/parser.py covers a
-    // header of exactly that shape, so an interpreter that still behaves the
-    // old way switches this engine off instead of producing different values.
     std::size_t i = 0;
     while (i < lines.size()) {
         const std::string_view first = lines[i];
@@ -430,8 +353,6 @@ Node parse_node(std::string_view region, std::string_view default_type,
     return body_start;
 }
 
-/// Walk a multipart body, filling `node.children`.  Returns false only after
-/// declining; `ctx.reason` then says why.
 [[nodiscard]] bool split_multipart(Node& node, std::string_view boundary,
                                    const std::vector<std::string>& ancestors, std::size_t depth,
                                    Context& ctx) {
@@ -451,9 +372,6 @@ Node parse_node(std::string_view region, std::string_view default_type,
         const BoundaryMatch match = match_boundary(body.substr(pos, end - pos), separator);
         if (!match.matched) {
             if (saw_start_boundary) {
-                // Unreachable: after a child is parsed we always sit on a
-                // boundary line or at the end of the body.  Decline rather
-                // than guess if that invariant is ever broken.
                 ctx.decline("boundary scan desynchronised");
                 return false;
             }
@@ -466,8 +384,6 @@ Node parse_node(std::string_view region, std::string_view default_type,
         saw_start_boundary = true;
         pos = end;
 
-        // "Consume any multiple boundary lines that may be following": RFC
-        // 2046's grammar produces no body part between two delimiters.
         while (pos < body.size()) {
             const std::size_t next = line_end(body, pos);
             if (!match_boundary(body.substr(pos, next - pos), separator).matched) {
@@ -482,14 +398,6 @@ Node parse_node(std::string_view region, std::string_view default_type,
             return false;
         }
 
-        // RFC 2046: the newline preceding a boundary belongs to the boundary,
-        // not to the part before it.  CPython applies it to whichever Message
-        // its parser created last:
-        //   * an ordinary leaf  -> that leaf's payload, trimmed here;
-        //   * a multipart part  -> its epilogue, which nobody reads, so the
-        //     payload of a boundary-less multipart is deliberately left alone;
-        //   * a message/* part  -> the *nested* message, which this parser has
-        //     not parsed, so the work is deferred via `trim_last`.
         if (child.kind == NodeKind::Leaf && main_type_of(child.content_type) != "multipart") {
             const std::size_t eol = trailing_eol_length(child.body);
             if (eol != 0) {
@@ -504,12 +412,6 @@ Node parse_node(std::string_view region, std::string_view default_type,
     }
 
     if (!saw_start_boundary) {
-        // StartBoundaryNotFoundDefect.  CPython recovers by keeping the
-        // preamble as a plain string payload, so the part stops being
-        // multipart at all.  Reproducing that faithfully is possible but the
-        // result is indistinguishable from a genuine parse error to anything
-        // downstream, so hand these rare, malformed messages to Python rather
-        // than carry a second recovery path.
         ctx.decline("multipart start boundary never appears");
         return false;
     }
@@ -539,18 +441,10 @@ Node parse_node(std::string_view region, std::string_view default_type,
     node.content_type = content_type_of(node.headers, default_type);
 
     if (node.content_type == "message/rfc822") {
-        // CPython parses the nested message and keeps it as a one-element
-        // payload list.  The raw bytes are handed back untouched so the caller
-        // can re-parse them with the standard library and get the identical
-        // object; note that its trailing newline is *not* stripped, because
-        // the payload is a list rather than a string.
         node.kind = NodeKind::EmbeddedMessage;
         return node;
     }
     if (main_type_of(node.content_type) == "message") {
-        // message/delivery-status, message/partial and friends each get their
-        // own nesting rules in feedparser.  They are rare enough that
-        // reproducing them is not worth the risk.
         ctx.decline("message/* part other than message/rfc822");
         return node;
     }
@@ -562,16 +456,10 @@ Node parse_node(std::string_view region, std::string_view default_type,
     const HeaderField* content_type_header = find_header(node.headers, "content-type");
     std::string boundary;
     if (content_type_header == nullptr || !boundary_parameter(content_type_header->value, boundary)) {
-        // NoBoundaryInMultipartDefect: everything to the end of the part stays
-        // a plain string payload, so this is a leaf despite the media type.
         node.kind = NodeKind::Leaf;
         return node;
     }
     if (boundary.empty()) {
-        // "boundary=" or a bare "boundary" attribute.  CPython does not treat
-        // that as missing: it uses "--" as the delimiter and every line
-        // starting with two dashes becomes a part separator.  Rare, malformed,
-        // and not worth a special case here.
         ctx.decline("multipart boundary parameter is empty");
         return node;
     }
@@ -604,9 +492,6 @@ Dissection dissect(std::string_view raw) {
     return result;
 }
 
-// ---------------------------------------------------------------------------
-// Content-transfer decoding (convenience API only -- see the header)
-// ---------------------------------------------------------------------------
 namespace {
 
 [[nodiscard]] constexpr int base64_value(unsigned char c) noexcept {
@@ -644,10 +529,6 @@ namespace {
 }  // namespace
 
 std::string decode_base64(std::string_view data) {
-    // A symbol count of 1 more than a multiple of 4 carries no whole byte and
-    // cannot be decoded at all.  CPython's decode_b gives up and hands back the
-    // input (with its line breaks already removed by get_payload), so do the
-    // same rather than inventing a truncation.
     std::size_t symbols = 0;
     for (const char raw_char : data) {
         if (base64_value(static_cast<unsigned char>(raw_char)) >= 0) {
@@ -684,9 +565,6 @@ std::string decode_base64(std::string_view data) {
             collected = 0;
         }
     }
-    // A trailing group of 2 or 3 symbols carries 1 or 2 whole bytes; a lone
-    // symbol carries none.  This is what b64decode does once decode_b has
-    // supplied the missing padding.
     if (collected == 2) {
         out.push_back(static_cast<char>((accumulator >> 4) & 0xffu));
     } else if (collected == 3) {
@@ -697,12 +575,6 @@ std::string decode_base64(std::string_view data) {
 }
 
 std::string decode_quoted_printable(std::string_view data) {
-    // Transcribed from binascii.a2b_qp, which is what quopri.decodestring and
-    // therefore Python's email package actually call.  Note what it does NOT
-    // do, contrary to the pure-Python quopri fallback and to a casual reading
-    // of RFC 2045: it does not strip trailing blanks and it does not normalise
-    // line endings.  It is a flat byte scan whose only line awareness is the
-    // soft line break.
     std::string out;
     out.reserve(data.size());
 
@@ -718,8 +590,6 @@ std::string decode_quoted_printable(std::string_view data) {
             break;  // a trailing '=' is dropped
         }
         if (data[i] == '\n' || data[i] == '\r') {
-            // Soft line break.  After a CR, everything up to and including the
-            // next LF is discarded.
             if (data[i] != '\n') {
                 while (i < data.size() && data[i] != '\n') {
                     ++i;

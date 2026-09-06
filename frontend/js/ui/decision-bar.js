@@ -1,12 +1,4 @@
 // @ts-check
-/**
- * The analyst decision bar on a case (Stage 6).
- *
- * The wording is deliberately honest: these buttons write a decision to the
- * evidence log and gather indicators. MailTrace holds no mailbox credentials
- * and never touches a mail gateway, so nothing here may imply that a message
- * was moved, deleted or blocked anywhere.
- */
 import { api, errorMessage, urls } from "../api.js";
 import { formatDate, plural } from "../format.js";
 import { DECISION } from "../labels.js";

@@ -36,16 +36,11 @@ namespace py = pybind11;
 
 namespace {
 
-// Supplied by setup.py / CMakeLists.txt; the fallback keeps a hand-rolled
-// compile (g++ -I include ...) working.
 #ifndef MAILTRACE_ENGINE_VERSION
 #define MAILTRACE_ENGINE_VERSION "1.0.0"
 #endif
 constexpr const char* kVersion = MAILTRACE_ENGINE_VERSION;
 
-// The dict schema that backend/app/core/parser.py expects.  Bump this when
-// the shape of dissect()'s output changes; the Python adapter refuses to use an
-// engine whose schema it does not recognise.
 constexpr int kDissectSchema = 1;
 
 [[nodiscard]] const char* kind_name(mailtrace::NodeKind kind) noexcept {
@@ -97,9 +92,6 @@ constexpr int kDissectSchema = 1;
     return out;
 }
 
-// --------------------------------------------------------------------------
-// parse_message(): the flattened, decoded convenience view.
-// --------------------------------------------------------------------------
 struct FlatPart {
     const mailtrace::Node* node = nullptr;
     bool embedded = false;
@@ -127,10 +119,6 @@ void flatten(const mailtrace::Node& node, std::vector<FlatPart>& out, std::size_
     return field == nullptr ? std::string() : field->value;
 }
 
-/// Content-Disposition filename, else the Content-Type name parameter.
-/// Returned verbatim: RFC 2047 encoded words and RFC 2231 continuations are
-/// left for the caller, which is why the MailTrace backend does not use this
-/// function -- Python's email package already handles both correctly.
 [[nodiscard]] std::string part_filename(const mailtrace::Node& node) {
     std::string value;
     if (mailtrace::header_parameter(header_value(node, "content-disposition"), "filename", value)) {

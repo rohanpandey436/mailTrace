@@ -71,8 +71,6 @@ def test_reports_custody_and_alerts(client, sample):
     chain = client.get(f"/api/custody/{result['id']}").json()
     actions = [e["action"] for e in chain["events"]]
     assert actions[:2] == ["ingested", "analyzed"] and "report_generated" in actions
-    # Both the BEC sample (72) and the phishing sample (83) clear the alert
-    # threshold of 70, so each raises exactly one alert, newest first.
     assert [a["email_id"] for a in client.get("/api/alerts").json()] == [result["id"]]
     phishing = _upload(client, sample, "phishing", "phishing.eml")["results"][0]
     alerts = client.get("/api/alerts").json()

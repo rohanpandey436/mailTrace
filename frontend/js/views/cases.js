@@ -12,8 +12,6 @@ import { emptyState, errorState, pageHead, skeleton } from "../ui/primitives.js"
 const PAGE_SIZE = 25;
 
 export function CasesView() {
-  // Seeded from the session so a search typed in the top bar, or a filter set
-  // before opening a case, survives coming back to the list.
   const [filters, setFilters] = useState(session.listFilters);
   // The range input updates as it is dragged; the query only follows on release.
   const [riskDraft, setRiskDraft] = useState(session.listFilters.minRisk);

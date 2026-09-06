@@ -147,8 +147,6 @@ function TabPanel({ result, tab }) {
 export function EmailView({ emailId }) {
   const { data: result, error, loading, reload } = useAsync(() => api.getEmail(emailId), [emailId]);
   const [advanced, setAdvanced] = useState(preferences.advanced);
-  // Remembered across cases for the session, so paging through a campaign keeps
-  // whichever tab the analyst is working in.
   const [tab, setTab] = useState(() => (isAdvanced(session.emailTab) && !preferences.advanced ? DEFAULT_TAB : session.emailTab));
 
   /** @param {EmailTab} next */

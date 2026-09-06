@@ -1,19 +1,4 @@
-"""
-Celery task queue for bulk analysis.
-
-``POST /api/analyze/async`` enqueues one task per message and returns job ids
-that ``GET /api/jobs`` polls.  Which process runs the task is configuration:
-
-- ``MAILTRACE_REDIS_URL`` unset: Celery runs eagerly in the request process,
-  results go to a process-local backend, and the job endpoints behave the same.
-- Set, with ``MAILTRACE_QUEUE_WORKERS`` > 0 (default 1): Redis is the broker
-  and result backend, and this process also runs a worker thread.
-- Set, with ``MAILTRACE_QUEUE_WORKERS=0``: producer only.  Run workers with
-  ``celery -A app.tasks worker`` (deploy/docker-compose.yml does).
-
-An alert raised inside an external worker is stored but cannot reach this
-process's ``/api/alerts/stream`` broadcaster; it appears on the next poll.
-"""
+"""Celery task queue for bulk analysis."""
 from __future__ import annotations
 
 import base64
@@ -42,9 +27,6 @@ QUEUE_NAME = "mailtrace.analysis"
 _MEMORY_BACKEND = "cache+memory://"
 _MEMORY_BROKER = "memory://"
 
-# The web process binds its Store so eager and embedded execution share its
-# database handle; under MAILTRACE_ZERO_PERSISTENCE a second Store would be a
-# separate in-memory database.  An external worker opens its own.
 _bound_store: Store | None = None
 _bound_settings: Settings | None = None
 _own_store: Store | None = None
@@ -89,8 +71,6 @@ def build_celery(cfg: Settings | None = None) -> Celery:
         },
         # socket_timeout is left unset: it would also cut the worker's blocking read.
         broker_transport_options={"socket_connect_timeout": 5.0},
-        # The result backend has its own reconnect loop (20 retries, exponential
-        # backoff) and publishing touches it too, so it is bounded as well.
         result_backend_transport_options={
             "socket_connect_timeout": 5.0,
             "retry_policy": {
@@ -115,16 +95,7 @@ celery_app = build_celery()
 
 
 def configure(cfg: Settings) -> None:
-    """Point the queue at ``cfg`` by building a new Celery application.
-
-    The module-level application is built from the environment so that
-    ``celery -A app.tasks worker`` works without the app factory; ``create_app``
-    calls this so injected ``Settings`` win.  It is rebuilt rather than
-    reconfigured because Celery caches the result backend, the connection pool
-    and the producer pool on first use, and changing ``broker_url`` on a live
-    application leaves them pointing at the old broker.  ``shared_task``
-    registers the task with every application, so nothing is lost.
-    """
+    """Point the queue at ``cfg`` by building a new Celery application."""
     global celery_app
     previous = celery_app
     celery_app = build_celery(cfg)
@@ -172,17 +143,9 @@ def _task_store() -> Store:
         return _own_store
 
 
-# shared_task registers with every Celery application, which configure() relies
-# on.  Celery's decorator is untyped; ignored here so the body stays checked.
 @shared_task(name=ANALYZE_TASK, bind=True, queue=QUEUE_NAME)  # type: ignore[untyped-decorator]
 def analyze_message(self: Any, raw_b64: str, filename: str, actor: str) -> dict[str, Any]:
-    """Analyse one message and persist the case.
-
-    ``raw_b64`` because the JSON serializer cannot carry bytes.  The return
-    value is a summary, not the full result: the case is already in the
-    database and is read back through ``/api/emails/{id}`` with masking
-    applied, and a full result would leave unmasked PII in Redis.
-    """
+    """Analyse one message and persist the case."""
     from .api.alerts import maybe_alert
     from .core import pipeline
 
@@ -206,17 +169,12 @@ class QueueUnavailable(RuntimeError):
 
 
 def enqueue(raw: bytes, filename: str, actor: str) -> str:
-    """Queue one message; returns the job id.
-
-    Raises ``QueueUnavailable`` when the broker cannot be reached.
-    """
+    """Queue one message; returns the job id."""
     from kombu.exceptions import OperationalError
 
     payload = base64.b64encode(raw).decode("ascii")
     try:
         result = analyze_message.apply_async(args=[payload, filename, actor], queue=QUEUE_NAME)
-    # kombu raises OperationalError; the result backend raises RuntimeError after
-    # its retry loop.  Both mean nothing was accepted.
     except (OperationalError, RuntimeError) as exc:
         log.warning("could not queue %s: %s: %s", filename, type(exc).__name__, exc)
         raise QueueUnavailable(f"{type(exc).__name__}: {exc}") from exc
@@ -224,11 +182,7 @@ def enqueue(raw: bytes, filename: str, actor: str) -> str:
 
 
 def job_state(job_id: str) -> dict[str, Any]:
-    """Poll one job.
-
-    ``state`` is Celery's own vocabulary, passed through.  PENDING covers both
-    "not started" and "unknown id"; the broker cannot tell them apart.
-    """
+    """Poll one job."""
     async_result = AsyncResult(job_id, app=celery_app)
     state = str(async_result.state)
     payload: dict[str, Any] = {"job_id": job_id, "state": state}
@@ -243,12 +197,7 @@ def job_state(job_id: str) -> dict[str, Any]:
 
 
 def start_embedded_worker(cfg: Settings) -> bool:
-    """Run a Celery worker thread in this process; True when one was started.
-
-    ``WorkController`` rather than ``celery_app.Worker``: the latter installs
-    process-wide signal handlers, which fails outside the main thread.  A
-    failure to start is logged and the service continues.
-    """
+    """Run a Celery worker thread in this process; True when one was started."""
     global _embedded_worker
     if not cfg.redis_url.strip() or cfg.queue_workers <= 0:
         return False

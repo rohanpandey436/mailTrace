@@ -1,39 +1,4 @@
-"""
-Threat-intelligence correlation and campaign clustering.
-
-Approach
---------
-* ``extract_indicators`` reduces an analysis to normalised IOC keys
-  (``ip:``, ``sender:``, ``domain:``, ``replyto:``, ``urlhost:``, ``file:`` are
-  *strong*; ``subject:``, ``asn:``, ``mailer:`` are *weak*; ``simhash:`` and
-  ``tlsh:`` are *stored only*, see below).
-* ``correlate`` gathers feed hits already collected by the geo/domain
-  analyzers and looks up prior incidents that share at least one strong
-  indicator or two weak ones - **or** whose body is a near-duplicate of this
-  one.
-* ``assign_campaign`` runs after persistence: related emails are pulled into
-  one campaign (creating it, joining the existing one, or merging several
-  into the oldest) and the campaign's aggregate fields are recomputed.
-
-Fuzzy grouping (Stage 5A)
--------------------------
-Every exact indicator above is a single edit away from useless: an actor who
-rotates the sending IP, re-registers the domain and swaps five words per victim
-escapes all of them.  So the locality-sensitive digests computed by the parser
-(``ParsedEmail.fuzzy``) are stored as ``simhash:`` / ``tlsh:`` indicator keys
-and compared by *distance* rather than equality - two messages cluster when
-their SimHash Hamming distance is within ``Settings.simhash_max_distance`` or
-their TLSH diff is within ``Settings.tlsh_max_distance``.
-
-Scope: this groups emails inside *this* installation only.  MailTrace is a
-single-tenant tool - there is no tenant model, no shared corpus and nothing
-leaves the machine - so campaign grouping never reaches across organisations.
-
-The digest keys are deliberately excluded from the strong/weak vote: testing a
-fuzzy hash for equality throws away the only property that makes it a fuzzy
-hash, and it is the distance test - which knows about the short-body guard -
-that decides.
-"""
+"""Threat-intelligence correlation and campaign clustering."""
 from __future__ import annotations
 
 import ipaddress
@@ -75,14 +40,7 @@ STRONG_PREFIXES: tuple[str, ...] = ("ip:", "sender:", "domain:", "replyto:", "ur
 WEAK_PREFIXES: tuple[str, ...] = ("subject:", "asn:", "mailer:")
 # Stored so a later message can be compared against them; never voted on.
 FUZZY_PREFIXES: tuple[str, ...] = ("simhash:", "tlsh:")
-# How a fuzzy link is written into a shared-indicator list: 'simhash~3' reads as
-# "the two bodies are three bits apart", so the UI and the forensic report can
-# say why the messages were grouped.
 FUZZY_MATCH_PREFIXES: tuple[str, ...] = ("simhash~", "tlsh~")
-# A digest of a very short body is dominated by boilerplate - a one-line lure, a
-# signature block, "Please see attached" - and would glue unrelated messages
-# together.  Below this many characters the fuzzy matcher stands down entirely:
-# no digest is stored for the message, and none is compared against.
 FUZZY_MIN_BODY = 200
 _LOCAL_TAGS = {"disposable", "suspicious_tld"}
 _SUBJECT_PREFIX_RE = re.compile(r"^\s*(?:(?:re|fw|fwd|aw|wg|sv|tr)\s*:\s*|\[[^\]]{1,30}\]\s*)+", re.IGNORECASE)
@@ -150,10 +108,6 @@ def extract_indicators(
         indicators.append(f"asn:{geo.asn.upper()}")
     if parsed.mailer:
         indicators.append(f"mailer:{parsed.mailer.lower()[:60]}")
-    # Stage 5A: keep the body digests so a *later* message can be scored against
-    # them by distance (see _fuzzy_related).  Digests of a very short body carry
-    # no signal, so they are not stored at all - that keeps the guard in one
-    # place, at write time as well as at compare time.
     if parsed.fuzzy.body_length >= FUZZY_MIN_BODY:
         if parsed.fuzzy.simhash:
             indicators.append(f"simhash:{parsed.fuzzy.simhash}")
@@ -171,9 +125,6 @@ def _related(store: Store, indicators: list[str], exclude_email_id: str) -> dict
         return {}
     matches: dict[str, list[str]] = {}
     for email_id, all_shared in raw.items():
-        # An identical digest is a distance-0 fuzzy match, which _fuzzy_related
-        # reports far more informatively; counting it here as well would let two
-        # unremarkable bodies pair up on an equality test.
         shared = [s for s in all_shared if not s.startswith(FUZZY_PREFIXES)]
         strong = [s for s in shared if is_strong(s)]
         weak = [s for s in shared if not is_strong(s)]
@@ -185,17 +136,7 @@ def _related(store: Store, indicators: list[str], exclude_email_id: str) -> dict
 def _fuzzy_related(
     store: Store, fuzzy: FuzzyDigest, exclude_email_id: str, cfg: Settings
 ) -> dict[str, list[str]]:
-    """email_id -> ['simhash~3'] for prior messages whose body is a near-duplicate.
-
-    Reads the digests every prior message stored as ``simhash:`` / ``tlsh:``
-    indicators and compares them here, in Python: a fuzzy hash cannot be looked
-    up by equality without discarding the tolerance that makes it worth having.
-    That is a linear scan of one indexed column - fine for a single-analyst
-    case load; a deployment with millions of stored digests would want banded
-    LSH buckets on top of the same keys.
-    """
-    # Degenerate bodies (empty, a bare "see attached", an auto-reply stub) do not
-    # get a vote: their digests would match each other and nothing meaningful.
+    """email_id -> ['simhash~3'] for prior messages whose body is a near-duplicate."""
     if fuzzy.body_length < FUZZY_MIN_BODY or not (fuzzy.simhash or fuzzy.tlsh):
         return {}
     matches: dict[str, list[str]] = {}
@@ -302,8 +243,6 @@ def correlate(
                 f"{' ...' if len(shared) > 4 else ''}; highest prior risk {worst}/100."
             )
             if fuzzy_tags:
-                # Say plainly that the link is a near-duplicate body: an analyst
-                # reading 'simhash~3' needs to know it is not an exact IOC hit.
                 exact_only = [s for s in shared if not s.startswith(FUZZY_MATCH_PREFIXES)]
                 detail += (
                     f" {'Part of that overlap is' if exact_only else 'That overlap is'} a near-duplicate body rather "
@@ -352,8 +291,6 @@ def assign_campaign(result: AnalysisResult, store: Store, cfg: Settings | None =
     """Cluster ``result`` with related prior emails; returns the campaign id."""
     cfg = cfg or default_settings
     indicators = result.intel.indicators or []
-    # The digests go in before the lookup, but _fuzzy_related excludes this
-    # email, so a message can never be its own near-duplicate.
     store.save_indicators(result.id, indicators)
     matches = _merge_matches(
         _related(store, indicators, result.id),

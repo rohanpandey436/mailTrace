@@ -1,14 +1,4 @@
-"""
-Forensic report and chain-of-custody endpoints.
-
-Generating a report is itself a custody event: it is recorded *before* the
-custody chain is read, so the report documents its own creation and its
-``custody_head_hash`` covers that event.  The event records the requested
-format, so the ledger distinguishes a JSON pull from a PDF hand-over.  A masked
-report is built from an already-masked analysis and then passed through
-``mask_report_fields`` so the narrative sections cannot leak what the
-structured data hides.
-"""
+"""Forensic report and chain-of-custody endpoints."""
 from __future__ import annotations
 
 import re
@@ -29,8 +19,6 @@ router = APIRouter(prefix="/api", tags=["reports"])
 
 ReportFormat = Literal["json", "html", "pdf", "csv"]
 
-# Content-Disposition is a header: keep the filename to characters that need no
-# quoting or encoding, whatever the report id happens to contain.
 _UNSAFE_FILENAME = re.compile(r"[^A-Za-z0-9._-]+")
 
 
@@ -47,8 +35,6 @@ def get_report(
     fmt: Annotated[ReportFormat, Query(alias="format")] = "json",
 ) -> Response:
     result = decisions.load_case(store, email_id)
-    # A report is a record, so it carries both explanations even though only
-    # SHAP is cheap enough to compute during ingest.
     result = explanations.attach(result, settings, store)
     if mask:
         result = mask_result(result)
@@ -61,9 +47,6 @@ def get_report(
     if fmt == "html":
         return HTMLResponse(render_html(report))
     if fmt == "csv":
-        # Rendered from the same (already masked, if asked) report object as
-        # every other format, so the CSV can never show more than the HTML.
-        # The BOM makes Excel read it as UTF-8 instead of the host code page.
         return Response(
             content=UTF8_BOM + render_report_csv(report),
             media_type="text/csv; charset=utf-8",

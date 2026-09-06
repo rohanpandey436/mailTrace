@@ -1,19 +1,4 @@
-"""
-FastAPI application factory.
-
-``create_app(settings)`` wires the routers, the CORS policy (MailTrace is a
-local analyst tool), the uniform ``{"error": ...}`` error shape and the
-lifespan that owns the runtime state: the SQLite ``Store`` on ``app.state``,
-the alert broadcaster bound to the running event loop, and a background
-warm-up of the ML classifier that never blocks or fails startup.  ``app`` at
-module level is what ``run.py`` / uvicorn import; tests call
-``create_app(Settings(...))`` with a temporary data directory.
-
-With ``MAILTRACE_ZERO_PERSISTENCE=true`` the lifespan builds an in-memory
-store instead and creates no directories at all, the mode is logged loudly at
-startup and reported by ``/api/health`` so nobody has to guess which mode a
-running instance is in.
-"""
+"""FastAPI application factory."""
 from __future__ import annotations
 
 import asyncio
@@ -90,19 +75,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         if cfg.zero_persistence:
-            # Stage 5C: no data directory, no evidence directory, no database file.
-            # ``ensure_dirs`` is deliberately not called - creating the directories
-            # would already be a write.
             app.state.store = Store(cfg.db_path, cfg.evidence_dir, in_memory=True)
         else:
             cfg.ensure_dirs()
-            # database_url is empty unless MAILTRACE_DATABASE_URL / DATABASE_URL
-            # names a PostgreSQL server; the Store falls back to SQLite by
-            # itself if the driver or the server is missing.
             app.state.store = Store(cfg.db_path, cfg.evidence_dir, database_url=cfg.database_url)
         alerts.broadcaster.bind(asyncio.get_running_loop())
-        # Tasks use this Store so eager and embedded execution share the API's
-        # database (under zero-persistence a second Store would be a separate one).
         tasks.bind_store(app.state.store, cfg)
         # The module-level Celery app was built from the environment; injected Settings take over here.
         tasks.configure(cfg)
@@ -149,9 +126,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/api/health", tags=["system"])
     def health() -> HealthStatus:
-        # Imported inside the handler so the reported state is always the
-        # parser's live state and main.py keeps no import-time dependency on
-        # the analysis engine.
         from .ai import url_model
         from .core import geoip_mapper, parser
 
@@ -162,20 +136,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             # Stage 5C: an auditor (and the UI) can see which mode is running.
             zero_persistence=cfg.zero_persistence,
             webhooks=len(cfg.webhook_urls),
-            # The engine actually in use ("sqlite" / "postgresql"), not the one
-            # that was configured: a PostgreSQL URL whose driver or server is
-            # missing degrades to SQLite, and that must be visible, not guessed.
             database=store.backend if store is not None else "sqlite",
             database_note=store.backend_note if store is not None else "store not initialised",
-            # Stage 2 PARSE-C++: whether the optional native dissector
-            # (engine/) is doing the MIME work, or the pure-Python fallback.
-            # Both produce identical results - this only says which is
-            # installed and healthy.  See engine/README.md.
-            # Stage 4: onnxruntime serves the URL model from the graph committed
-            # at app/ai/url_model.onnx; xgboost fits it and is the fallback.
             url_model=url_model.loaded_backend(),
-            # Stage 3B: established by an actual lookup, not by reading the
-            # configuration back - a database can be present and still unused.
             geoip_source=geoip_mapper.geoip_status(cfg),
             native_engine=parser.NATIVE_ENGINE,
             native_engine_version=parser.NATIVE_ENGINE_VERSION,
@@ -189,12 +152,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
 
 def _mount_dashboard(app: FastAPI, static_dir: Path) -> None:
-    """Serve the dashboard (index.html with its css/ and js/) at the site root.
-
-    Mounted after every router so the ``/api`` routes always win.  When the
-    frontend directory is absent - a backend-only install - ``/`` explains
-    what is missing instead of returning a bare 404.
-    """
+    """Serve the dashboard (index.html with its css/ and js/) at the site root."""
     page = static_dir / "index.html"
     if page.is_file():
         app.mount("/", StaticFiles(directory=static_dir, html=True), name="dashboard")

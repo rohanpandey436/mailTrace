@@ -1,12 +1,4 @@
 // @ts-check
-/**
- * Hash routing.
- *
- * `useRoute` is the whole router: it reads `location.hash` and re-renders on
- * `hashchange`. There is no view registry and no cleanup bookkeeping any more -
- * a view is a component, so React unmounts it, and anything it holds (the map,
- * the graph, an in-flight request) is released by that component's own effect.
- */
 import { useEffect, useState } from "./react.js";
 
 /** @typedef {{ name: string, param: string }} Route */

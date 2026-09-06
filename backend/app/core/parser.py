@@ -1,38 +1,4 @@
-"""
-RFC 822 / MIME parsing into the structure the analyzers consume.
-
-Approach
---------
-* The message is parsed with the ``compat32`` policy, which never raises on
-  malformed input; header values are unfolded and RFC 2047-decoded by hand so
-  broken encodings degrade to replacement characters instead of exceptions.
-* MIME parts are walked recursively: ``text/plain`` and ``text/html`` parts
-  without an attachment disposition become the bodies, ``message/rfc822`` parts
-  are captured whole as ``.eml`` attachments, everything else (including inline
-  images) becomes a ``RawAttachment`` whose bytes go to ``attachments.py``.
-* ``ParsedEmail`` only carries structure (no analysis) plus integrity hashes of
-  the exact bytes received, so the chain of custody can reference them.
-* Two *locality-sensitive* digests of the body are computed here as well
-  (``FuzzyDigest``): a pure-Python Charikar SimHash and, when the optional
-  ``py-tlsh`` extension is installed, a TLSH digest.  Unlike the SHA-256 of the
-  raw bytes they survive small edits, which is what lets ``campaigns.py``
-  cluster a campaign that rewrites a few words per victim.
-* ``parse_ms`` records the wall-clock cost of everything this module does to
-  one message, digests included, so the Stage 1-2 latency claim is measured
-  rather than asserted.
-* Stage 2 of the pitch deck is a C++20 dissector.  When the optional
-  ``mailtrace_engine`` extension (engine/) is importable it does the byte-level
-  work - line splitting, header extraction, multipart boundary walking - and
-  this module assembles its output into the very same ``email.message.Message``
-  tree CPython's parser would have produced, so everything below the parse is
-  literally unchanged code.  When it is absent, or declines a message, or
-  disagrees with the standard library about the structure, the pure-Python
-  parser runs instead.  ``NATIVE_ENGINE`` says which is in play; see
-  ``engine_status()`` and engine/README.md.
-
-``parse_email`` never raises: an empty or binary blob yields an empty
-``ParsedEmail`` with a ``charset_issues`` note.
-"""
+"""RFC 822 / MIME parsing into the structure the analyzers consume."""
 from __future__ import annotations
 
 import email
@@ -64,14 +30,7 @@ _MAX_PARTS = 500
 _OCTET_STREAM = "application/octet-stream"
 
 def _lenient[T](call: Callable[[], T], default: T) -> T:
-    """Run one standard-library call against hostile input; on any failure, ``default``.
-
-    The ``email`` package raises a wide and undocumented set of exceptions on
-    malformed messages - UnicodeError, LookupError, binascii.Error, IndexError,
-    AttributeError, ... - and a forensic parser has to keep what it can of a
-    message an attacker built to be awkward.  Enumerating the types would be a
-    guess dressed up as precision, so the guard is broad and lives here once.
-    """
+    """Run one standard-library call against hostile input; on any failure, ``default``."""
     try:
         return call()
     except Exception:  # noqa: BLE001 - see the docstring
@@ -97,30 +56,6 @@ class RawAttachment:
     is_inline: bool = False
 
 
-# Stage 2: the optional C++20 dissector
-# ``mailtrace_engine`` (engine/) splits raw bytes into headers and body-part
-# byte ranges.  It decodes nothing: no RFC 2047 words, no RFC 2231 parameters,
-# no charsets, no base64.  Everything it returns is fed into a real
-# ``email.message.Message`` here, and from that point the rest of this module
-# runs unchanged, so the native and pure-Python paths cannot drift in any of
-# the fiddly semantics the standard library already gets right.
-#
-# Three independent safety nets, because a parser that is subtly wrong is worse
-# than one that is missing:
-#
-# 1. The engine itself returns ``ok=False`` for any construct it does not claim
-#    to reproduce exactly (unix-from lines, message/* parts other than
-#    message/rfc822, absurd nesting), and we then parse in Python.
-# 2. Every message is structurally cross-checked as the tree is rebuilt: the
-#    standard library must agree that a part the engine called multipart really
-#    is multipart with that exact boundary, and so on.  A single disagreement
-#    discards the whole native result.
-# 3. At import time the engine must reproduce the Python parser's tree for a
-#    set of fixtures, or it is switched off for the life of the process.
-#
-# ``MAILTRACE_NATIVE_ENGINE=0`` disables it outright.
-#: Shape of the dict ``mailtrace_engine.dissect`` returns.  An engine built
-#: against a different one is refused rather than guessed at.
 _NATIVE_SCHEMA = 1
 
 
@@ -144,8 +79,6 @@ class _NativeEngine(Protocol):
     def dissect(self, raw: bytes, /) -> object: ...
 
 
-#: True only when the extension imported, matched ``_NATIVE_SCHEMA`` and passed
-#: the import-time self-check.  Reported by ``/api/health``.
 NATIVE_ENGINE: bool = False
 #: ``mailtrace_engine.__version__``, or "" when the extension is not in use.
 NATIVE_ENGINE_VERSION: str = ""
@@ -156,14 +89,11 @@ NATIVE_ENGINE_SHA256: str = ""
 
 _native: _NativeEngine | None = None
 
-# Approximate telemetry.  ``+=`` on a dict entry is not atomic under free
-# threading, so treat these as counts, not as an audit trail.
 _native_stats: dict[str, int] = {"native": 0, "python": 0, "declined": 0}
 
 
 class _NativeMismatch(Exception):
-    """The native dissection disagrees with the standard library's own reading
-    of the same bytes.  Always recoverable: the caller reparses in Python."""
+    """The native dissection disagrees with the standard library's own reading"""
 
 
 def _native_enabled_by_env() -> bool:
@@ -171,25 +101,12 @@ def _native_enabled_by_env() -> bool:
 
 
 def _ascii(value: bytes) -> str:
-    """Engine bytes -> the exact ``str`` CPython's ``BytesParser`` would hold.
-
-    ``BytesFeedParser`` decodes the whole message with
-    ``ascii``/``surrogateescape`` before parsing, so round-tripping through
-    that codec is what makes ``get_payload(decode=True)`` on a rebuilt part
-    return the same bytes as on a natively parsed one.
-    """
+    """Engine bytes -> the exact ``str`` CPython's ``BytesParser`` would hold."""
     return bytes(value).decode("ascii", "surrogateescape")
 
 
 def _trim_last_message(msg: Message) -> None:
-    """Apply RFC 2046's "the newline before a boundary belongs to the boundary".
-
-    CPython's feedparser applies this to whichever ``Message`` it built last,
-    which for a ``message/*`` part is the innermost nested message rather than
-    the part itself - and never to a multipart, whose epilogue absorbs the
-    newline instead.  The engine defers the rule to here for embedded messages
-    because it does not parse them; see ``Node::trim_last`` in engine/.
-    """
+    """Apply RFC 2046's "the newline before a boundary belongs to the boundary"."""
     target = msg
     while target.get_content_maintype() == "message":
         payload = target.get_payload()
@@ -198,10 +115,6 @@ def _trim_last_message(msg: Message) -> None:
         target = payload[0]
     if target.get_content_maintype() == "multipart":
         return
-    # ``_payload`` rather than ``get_payload()``: the public getter re-decodes
-    # a surrogate-escaped payload with errors="replace", so reading and writing
-    # it back would silently turn every non-ASCII byte into U+FFFD.  CPython's
-    # own feedparser touches ``_payload`` here for exactly the same reason.
     payload = target._payload  # type: ignore[attr-defined]
     if not isinstance(payload, str) or not payload:
         return
@@ -212,15 +125,7 @@ def _trim_last_message(msg: Message) -> None:
 
 
 def _build_message(node: _NativeNode, default_type: str) -> Message:
-    """Rebuild one ``Message`` from an engine node, verifying as we go.
-
-    Raises ``_NativeMismatch`` whenever the standard library's own view of the
-    rebuilt headers contradicts the structural decision the engine made.  That
-    is the check that makes the C++ side's simplified Content-Type parameter
-    parsing safe: if it picked a different boundary than ``get_boundary()``
-    would, or called a part a leaf when Python sees a live multipart, the
-    native result is thrown away rather than trusted.
-    """
+    """Rebuild one ``Message`` from an engine node, verifying as we go."""
     msg = Message()  # policy=compat32, matching email.message_from_bytes below
     if default_type != "text/plain":
         msg.set_default_type(default_type)
@@ -243,9 +148,6 @@ def _build_message(node: _NativeNode, default_type: str) -> Message:
     if kind == "rfc822":
         if ctype != "message/rfc822":
             raise _NativeMismatch(f"engine claimed an embedded message for a {ctype} part")
-        # The standard library parses the nested message, exactly as it would
-        # have during a full parse, so ``_embedded_message_bytes`` sees the
-        # same object it always did.
         nested = email.message_from_bytes(bytes(node["body"]), policy=policy.compat32)
         if node.get("trim_last"):
             _trim_last_message(nested)
@@ -296,25 +198,12 @@ def _tree_signature(msg: Message | None) -> object:
     return (msg.get_content_type(), tuple(msg.items()), msg.is_multipart(), body)
 
 
-# Fixtures the engine must reproduce before it is allowed to run.  They cover
-# the shapes the analyzers depend on: CRLF and LF endings, folded headers,
-# nested multiparts, base64 and quoted-printable payloads, an embedded
-# message/rfc822, a boundary that never closes, and non-MIME junk.
-#
-# The second element is whether the engine is *required* to handle the fixture.
-# Declining is a legitimate answer - it is how the engine says "this shape is
-# Python's job" - so a False only demands that the answer be right if one is
-# given.  A True means an engine that cannot do this much is not worth running.
 _SELF_CHECK_FIXTURES: tuple[tuple[bytes, bool], ...] = (
     (b"", True),
     (b"not a message at all", True),
     (b"Subject: bare\r\n\r\nbody text\r\n", True),
     (b"Subject: folded\r\n\tcontinuation\r\nX-Dup: one\r\nX-Dup: two\r\n\r\nbody\n", True),
-    # A header whose value starts on the continuation line: CPython lstrips the
-    # *joined* value including CR/LF, and older releases did not.
     (b"Subject:\r\n continued\r\nX-Also:\n\tfolded\n\r\nbody\r\n", True),
-    # Non-ASCII bytes at the tail of an embedded message, where the trailing
-    # newline has to be trimmed without mangling the surrogate escapes.
     (
         b"Content-Type: multipart/mixed; boundary=B\r\n\r\n--B\r\n"
         b"Content-Type: message/rfc822\r\n\r\nSubject: inner\r\n\r\n\xff\xfe binary\r\n--B--\r\n",
@@ -498,8 +387,7 @@ def parse_address(value: str) -> AddressInfo:
 
 
 def parse_address_list(value: str) -> list[AddressInfo]:
-    """Parse a comma-separated address list; falls back to scanning for
-    anything that looks like an address."""
+    """Parse a comma-separated address list; falls back to scanning for"""
     raw = decode_header_value(value or "").strip()
     if not raw:
         return []
@@ -573,8 +461,7 @@ class _TextExtractor(HTMLParser):
 
 
 def html_to_text(html: str) -> str:
-    """Visible text of an HTML document: scripts/styles dropped, block
-    elements separated by newlines, link text kept."""
+    """Visible text of an HTML document: scripts/styles dropped, block"""
     if not html:
         return ""
     extractor = _TextExtractor()
@@ -593,11 +480,7 @@ def html_to_text(html: str) -> str:
 
 # MIME walking
 def _python_message(raw: bytes) -> Message | None:
-    """The reference parser: CPython's ``email`` package, unchanged.
-
-    This is the behaviour the native path must reproduce, and the behaviour
-    every deployment without the extension gets.
-    """
+    """The reference parser: CPython's ``email`` package, unchanged."""
     try:
         return email.message_from_bytes(raw, policy=policy.compat32)
     except Exception:  # hostile input; retried below with a sanitised copy
@@ -609,12 +492,7 @@ def _python_message(raw: bytes) -> Message | None:
 
 
 def _parse_message(raw: bytes) -> Message | None:
-    """Native dissection when it is available and confident, Python otherwise.
-
-    Both branches return the same kind of object - a ``Message`` tree with the
-    same headers, the same part structure and the same undecoded payloads - so
-    nothing downstream of here knows or cares which one ran.
-    """
+    """Native dissection when it is available and confident, Python otherwise."""
     if NATIVE_ENGINE:
         msg = _native_message(raw)
         if msg is not None:
@@ -626,8 +504,7 @@ def _parse_message(raw: bytes) -> Message | None:
 
 
 def _iter_parts(part: Message, depth: int = 0) -> Iterator[tuple[str, Message]]:
-    """Yield ('rfc822', part) for embedded messages and ('leaf', part) for
-    every other non-multipart part, in document order."""
+    """Yield ('rfc822', part) for embedded messages and ('leaf', part) for"""
     if depth > _MAX_DEPTH:
         return
     ctype = _content_type(part)
@@ -717,59 +594,25 @@ def _basic_meta(att: RawAttachment) -> AttachmentMeta:
     )
 
 
-# Fuzzy hashing (Stage 5A)
-# SHA-256 answers "is this the same file?".  Campaign correlation needs "is this
-# the same message with a few words swapped?", which needs a digest whose output
-# moves a little when the input moves a little.  Two are produced:
-#
-# * SimHash (Charikar): implemented below in pure Python, always available, and
-#   compared with ``hamming_distance``.  64 bits, so distances run 0-64.
-# * TLSH: a stronger digest from Trend Micro, but a C extension (``py-tlsh``).
-#   It is deliberately NOT listed in requirements.txt - the engine must install
-#   from a pure-Python dependency set on any platform, including ones with no
-#   wheel and no compiler.  ``tlsh_digest`` therefore imports it lazily and
-#   returns "" when it is missing, and ``tlsh_diff`` reports "infinitely far"
-#   rather than failing.  TLSH sharpens clustering for operators who run
-#   ``pip install py-tlsh``; SimHash is the baseline everyone gets.
 _WORD_RE = re.compile(r"\w+", re.UNICODE)
 _SHINGLE_SIZE = 3
-# TLSH needs a reasonable amount of input (~50 bytes) before its bucket
-# statistics mean anything; below that it declines to produce a digest.
 _TLSH_MIN_BYTES = 50
 # Larger than any sane threshold, so an uncomparable pair never clusters.
 _TLSH_UNCOMPARABLE = 1_000_000
 
 
 def _shingles(text: str, size: int = _SHINGLE_SIZE) -> Counter[str]:
-    """Word n-shingles of the normalised body, with their repeat counts.
-
-    Normalisation is deliberately shallow - lower-case, Unicode word tokens,
-    punctuation and layout dropped - so that HTML reflow, changed indentation
-    or a different signature separator do not move the digest, while the actual
-    wording still does.
-    """
+    """Word n-shingles of the normalised body, with their repeat counts."""
     words = _WORD_RE.findall((text or "").lower())
     if not words:
         return Counter()
     if len(words) < size:
-        # Too short to shingle; fall back to the bare words so a tiny body
-        # still yields a stable (if weak) digest instead of zero.
         return Counter(words)
     return Counter(" ".join(words[index:index + size]) for index in range(len(words) - size + 1))
 
 
 def simhash(text: str, bits: int = 64) -> int:
-    """Charikar SimHash of ``text`` as a ``bits``-wide integer.
-
-    Each shingle is hashed with blake2b (digest_size = bits/8), then every bit
-    position of that hash votes +1 or -1 weighted by how often the shingle
-    occurs; the sign of each column becomes the corresponding output bit.  Two
-    texts that share most of their shingles therefore agree on most bits, and
-    ``hamming_distance`` measures how far apart they are.
-
-    An empty (or token-free) text hashes to 0, which callers treat as "no
-    digest" rather than as a body that matches every other empty body.
-    """
+    """Charikar SimHash of ``text`` as a ``bits``-wide integer."""
     if bits <= 0 or bits % 8 or bits > 512:
         raise ValueError("bits must be a multiple of 8 between 8 and 512 (blake2b's maximum)")
     counts = _shingles(text)
@@ -795,12 +638,7 @@ def simhash_hex(text: str, bits: int = 64) -> str:
 
 
 def hamming_distance(a_hex: str, b_hex: str) -> int:
-    """Number of differing bits between two hex digests of the same width.
-
-    Missing, malformed or differently sized digests are reported as maximally
-    distant (the full bit width) instead of raising, so a caller comparing
-    against a threshold can never be tricked into a match by bad data.
-    """
+    """Number of differing bits between two hex digests of the same width."""
     a_hex = (a_hex or "").strip().lower()
     b_hex = (b_hex or "").strip().lower()
     width = 4 * max(len(a_hex), len(b_hex), 16)
@@ -813,14 +651,7 @@ def hamming_distance(a_hex: str, b_hex: str) -> int:
 
 
 def tlsh_digest(data: bytes) -> str:
-    """TLSH digest of ``data``, or "" when one cannot be produced.
-
-    Returns "" - never raises - when the optional ``py-tlsh`` package is not
-    installed, when the input is shorter than ``_TLSH_MIN_BYTES``, or when the
-    library declines the input for lack of variation (it answers "TNULL").
-    ``py-tlsh`` is an optional C extension and is intentionally absent from
-    requirements.txt; see the section comment above.
-    """
+    """TLSH digest of ``data``, or "" when one cannot be produced."""
     if not data or len(data) < _TLSH_MIN_BYTES:
         return ""
     try:
@@ -833,12 +664,7 @@ def tlsh_digest(data: bytes) -> str:
 
 
 def tlsh_diff(a_digest: str, b_digest: str) -> int:
-    """TLSH distance between two digests (0 = identical, higher = further).
-
-    Like ``hamming_distance`` this never raises: a missing digest, or a host
-    without ``py-tlsh`` reading digests another host stored, yields a very
-    large number so the comparison simply fails to match.
-    """
+    """TLSH distance between two digests (0 = identical, higher = further)."""
     a_digest = (a_digest or "").strip()
     b_digest = (b_digest or "").strip()
     if not a_digest or not b_digest:
@@ -855,14 +681,7 @@ def tlsh_diff(a_digest: str, b_digest: str) -> int:
 def _finalise(
     parsed: ParsedEmail, attachments: list[RawAttachment], started: float
 ) -> tuple[ParsedEmail, list[RawAttachment]]:
-    """Attach the body digests and stamp the elapsed parse time.
-
-    The digests are computed over the plain-text body, falling back to the
-    visible text of the HTML part when there is no text part, so the same
-    message sent as text and as HTML lands in the same campaign.  They are
-    inside the timed region on purpose: ``parse_ms`` is meant to be the honest
-    cost of Stage 1-2, not a figure that hides part of the work.
-    """
+    """Attach the body digests and stamp the elapsed parse time."""
     try:
         body = parsed.text_body or html_to_text(parsed.html_body)
         parsed.fuzzy = FuzzyDigest(
@@ -959,7 +778,4 @@ def parse_email(raw: bytes) -> tuple[ParsedEmail, list[RawAttachment]]:
     return _finalise(parsed, raw_attachments, started)
 
 
-# Decided once, at import, so ``/api/health`` can state it and so a broken or
-# mismatched extension costs one self-check rather than one failure per
-# message.  Runs last because the self-check needs the whole module.
 _activate_native_engine()

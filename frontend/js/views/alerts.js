@@ -58,8 +58,6 @@ export function AlertsView() {
   const [live, setLive] = useState(/** @type {Alert[]} */ ([]));
   const [seen, setSeen] = useState(/** @type {Set<string>} */ (new Set()));
 
-  // Opening the list is what marks the badge read; new alerts arriving while
-  // it is open are already visible, so they never raise it again.
   useEffect(() => {
     unreadAlerts.set(0);
     return subscribeToAlerts((alert) => setLive((current) => [alert, ...current]));

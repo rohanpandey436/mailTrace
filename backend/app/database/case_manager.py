@@ -1,51 +1,4 @@
-"""
-Persistence: SQLite store for analyses, indicators, campaigns, alerts, a
-lookup cache and the hash-chained chain-of-custody ledger.
-
-Design
-------
-* One connection, one re-entrant lock: every public method is atomic with
-  respect to every other, which is all a single-process analyst tool needs.
-  WAL mode keeps readers (the dashboard) from blocking the analysis thread.
-* Analyses are stored as their canonical JSON (``model_dump_json``) next to a
-  handful of indexed summary columns used for search/filter/statistics.
-* The raw ``.eml`` is written once to the evidence directory and never
-  modified; its SHA-256 is recorded in the ledger at ingestion.
-* The custody ledger is a single global hash chain:
-  ``hash = sha256(prev_hash | seq | email_id | timestamp | actor | action |
-  detail_json | evidence_sha256)`` with ``detail_json`` stored verbatim so the
-  chain can be re-verified byte-for-byte later (``verify_chain``).
-
-Zero-persistence mode (Stage 5C)
---------------------------------
-``Store(..., in_memory=True)`` backs the same schema with an anonymous SQLite
-database (``:memory:``) and stops writing evidence files.  No directory is
-created, no file is opened: every table below lives in this process and is
-gone when it exits.  Every public method behaves exactly as it does on disk,
-except ``get_raw`` which always returns ``None`` because the raw message was
-never stored.
-
-PostgreSQL (optional)
----------------------
-The default and only tested backend is SQLite: every query below is written in
-SQLite SQL and, on the SQLite path, reaches ``sqlite3`` untranslated.  When
-``MAILTRACE_DATABASE_URL`` points at a ``postgres://`` / ``postgresql://``
-server *and* the optional ``psycopg`` driver is installed (see
-``requirements-pg.txt``), ``Store`` opens that server instead through
-``_PostgresDialect``, a thin adapter over the four differences this module
-actually depends on: the parameter marker (``?`` vs ``%s``), ``INSERT OR
-REPLACE`` / ``INSERT OR IGNORE`` vs ``ON CONFLICT``, the ``PRAGMA`` statements
-and rows that must be readable both by name and by position.  Everything else
-- the DDL, the types, the queries - is already portable and is shared verbatim.
-
-If the URL is set but ``psycopg`` is missing or the server cannot be reached,
-the store logs the failure and falls back to SQLite rather than refusing to
-start; ``Store.backend`` (surfaced by ``/api/health``) always says which engine
-is actually in use.  Honest scope note: the PostgreSQL path is exercised by no
-test in this repository - the suite runs entirely on SQLite - so it should be
-treated as reviewed-but-unverified until someone points it at a real server.
-Evidence ``.eml`` files stay on the local filesystem in both cases.
-"""
+"""Persistence: SQLite store for analyses, indicators, campaigns, alerts, a lookup cache and the hash-chained chain-of-custody ledger."""
 from __future__ import annotations
 
 import hashlib
@@ -89,13 +42,6 @@ DEFAULT_CASE_STATUS: CaseStatus = "open"
 # Column text -> the typed status; anything else normalises to the default.
 _STATUS_BY_NAME: dict[str, CaseStatus] = {str(name): name for name in CASE_STATUSES}
 
-# Stage 6 quick-bar.  The decision lives in its own table rather than in a new
-# ``emails`` column so that an existing deployment picks it up from
-# ``CREATE TABLE IF NOT EXISTS`` with no migration and no ALTER TABLE, and so a
-# re-analysis of the same id (INSERT OR REPLACE on ``emails``) cannot silently
-# discard an analyst's decision.  The authoritative record of *who* decided
-# *when* is the custody ledger; this table is the indexed projection the case
-# list reads.
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS emails (
@@ -202,19 +148,8 @@ def chain_hash(
     return hashlib.sha256(material.encode("utf-8")).hexdigest()
 
 
-# SQL dialects
-#
-# Everything in ``Store`` below is written once, in SQLite SQL with ``?``
-# markers.  A dialect supplies only what genuinely differs between engines:
-#   * how to open a connection and apply the schema (PRAGMA vs nothing),
-#   * the upsert spelling (INSERT OR REPLACE/IGNORE vs ON CONFLICT).
-# ``_SqliteDialect`` is the identity: it hands the sqlite3 connection straight
-# back and emits exactly the SQL this module used before the split existed, so
-# the tested path is byte-for-byte unchanged.
 POSTGRES_SCHEMES = ("postgres://", "postgresql://")
 
-# A connection-like object: ``execute(sql, params) -> cursor``, ``executemany``
-# and ``close``.  On SQLite it *is* a ``sqlite3.Connection``.
 Connection = Any
 # A result row: readable by column name and by position (sqlite3.Row / _PgRow).
 Row = Any
@@ -258,11 +193,7 @@ class _SqliteDialect:
 
 
 class _PgRow:
-    """A row readable both as ``row["column"]`` and ``row[0]``, like sqlite3.Row.
-
-    psycopg ships ``tuple_row`` (positional only) and ``dict_row`` (name only);
-    this module uses both styles, so it needs the sqlite3 hybrid.
-    """
+    """A row readable both as ``row["column"]`` and ``row[0]``, like sqlite3.Row."""
 
     __slots__ = ("_index", "_values")
 
@@ -293,15 +224,7 @@ def _pg_row_factory(cursor: psycopg.Cursor[object]) -> Callable[[Sequence[object
 
 
 class _PgConnection:
-    """Makes a psycopg connection answer to the small sqlite3 API used here.
-
-    Two translations, both narrow:
-      * ``?`` -> ``%s``.  Safe because no SQL string in this module contains a
-        literal ``?`` or ``%`` - the ``%`` wildcards of the search LIKE live in
-        the *parameter*, never in the statement.
-      * parameterless statements are sent with ``params=None`` so psycopg does
-        not scan them for placeholders at all.
-    """
+    """Makes a psycopg connection answer to the small sqlite3 API used here."""
 
     def __init__(self, conn: Any) -> None:
         self._conn = conn
@@ -337,19 +260,6 @@ class _PostgresDialect:
     def connect(self) -> Connection:
         import psycopg  # optional dependency, imported only when configured
 
-        # autocommit mirrors sqlite3's isolation_level=None: the explicit
-        # BEGIN/COMMIT in Store._tx is then the only transaction control, in
-        # both engines.
-        #
-        # prepare_threshold=None disables psycopg's automatic prepared
-        # statements.  Supabase hands out a connection *pooler* URL by default
-        # (``...pooler.supabase.com:6543``), and a pooler in transaction mode
-        # gives each statement whichever backend is free, so a statement
-        # prepared on one connection is missing on the next - which surfaces as
-        # an intermittent "prepared statement does not exist" once the pool
-        # starts reusing backends, not at startup where it would be noticed.
-        # The queries here are small and run once per request; losing the
-        # prepared-statement cache costs nothing measurable.
         conn = psycopg.connect(
             self.url, autocommit=True, row_factory=_pg_row_factory, prepare_threshold=None
         )
@@ -361,12 +271,7 @@ class _PostgresDialect:
 
     @staticmethod
     def _schema_statements() -> list[str]:
-        """``_SCHEMA`` is already valid PostgreSQL (TEXT/INTEGER/REAL, IF NOT
-        EXISTS, no AUTOINCREMENT - ``custody.seq`` is computed by this module).
-        The single adjustment: ``indicators.indicator`` is given the binary "C"
-        collation, because ``find_indicators_by_prefix`` walks a half-open
-        string range that only means what it says under byte ordering, and
-        because the index must then match that ordering to be usable."""
+        """``_SCHEMA`` is already valid PostgreSQL (TEXT/INTEGER/REAL, IF NOT"""
         schema = _SCHEMA.replace("    indicator TEXT NOT NULL,", '    indicator TEXT COLLATE "C" NOT NULL,')
         return [statement.strip() for statement in schema.split(";") if statement.strip()]
 
@@ -385,40 +290,18 @@ class _PostgresDialect:
 
 
 def _make_dialect(target: str, database_url: str, *, on_disk: bool) -> Any:
-    """PostgreSQL when it is configured, reachable and importable; SQLite otherwise.
-
-    A configured-but-unusable server degrades to SQLite with a loud error rather
-    than taking the service down: the free-tier deployment has no database
-    attached and must still start.  ``Store.backend`` reports what was chosen.
-    """
+    """PostgreSQL when it is configured, reachable and importable; SQLite otherwise."""
     url = (database_url or "").strip()
     if not url or not url.startswith(POSTGRES_SCHEMES):
         return _SqliteDialect(target, on_disk=on_disk)
     if not on_disk:
-        # Zero-persistence promises that nothing leaves the process; shipping
-        # rows to a database server would break exactly that promise.
         log.warning("zero-persistence mode ignores MAILTRACE_DATABASE_URL and stays in memory")
         return _SqliteDialect(target, on_disk=on_disk)
     return _PostgresDialect(url)
 
 
 class Store:
-    """Thread-safe SQLite persistence for MailTrace.
-
-    ``in_memory=True`` (zero-persistence mode) keeps the identical schema in an
-    anonymous ``:memory:`` database and writes no evidence files: no
-    ``mailtrace.db``, no ``evidence/`` directory and no copy of any analysed
-    message reaches the filesystem, and neither directory is even created.
-
-    It is not literally true that the process writes nothing at all: the
-    classifier caches ``model.joblib`` and ``url_model.joblib`` under the data
-    directory on first use. Those are trained solely from the bundled seed
-    corpus and contain no analysed-email data, which is why they are permitted
-    here; delete them and they are simply retrained.
-
-    Keyword-only and defaults to False, so every existing caller keeps the
-    previous on-disk behaviour unchanged.
-    """
+    """Thread-safe SQLite persistence for MailTrace."""
 
     def __init__(
         self, db_path: Path, evidence_dir: Path, *, in_memory: bool = False, database_url: str = ""
@@ -432,10 +315,6 @@ class Store:
         self._lock = threading.RLock()
         target = ":memory:" if self.in_memory else str(self.db_path)
         self._dialect = _make_dialect(target, database_url, on_disk=not self.in_memory)
-        #: Why the configured backend is not the one in use; "" when it is. Read
-        #: by /api/health, because a service quietly running on a different
-        #: database from the one it was configured with is not something anyone
-        #: should have to discover from a log file afterwards.
         self.backend_note = "" if database_url.strip() else "MAILTRACE_DATABASE_URL is not set"
         if database_url.strip() and not database_url.strip().startswith(POSTGRES_SCHEMES):
             self.backend_note = "MAILTRACE_DATABASE_URL is set but is not a postgres:// or postgresql:// URL"
@@ -484,9 +363,6 @@ class Store:
             else:
                 self._conn.execute("COMMIT")
 
-    # ------------------------------------------------------------------ #
-    # Analyses
-    # ------------------------------------------------------------------ #
     @staticmethod
     def _summary_columns(result: AnalysisResult) -> dict[str, Any]:
         origin_geo = result.infrastructure.origin_geo
@@ -516,8 +392,6 @@ class Store:
         sql = self._dialect.upsert("emails", list(columns), ("id",))
         with self._tx() as conn:
             conn.execute(sql, list(columns.values()))
-        # Zero-persistence: the analysis lives in the in-memory database, but the
-        # message itself is never copied to the evidence directory.
         if raw is not None and not self.in_memory:
             path = self.evidence_dir / f"{result.id}.eml"
             if not path.exists():
@@ -536,8 +410,6 @@ class Store:
 
     def get_raw(self, email_id: str) -> bytes | None:
         if self.in_memory:
-            # Nothing was ever written, and an evidence directory left behind by a
-            # previous on-disk run must not be read back in this mode.
             return None
         path = self.evidence_dir / f"{email_id}.eml"
         try:
@@ -547,12 +419,7 @@ class Store:
 
     @staticmethod
     def _row_status(row: Row) -> CaseStatus:
-        """Analyst decision on a joined case row; 'open' when the query did not join.
-
-        Only the two quick-bar endpoints ever write this column, but an unknown
-        value is still normalised rather than trusted, so a hand-edited database
-        cannot make ``CaseSummary`` fail validation for the whole listing.
-        """
+        """Analyst decision on a joined case row; 'open' when the query did not join."""
         try:
             value = row["status"]
         except (IndexError, KeyError, TypeError):
@@ -624,14 +491,7 @@ class Store:
         return [self._row_to_summary(r) for r in rows], int(total)
 
     def update_campaign_id(self, email_id: str, campaign_id: str | None) -> None:
-        """Move an email into (or out of) a campaign.
-
-        The membership lives in two places: the indexed ``campaign_id`` column
-        that drives search, and the serialised analysis that the detail view
-        and the forensic report read back.  Both are rewritten here so an
-        email pulled into a campaign after the fact does not report itself as
-        unclustered.
-        """
+        """Move an email into (or out of) a campaign."""
         with self._tx() as conn:
             conn.execute("UPDATE emails SET campaign_id = ? WHERE id = ?", (campaign_id, email_id))
             row = conn.execute("SELECT result_json FROM emails WHERE id = ?", (email_id,)).fetchone()
@@ -665,9 +525,6 @@ class Store:
         by_id = {r["id"]: self._row_to_summary(r) for r in rows}
         return [by_id[i] for i in ids if i in by_id]
 
-    # ------------------------------------------------------------------ #
-    # Stage 6 quick-bar: analyst decisions
-    # ------------------------------------------------------------------ #
     def get_case_status(self, email_id: str) -> CaseStatus:
         """Current analyst decision on a case ('open' when none was recorded)."""
         with self._lock:
@@ -675,13 +532,7 @@ class Store:
         return self._row_status(row) if row is not None else DEFAULT_CASE_STATUS
 
     def set_case_status(self, email_id: str, status: str, actor: str = "") -> bool:
-        """Record the analyst decision on a case; False when the case does not exist.
-
-        This is MailTrace bookkeeping only.  Nothing here contacts a mail
-        gateway, moves a message or blocks a sender - the decision and its
-        author are written to the custody ledger by the caller, and this row is
-        the indexed copy the case list reads.
-        """
+        """Record the analyst decision on a case; False when the case does not exist."""
         status = (status or DEFAULT_CASE_STATUS).strip().lower()
         if status not in CASE_STATUSES:
             raise ValueError(f"unknown case status {status!r}; expected one of {', '.join(CASE_STATUSES)}")
@@ -694,9 +545,6 @@ class Store:
             )
         return True
 
-    # ------------------------------------------------------------------ #
-    # Indicators & campaigns
-    # ------------------------------------------------------------------ #
     def save_indicators(self, email_id: str, indicators: list[str]) -> None:
         with self._tx() as conn:
             conn.execute("DELETE FROM indicators WHERE email_id = ?", (email_id,))
@@ -721,19 +569,7 @@ class Store:
         return result
 
     def find_indicators_by_prefix(self, prefix: str, exclude_email_id: str = "") -> dict[str, list[str]]:
-        """email_id -> that email's indicators beginning with ``prefix``.
-
-        The fuzzy campaign matcher (Stage 5A) cannot look a SimHash or TLSH
-        digest up by equality without discarding the tolerance that makes it
-        useful, so it pulls every stored digest and compares distances itself.
-        The half-open range keeps ``idx_indicators_indicator`` usable, which a
-        ``LIKE 'prefix%'`` on a BINARY-collated column would not.
-
-        The range is a *byte* range, so on PostgreSQL the ``indicator`` column
-        is declared ``COLLATE "C"`` (see ``_PostgresDialect._schema_statements``):
-        under a locale collation ``'simhash:...' < 'simhash;'`` is not the
-        guarantee it is here, and the index would not match the comparison.
-        """
+        """email_id -> that email's indicators beginning with ``prefix``."""
         prefix = prefix or ""
         if not prefix:
             return {}
@@ -779,8 +615,6 @@ class Store:
             )
             conn.execute("DELETE FROM campaign_members WHERE campaign_id = ?", (campaign.id,))
             conn.executemany(
-                # email_id is the primary key: an email joining this campaign is
-                # moved out of whichever campaign previously claimed it.
                 self._dialect.upsert("campaign_members", ["campaign_id", "email_id"], ("email_id",)),
                 [(campaign.id, email_id) for email_id in dict.fromkeys(campaign.email_ids)],
             )
@@ -795,9 +629,6 @@ class Store:
             conn.execute("DELETE FROM campaign_members WHERE campaign_id = ?", (campaign_id,))
             conn.execute("DELETE FROM campaigns WHERE id = ?", (campaign_id,))
 
-    # ------------------------------------------------------------------ #
-    # Chain of custody
-    # ------------------------------------------------------------------ #
     def record_custody(
         self, email_id: str, actor: str, action: str, detail: dict[str, object], evidence_sha256: str
     ) -> CustodyEvent:
@@ -868,9 +699,6 @@ class Store:
         valid, head = self.verify_chain()
         return CustodyChain(email_id=email_id, events=[self._row_to_event(r) for r in rows], valid=valid, head_hash=head)
 
-    # ------------------------------------------------------------------ #
-    # Alerts
-    # ------------------------------------------------------------------ #
     def create_alert(self, alert: Alert) -> None:
         with self._tx() as conn:
             conn.execute(
@@ -912,9 +740,6 @@ class Store:
             cursor = conn.execute("UPDATE alerts SET acknowledged = 1 WHERE id = ?", (alert_id,))
             return bool(cursor.rowcount > 0)
 
-    # ------------------------------------------------------------------ #
-    # Lookup cache
-    # ------------------------------------------------------------------ #
     def cache_get(self, key: str) -> JsonValue | None:
         with self._lock:
             row = self._conn.execute("SELECT value_json, expires_at FROM cache WHERE key = ?", (key,)).fetchone()
@@ -934,9 +759,6 @@ class Store:
             payload = json.dumps(value, default=str, ensure_ascii=False)
         except (TypeError, ValueError):
             return
-        # The TTL is honoured as given: a non-positive lifetime stores an entry
-        # that is already expired, which the next read drops.  Clamping it up
-        # would keep data the caller explicitly asked to expire.
         try:
             lifetime = float(ttl_seconds)
         except (TypeError, ValueError):
@@ -945,9 +767,6 @@ class Store:
         with self._tx() as conn:
             conn.execute(self._dialect.upsert("cache", ["key", "value_json", "expires_at"], ("key",)), (key, payload, expires))
 
-    # ------------------------------------------------------------------ #
-    # Statistics
-    # ------------------------------------------------------------------ #
     def stats(self) -> DashboardStats:
         with self._lock:
             total = self._conn.execute("SELECT COUNT(*) FROM emails").fetchone()[0]

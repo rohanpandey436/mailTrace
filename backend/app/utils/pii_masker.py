@@ -1,14 +1,4 @@
-"""
-Configurable PII masking.
-
-What is masked: email addresses (local part), display names (initials),
-phone numbers, Aadhaar numbers, PAN numbers and Luhn-valid card numbers.
-What is deliberately kept: domains, IPs, URLs, hashes, message ids and
-timestamps, because they are the investigative indicators.  Hex strings of
-32+ characters (hashes, ids) are protected from every regex.
-
-``mask_result`` returns a deep copy; the stored analysis is never altered.
-"""
+"""Configurable PII masking."""
 from __future__ import annotations
 
 import hashlib
@@ -172,10 +162,6 @@ def mask_result(result: AnalysisResult) -> AnalysisResult:
     for pattern in masked.nlp.bec_patterns:
         pattern.evidence = [mask_text(e) for e in pattern.evidence]
     masked.nlp.urgency_phrases = [mask_text(p) for p in masked.nlp.urgency_phrases]
-    # LIME's interpretable features are raw words split straight out of this
-    # message, so unlike the SHAP tokens (which can only come from the fitted
-    # corpus vocabulary) they can carry a phone number or an account number
-    # lifted verbatim from the body. Mask them.
     for weight in masked.nlp.lime_weights:
         weight.token = mask_text(weight.token)
 

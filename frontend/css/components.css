@@ -1,9 +1,3 @@
-/*
- * Components.  One block per component, BEM-style names, no page-specific
- * rules.  A component's colour comes from the tone class it carries (see
- * base.css); its dynamic quantities (a bar's fill, a weight's magnitude) come
- * from a --value custom property the view sets on the element.
- */
 
 /* Card and section */
 .card {

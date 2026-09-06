@@ -1,5 +1,4 @@
-"""Shared fixtures: offline settings, a temporary store, sample loader and a
-session-wide set of fully analysed samples (no network, no persistence)."""
+"""Shared fixtures: offline settings, a temporary store, sample loader and a session-wide set of fully analysed samples (no network, no persistence)."""
 from __future__ import annotations
 
 import sys

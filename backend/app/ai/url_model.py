@@ -1,87 +1,4 @@
-"""
-URL / domain risk model (XGBoost), the learned half of the Stage 4 URL pillar.
-
-What this is
-------------
-A gradient-boosted decision tree over 31 numeric features engineered from a
-:class:`~app.schemas.UrlInfo` (produced by the deterministic extractor in
-``app/core/link_analyzer.py``) and, when it is available, the
-:class:`~app.schemas.DomainIntel` for that link's registrable domain.  It emits
-``P(malicious)`` per link; ``score_urls`` reduces that to the worst link in the
-message and ``app/core/scoring.py`` folds it into the URL term.
-
-What it is NOT
---------------
-It is not an independent second opinion.  Fifteen of the thirty-one columns are
-read straight off ``UrlInfo`` (the deception flags and the lookalike verdict),
-so on those the model sees exactly what the rule engine saw and cannot discover
-a signal the rules missed; the other sixteen are continuous URL-shape measures
-the rules never compute.  Its contribution is therefore a
-*graded, monotone lift*: the deterministic score stays the floor and the model
-may only push a link further up (see ``engine/scoring._url_score``).  What it
-buys is resolution -- the rules emit five severity buckets, the model emits a
-continuous probability that separates "two weak obfuscation flags" from "seven".
-
-Training data (generated, and honest about it)
-----------------------------------------------
-``build_dataset`` assembles a labelled URL set from three sources:
-
-1. **Knowledge-base synthesis** (the bulk).  Benign rows are built from
-   ``BRANDS`` legitimate domains, ``COMMON_URL_HOSTS``, the protected org
-   domains and free-mail webmail hosts, deliberately including brand-hosted
-   ``/login`` and ``/verify`` paths so the model learns that a credential
-   keyword on a real brand domain is normal.  Malicious rows are built by
-   applying the six lookalike techniques to those same brands and by composing
-   the documented deception patterns (IP literals, shorteners, punycode, the
-   ``user@host`` trick, abuse-prone TLDs, redirect parameters, executable
-   paths, base64 query blobs, excessive sub-domains).
-2. **Seed corpus** (``app/ai/seed_corpus.json``).  Real URLs written into the
-   message bodies, weakly labelled by the message's own class: a link in a
-   Legitimate message is benign, a link in a Phishing/Fraud/Impersonated/
-   Suspicious message is malicious *unless* its registrable domain is a known
-   brand or a common infrastructure host (unsubscribe links, w3.org, CDNs),
-   which are dropped rather than mislabelled.
-3. **Sample corpus** (``samples/*.eml``), extracted and labelled by the same
-   weak rule from the file name.
-
-Two consequences to keep in view:
-
-* Hold-out accuracy on this set measures *self-consistency with the knowledge
-  base*, not field performance.  It is printed by the CLI and stored in the
-  bundle for the record; it is not a claim about real phishing traffic.
-* The three DomainIntel columns (``domain_age_days``, ``resolves``, ``has_mx``)
-  cannot be observed for synthesised hosts.  They are filled from a documented
-  **prior** -- attack infrastructure is young and often has no MX, established
-  brand domains are old and do -- and are set to NaN on a deliberate fraction
-  of rows so the model is trained to work when enrichment did not run, which is
-  the offline/free-tier case.  XGBoost learns a default branch for NaN natively.
-
-Optional dependency
--------------------
-``xgboost`` is a ~58 MB manylinux wheel (87 MB unpacked, one 86 MB
-``libxgboost.so``) with no build step, so it is listed in requirements.txt.
-Every entry point here still degrades cleanly when it is absent: ``load_or_train``
-logs once and returns ``None``, ``score_urls`` returns ``None``, and the URL
-pillar falls back to the deterministic score alone.  Set
-``MAILTRACE_URL_MODEL=0`` to switch it off without uninstalling anything.
-
-Caching
--------
-Same bundle convention as the text model: a joblib dict at
-``Settings.url_model_path`` carrying the fitted estimator, the feature-name
-list, the row count and a ``corpus_sha256`` fingerprint.  The fingerprint
-covers the seed corpus, the sample ``.eml`` files, ``core/knowledge.py`` (the
-single source of truth for brands, TLDs, shorteners and keywords) and the
-feature list itself, so editing any of them retrains automatically.  The
-in-process cache is keyed on that fingerprint rather than on the file path, so
-a fresh ``data_dir`` (every pytest tmp_path, for instance) reuses the model
-already fitted in this process instead of refitting it.
-
-CLI
----
-``python -m app.ai.url_model``            retrain and print hold-out metrics
-``python -m app.ai.url_model --report``   also dump gain-ranked feature importances
-"""
+"""URL / domain risk model (XGBoost), the learned half of the Stage 4 URL pillar."""
 from __future__ import annotations
 
 import argparse
@@ -128,8 +45,6 @@ log = logging.getLogger("mailtrace.ml.url")
 #: Bump whenever FEATURE_NAMES or the dataset generator changes shape.
 MODEL_VERSION = "xgb-url-1"
 
-#: Column order of the design matrix.  Persisted in the bundle and checked on
-#: load, so a bundle fitted against an older feature set is discarded.
 FEATURE_NAMES: list[str] = [
     # --- URL shape (continuous; the model's own view, not read off the rules)
     "url_length",
@@ -168,9 +83,6 @@ FEATURE_NAMES: list[str] = [
     "has_mx",
 ]
 
-#: Credential-harvest subset of URL_SUSPICIOUS_KEYWORDS (same list urls.py uses).
-#: Intersected with the real vocabulary so a word dropped from knowledge.py can
-#: never leave a dead entry here that silently stops contributing to the feature.
 _CREDENTIAL_KEYWORDS: frozenset[str] = frozenset({
     "login", "log-in", "signin", "sign-in", "verify", "verification", "password", "credential",
     "auth", "authenticate", "account", "confirm", "kyc", "unlock", "recover", "secure", "webmail",
@@ -185,12 +97,7 @@ _NAN = float("nan")
 
 # Feature engineering
 def shannon_entropy(value: str) -> float:
-    """Shannon entropy of the character distribution of ``value``, bits/char.
-
-    The same measure the attachment analyzer applies to file bytes, here applied
-    to the host string: algorithmically generated hosts (DGA-style, long random
-    labels) sit near 4 bits/char while ``mail.google.com`` sits near 3.
-    """
+    """Shannon entropy of the character distribution of ``value``, bits/char."""
     text = value or ""
     if not text:
         return 0.0
@@ -206,15 +113,7 @@ def _sld(registrable: str) -> str:
 
 
 def lookalike_distance(host: str) -> float:
-    """Normalised Damerau-Levenshtein distance from the host's second-level
-    label to the *nearest* known brand name, in [0, 1].
-
-    0.0 means the label is exactly a brand name (which is only innocent when the
-    whole registrable domain is that brand's real domain -- the model gets that
-    from ``known_good_domain``); 1.0 means nothing brand-like.  Unlike
-    ``is_lookalike`` this is continuous, so "paypa1" (0.17) and "paypaI-secure"
-    (0.46) are distinguishable instead of both being a single boolean.
-    """
+    """Normalised Damerau-Levenshtein distance from the host's second-level"""
     sld = _sld(registrable_domain(host))
     if not sld:
         return 1.0
@@ -230,12 +129,7 @@ def lookalike_distance(host: str) -> float:
 
 
 def _intel_features(intel: DomainIntel | None) -> tuple[float, float, float]:
-    """(age_days, resolves, has_mx) with NaN wherever nothing was observed.
-
-    ``source in ("offline", "unavailable", "")`` means the domain engine never
-    ran a live lookup, so ``resolves``/``has_mx`` being False carries no
-    information and must not be handed to the model as a real zero.
-    """
+    """(age_days, resolves, has_mx) with NaN wherever nothing was observed."""
     if intel is None:
         return _NAN, _NAN, _NAN
     age = _NAN if intel.age_days is None else float(intel.age_days)
@@ -304,9 +198,6 @@ def features_for(url: str, anchor: str, cfg: Settings, intel: DomainIntel | None
     return features(analyze_url(url, anchor, cfg), intel)
 
 
-# Dataset generation
-#: Prior used to fill the DomainIntel columns for synthesised hosts.  These are
-#: assumptions, not observations -- see the module docstring.
 _PRIOR_MISSING_RATE = 0.5          # fraction of rows with no enrichment at all
 _PRIOR_BENIGN_AGE = (900, 9000)    # days: an established brand or corporate site
 _PRIOR_MALICIOUS_AGE = (1, 220)    # days: purpose-built attack infrastructure
@@ -315,16 +206,11 @@ _PRIOR_MALICIOUS_MX_RATE = 0.25    # attack hosts that do publish an MX anyway
 _BENIGN_PATHS: tuple[str, ...] = (
     "/", "/about", "/help", "/support/contact", "/blog/2026/quarterly-update",
     "/docs/getting-started", "/pricing", "/careers", "/legal/privacy",
-    # Real brands host credential pages too: the model must not read "login" or
-    # "verify" on a genuine brand domain as evidence of anything.
     "/login", "/signin", "/account/security", "/account/settings",
     "/help/verify-email", "/password/reset", "/billing/invoices",
     "/unsubscribe?u=91a2c4&id=88213", "/track/open.gif?mid=44120",
     "/order/status?id=INV-2026-0042", "/download/report.pdf",
     "/organizations/acme-corp-india/settings/receipts",
-    # Marketing mail really does send 150-character tracked links; they trip the
-    # ``long_url`` obfuscation flag, so they belong in the benign class as hard
-    # negatives or the model learns that length alone is guilt.
     "/campaign/click?utm_source=newsletter&utm_medium=email&utm_campaign=2026_q3_update&utm_content=cta_primary&sid=7f4c19ab2d",
     "/e/c/eyJlbWFpbF9pZCI6IjQ0MTIwIn0/aHR0cHM6Ly9leGFtcGxlLmNvbQ?mkt_tok=NDQxMjA",
 )
@@ -390,23 +276,12 @@ def _typo(word: str, rng: random.Random) -> str:
     return _homoglyph_swap(word, rng)
 
 
-#: Scheme mix. Both classes are mostly https on purpose: free certificates made
-#: TLS universal, and phishing kits use it as readily as anyone. An earlier
-#: version of this generator emitted http for every attack URL, and the model
-#: promptly learned "http means malicious" -- 0.56 of total gain on one leaked
-#: column. Keeping the distributions close forces it onto real signal.
 _BENIGN_HTTPS_RATE = 0.92
 _MALICIOUS_HTTPS_RATE = 0.80
 
 
 def _benign_rows(rng: random.Random, cfg: Settings) -> list[tuple[str, str]]:
-    """(url, anchor) pairs that a real message would legitimately carry.
-
-    Deliberately more than brand domains: two thirds of the benign class are
-    *ordinary* hosts with no brand status at all, so the model cannot settle on
-    "not a known brand therefore dangerous" -- which would flag every small
-    supplier's invoice link in the deployment this ships into.
-    """
+    """(url, anchor) pairs that a real message would legitimately carry."""
     rows: list[tuple[str, str]] = []
 
     def add(host: str, path: str, anchor: str = "") -> None:
@@ -488,13 +363,7 @@ def _malicious_rows(rng: random.Random, cfg: Settings) -> list[tuple[str, str]]:
 
 
 def _corpus_rows(cfg: Settings) -> list[tuple[str, str, int]]:
-    """(url, anchor, label) weakly labelled from the seed corpus message class.
-
-    Links to known brands / common infrastructure inside a malicious message are
-    dropped rather than labelled 1: a phishing mail still carries a real
-    unsubscribe link, and mislabelling those would teach the model that
-    ``microsoft.com`` is dangerous.
-    """
+    """(url, anchor, label) weakly labelled from the seed corpus message class."""
     rows: list[tuple[str, str, int]] = []
     try:
         raw = json.loads(Path(cfg.corpus_path).read_text(encoding="utf-8"))
@@ -540,11 +409,7 @@ def _sample_rows(cfg: Settings) -> list[tuple[str, str, int]]:
 
 
 def _apply_intel_prior(row: list[float], label: int, rng: random.Random) -> None:
-    """Fill the three DomainIntel columns from the documented prior, in place.
-
-    Half the rows keep NaN: enrichment is off on the free tier and in the test
-    suite, so the model has to be good without these columns.
-    """
+    """Fill the three DomainIntel columns from the documented prior, in place."""
     age_i = FEATURE_NAMES.index("domain_age_days")
     res_i = FEATURE_NAMES.index("resolves")
     mx_i = FEATURE_NAMES.index("has_mx")
@@ -606,13 +471,7 @@ def _sha256_file(path: Path) -> str:
 
 
 def dataset_fingerprint(cfg: Settings | None = None) -> str:
-    """Hash of every input the dataset is generated from.
-
-    Cheap on purpose (a handful of file reads, no featurisation) because it is
-    checked on every ``load_or_train``: the seed corpus, the sample ``.eml``
-    files, ``core/knowledge.py`` and the feature list.  Editing any of them
-    invalidates the cached bundle exactly as editing the text corpus does.
-    """
+    """Hash of every input the dataset is generated from."""
     cfg = cfg or default_settings
     digest = hashlib.sha256()
     digest.update(MODEL_VERSION.encode())
@@ -629,12 +488,7 @@ def dataset_fingerprint(cfg: Settings | None = None) -> str:
 
 
 def build_classifier() -> XGBClassifier:
-    """A deliberately small booster: 120 trees of depth 4, single-threaded.
-
-    The bundle is ~200 KB and inference is microseconds.  ``n_jobs=1`` matters:
-    the deployment target is a 512 MB single-CPU free tier, where XGBoost's
-    default thread pool is pure overhead.
-    """
+    """A deliberately small booster: 120 trees of depth 4, single-threaded."""
     from xgboost import XGBClassifier
 
     return XGBClassifier(
@@ -668,8 +522,7 @@ def _bundle(model: XGBClassifier, meta: dict[str, Any], fingerprint: str, metric
 
 
 def _holdout_metrics(x: list[list[float]], y: list[int]) -> dict[str, float]:
-    """Stratified 80/20 hold-out.  Self-consistency with the generated set, not
-    a field-performance claim -- see the module docstring."""
+    """Stratified 80/20 hold-out.  Self-consistency with the generated set, not"""
     from sklearn.metrics import accuracy_score, roc_auc_score
     from sklearn.model_selection import train_test_split
 
@@ -702,9 +555,6 @@ def train(cfg: Settings | None = None, model_path: Path | None = None, with_metr
     path.parent.mkdir(parents=True, exist_ok=True)
     joblib.dump(bundle, path)
     log.info("trained %s on %d URLs (%d malicious) -> %s", MODEL_VERSION, meta["n_rows"], meta["n_malicious"], path)
-    # Beside the joblib, never over the committed graph: a test that trains
-    # must not replace the artefact the deployment serves. `--bundle` on the
-    # CLI is the only thing that writes there.
     try:
         onnx_url.export(model, fingerprint, path.with_suffix(".onnx"))
     except ImportError:
@@ -734,8 +584,6 @@ def _load_bundle(path: Path, fingerprint: str) -> XGBClassifier | None:
 # Process-wide cache
 _lock = threading.Lock()
 _models: dict[str, XGBClassifier] = {}
-#: Fingerprints whose load/train already failed (xgboost missing, fit error).
-#: Retrying per message would cost a doomed import on every analysis.
 _failed: set[str] = set()
 
 
@@ -749,13 +597,7 @@ def available() -> bool:
 
 
 def load_or_train(cfg: Settings | None = None) -> XGBClassifier | onnx_url.OnnxUrlScorer | None:
-    """The fitted model, training it once if needed; ``None`` if unavailable.
-
-    Never raises.  Keyed on the dataset fingerprint, not on the file path, so
-    every ``Settings`` pointing at the same knowledge base shares one fitted
-    model in this process, and so a graph exported for a different knowledge
-    base is never served.
-    """
+    """The fitted model, training it once if needed; ``None`` if unavailable."""
     cfg = cfg or default_settings
     if not getattr(cfg, "url_model_enabled", True):
         return None
@@ -771,8 +613,6 @@ def load_or_train(cfg: Settings | None = None) -> XGBClassifier | onnx_url.OnnxU
         if fingerprint in _failed:
             return None
         try:
-            # The committed ONNX graph first: it needs no xgboost, no training
-            # step and no writable directory. See app/ai/onnx_url.py.
             model: Any = onnx_url.load(fingerprint)
             if model is None:
                 model = onnx_url.load(fingerprint, Path(cfg.url_model_path).with_suffix(".onnx"))
@@ -794,12 +634,7 @@ def load_or_train(cfg: Settings | None = None) -> XGBClassifier | onnx_url.OnnxU
 
 
 def loaded_backend() -> str:
-    """Which backend is serving, without forcing a load.
-
-    ``/api/health`` reports this: if the committed ONNX graph stops matching the
-    configuration - a changed knowledge base, samples, or MAILTRACE_ORG_DOMAINS -
-    the service keeps working on the booster, and this is where that shows.
-    """
+    """Which backend is serving, without forcing a load."""
     with _lock:
         models = list(_models.values())
     if not models:
@@ -829,12 +664,7 @@ def _intel_index(domain_intel: Any) -> dict[str, DomainIntel]:
 
 
 def score_urls(urls: Any, domain_intel: Any, cfg: Settings | None = None) -> UrlModelOutcome | None:
-    """``P(malicious)`` for every link in the message, worst-first.
-
-    Returns ``None`` -- never raises -- when there are no links, when the model
-    is disabled, or when xgboost is not installed.  The caller then uses the
-    deterministic URL score on its own.
-    """
+    """``P(malicious)`` for every link in the message, worst-first."""
     cfg = cfg or default_settings
     items: list[UrlInfo] = [u for u in (urls or []) if getattr(u, "url", "")]
     if not items:

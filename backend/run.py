@@ -1,10 +1,4 @@
-"""
-Entry point: ``python run.py`` starts the MailTrace web server with the
-settings read from the environment / ``.env`` (see ``app/config.py``).
-
-Set ``MAILTRACE_HOST=0.0.0.0`` to let phones and laptops on the same Wi-Fi
-open the dashboard; the addresses they should use are printed at startup.
-"""
+"""Entry point: ``python run.py`` starts the MailTrace web server with the settings read from the environment / ``.env`` (see ``app/config.py``)."""
 from __future__ import annotations
 
 import logging

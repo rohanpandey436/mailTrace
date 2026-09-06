@@ -1,20 +1,4 @@
-"""
-The DistilRoBERTa backend, served by ONNX Runtime.
-
-Loading this costs two wheels - ``onnxruntime`` (13 MB) and ``tokenizers``
-(~3 MB) - and no PyTorch.  That is the whole point of shipping the model as an
-int8 ONNX graph: ``torch`` plus ``transformers`` is around a gigabyte installed
-and does not fit beside everything else on a 512 MB instance, while the
-quantised graph is roughly 80 MB and runs on CPU in tens of milliseconds.
-
-``app/ai/transformer_trainer.py`` produces the directory this reads: the graph,
-the tokenizer, and ``labels.json`` naming the classes in output order.  Nothing
-here trains, and nothing here imports torch.
-
-The classifier is a *second opinion*, never the whole verdict.  ``scoring.py``
-compares it with the rule engine and lowers confidence when they disagree, so a
-model that is wrong about a message costs confidence rather than correctness.
-"""
+"""The DistilRoBERTa backend, served by ONNX Runtime."""
 from __future__ import annotations
 
 import json
@@ -61,11 +45,7 @@ class TransformerClassifier:
 
     @classmethod
     def load(cls, directory: Path = BUNDLED) -> TransformerClassifier | None:
-        """The bundled model, or None when it is absent or unusable.
-
-        Never raises: a missing or broken model must leave the linear
-        classifier in charge rather than take the service down.
-        """
+        """The bundled model, or None when it is absent or unusable."""
         directory = Path(directory)
         cached = _loaded.get(str(directory))
         if cached is not None or str(directory) in _loaded:
@@ -116,8 +96,6 @@ class TransformerClassifier:
         return max(scores.items(), key=lambda item: item[1])[0], scores
 
 
-#: Whitespace tokens occluded per message. Each is one forward pass, and they
-#: are batched, so this is the knob that decides what explanation costs.
 OCCLUSION_TOKENS = 40
 #: Named wherever these surface: they are ablation deltas, not Shapley values.
 ATTRIBUTION_METHOD = "occlusion"
@@ -126,15 +104,7 @@ ATTRIBUTION_METHOD = "occlusion"
 def occlusion_attributions(
     classifier: TransformerClassifier, text: str, label: str, base_probability: float
 ) -> list[tuple[str, float]]:
-    """How far p(label) falls when each token is removed, strongest first.
-
-    Honest and model-agnostic, but *not* a Shapley value: this is a single-order
-    ablation, not an average over coalitions. The linear backend gets exact SHAP
-    because a linear model has a closed form; a transformer does not, so it gets
-    this and everything that renders it says which it is.
-
-    Repeated tokens keep their strongest attribution.
-    """
+    """How far p(label) falls when each token is removed, strongest first."""
     tokens = (text or "").split()
     head = tokens[:OCCLUSION_TOKENS]
     if not head:

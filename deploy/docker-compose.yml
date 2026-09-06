@@ -1,26 +1,9 @@
-# MailTrace with a real task queue: API, Redis and a separate Celery worker.
-#
-# Run from the REPOSITORY ROOT, because the image needs backend/, frontend/,
-# samples/ and engine/ together:
-#
-#     docker compose -f deploy/docker-compose.yml up --build
-#     open http://localhost:8000
-#
-# Analysis runs in a separate worker process; POST /api/analyze/async returns
-# job ids immediately. Scale it:
-#
-#     docker compose -f deploy/docker-compose.yml up -d --scale worker=3
-#
-# A single container with MAILTRACE_REDIS_URL set embeds its own worker; this
-# file is the shape that scales past one machine.
 
 name: mailtrace
 
 services:
   redis:
     image: redis:7-alpine
-    # No persistence: the broker holds work in flight, never evidence. A lost
-    # Redis costs only the messages queued at that moment.
     command: ["redis-server", "--save", "", "--appendonly", "no"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -65,8 +48,6 @@ services:
       MAILTRACE_REDIS_URL: redis://redis:6379/0
       MAILTRACE_ENABLE_NETWORK: "false"
     volumes:
-      # Shared with the API so both open the same SQLite file (WAL mode). With
-      # MAILTRACE_DATABASE_URL set to PostgreSQL this volume is not needed.
       - mailtrace-data:/app/backend/data
     depends_on:
       redis:

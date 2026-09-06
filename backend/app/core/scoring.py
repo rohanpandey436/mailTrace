@@ -1,35 +1,4 @@
-"""
-Decision brain of MailTrace: fuses every analyzer's sub-report into one Verdict.
-
-Approach
---------
-1. ``component_scores`` converts the evidence into the five terms of the Stage 4
-   threat score, each 0-100 on the analyst scale::
-
-       THREAT SCORE = 0.20 Auth + 0.35 Text + 0.25 URL + 0.10 Network + 0.10 Entropy
-2. ``weighted_risk`` sums them with ``Settings.weights`` into the raw risk score.
-3. ``rule_classify`` is a deterministic first-match policy (Fraud > Phishing >
-   Impersonated > Suspicious > Legitimate) whose rationale lines name the exact
-   signals that fired ("SPF fail for sbi-kyc-update.xyz").
-4. ``fuse_category`` performs the dual validation: the rule engine decides the
-   category, the ML classifier modulates confidence, and any disagreement is
-   surfaced as a finding.
-5. Per-category risk floors and a ceiling for "Legitimate" keep the numeric
-   score and the label consistent.
-6. ``attribute_source`` explains where the message most plausibly came from
-   (spoofed domain, lookalike domain, compromised account, attacker-owned
-   infrastructure) and lists the indicators an investigator should pivot on.
-
-Everything here is offline and deterministic for identical input, and robust to
-empty sub-reports.  One qualification to the older "no I/O at all" claim: when
-``xgboost`` is installed and ``Settings.url_model_enabled`` is on, the URL term
-also consults the gradient-boosted link model in ``app/ai/url_model.py``, which
-loads (and on the very first call fits) a cached joblib bundle from
-``Settings.data_dir``.  That is the only disk touch, it is cached process-wide
-after the first call, and it never reaches the network.  With the package absent
-or the setting off the URL term is byte-for-byte the rule-only score it always
-was -- the model is a floor-preserving lift, never a replacement.
-"""
+"""Decision brain of MailTrace: fuses every analyzer's sub-report into one Verdict."""
 from __future__ import annotations
 
 import logging
@@ -190,8 +159,7 @@ def _describe_url(url: UrlInfo) -> str:
 
 # Severity bands
 def severity_for(score: float, has_findings: bool = True) -> Severity:
-    """<25 LOW, <50 MEDIUM, <75 HIGH, else CRITICAL; a zero score with no
-    findings at all is INFO."""
+    """<25 LOW, <50 MEDIUM, <75 HIGH, else CRITICAL; a zero score with no"""
     value = _clamp(score)
     if value <= 0 and not has_findings:
         return Severity.INFO
@@ -230,8 +198,6 @@ def _authentication_score(auth: AuthResult, sender_domain: str, cfg: Settings) -
         score += 15
     if auth.dkim_aligned is False:
         score += 15
-    # A failure on a domain that belongs to us or to a known brand is a spoof
-    # of a high-value identity, not a misconfigured small business.
     any_failure = spf in {"fail", "softfail"} or dkim == "fail" or dmarc == "fail"
     if any_failure and _is_protected_domain(sender_domain, cfg):
         score += 20
@@ -239,25 +205,16 @@ def _authentication_score(auth: AuthResult, sender_domain: str, cfg: Settings) -
 
 
 def _text_score(nlp: NlpAnalysis) -> float:
-    """Text term: what the classifier and the language analysis concluded about
-    intent - the non-legitimate probability mass and social-engineering signals
-    carried by ``nlp.score``, plus the strongest BEC pattern."""
+    """Text term: what the classifier and the language analysis concluded about"""
     max_bec = max((_clamp(p.confidence, 0.0, 1.0) for p in nlp.bec_patterns), default=0.0)
     return _clamp(100 * (0.7 * _clamp(nlp.score, 0.0, 1.0) + 0.3 * max_bec))
 
 
-#: How much of the headroom above the deterministic score the XGBoost URL model
-#: is allowed to claim.  At 0.5 a link the rules rate MEDIUM (45) and the model
-#: rates 0.95 malicious lands at 45 + 55*0.5*0.95 = 71 -- a real promotion into
-#: the high band -- while a link the rules already rate CRITICAL cannot move at
-#: all, because there is no headroom left to claim.
 URL_MODEL_ALPHA = 0.5
 
 
 def _deterministic_url_score(urls: UrlAnalysis, domain_intel: list[DomainIntel]) -> float:
-    """The rule-only URL term, unchanged: the risk carried by the links
-    themselves, raised when a linked or sender domain is a lookalike or was
-    registered days ago.  This is the floor the model may never lower."""
+    """The rule-only URL term, unchanged: the risk carried by the links"""
     score = 100 * _clamp(urls.score, 0.0, 1.0)
     for d in domain_intel:
         if d.lookalike_of:
@@ -277,29 +234,14 @@ def _deterministic_url_score(urls: UrlAnalysis, domain_intel: list[DomainIntel])
 
 
 def _url_score(urls: UrlAnalysis, domain_intel: list[DomainIntel], url_model: Any = None) -> float:
-    """URL term: deterministic rules, optionally lifted by the XGBoost model.
-
-    The two are combined as a *monotone blend with the rules as the floor*::
-
-        floor = deterministic score (rules + domain intel)
-        url   = max(floor, floor + (100 - floor) * ALPHA * P(malicious))
-
-    Chosen over a plain ``max(rule, 100*P)`` deliberately.  A max would let the
-    model overrule a confident low rule verdict on its own, and this model is
-    trained on a generated corpus (see ``app/ai/url_model.py``) -- it has not
-    earned that authority.  The blend guarantees the published behaviour can only
-    move one way: ``url >= floor`` for every input, because the added term is
-    non-negative.  Remove xgboost, or set ``MAILTRACE_URL_MODEL=0``, and
-    ``url_model`` is None and the score is byte-for-byte what it was before.
-    """
+    """URL term: deterministic rules, optionally lifted by the XGBoost model."""
     floor = _deterministic_url_score(urls, domain_intel)
     probability = _clamp(getattr(url_model, "max_probability", 0.0), 0.0, 1.0) if url_model is not None else 0.0
     return _clamp(max(floor, floor + (100.0 - floor) * URL_MODEL_ALPHA * probability))
 
 
 def _entropy_score(atts: AttachmentAnalysis) -> float:
-    """Entropy term: attachment payload risk, which now includes the Shannon
-    entropy check for packed, encrypted or obfuscated files."""
+    """Entropy term: attachment payload risk, which now includes the Shannon"""
     score = 100 * _clamp(atts.score, 0.0, 1.0)
     for a in atts.attachments:
         if a.high_entropy and _sev(a.risk) >= SEVERITY_ORDER["high"]:
@@ -308,8 +250,7 @@ def _entropy_score(atts: AttachmentAnalysis) -> float:
 
 
 def _identity_forgery_score(header_analysis: HeaderAnalysis) -> float:
-    """Forged sender fields, scored with the authentication pillar because they
-    are protocol-level identity claims rather than wording."""
+    """Forged sender fields, scored with the authentication pillar because they"""
     score = 0.0
     if header_analysis.display_name_spoof:
         score += 45
@@ -338,13 +279,7 @@ _ROUTING_ANOMALIES: dict[str, float] = {
 
 
 def _network_score(header_analysis: HeaderAnalysis, infra: InfraAnalysis, intel: ThreatIntel) -> float:
-    """Network term: where it came from and how it travelled.
-
-    Combines the origin-infrastructure verdict (Tor, VPN, hosting, blocklisted
-    address, suspected open relay, botnet traits) with the delivery-path
-    anomalies found in the Received chain, including the hop time deltas, and
-    the threat-intelligence hits against that infrastructure.
-    """
+    """Network term: where it came from and how it travelled."""
     infra_part = 100 * _clamp(infra.score, 0.0, 1.0)
     seen: set[str] = set()
     for hop in header_analysis.hops:
@@ -356,8 +291,6 @@ def _network_score(header_analysis: HeaderAnalysis, infra: InfraAnalysis, intel:
         routing_part += 25  # no delivery record at all
     if header_analysis.originating_ip and header_analysis.origin_confidence < 0.5:
         routing_part += 10
-    # Threat-intelligence hits are evidence about this infrastructure, so they
-    # belong to the network term rather than standing as a pillar of their own.
     intel_part = 0.0
     if intel.ip_blacklists:
         intel_part = max(intel_part, 80.0)
@@ -395,13 +328,7 @@ def component_scores(
     sender_domain: str = "",
     url_model: Any = None,
 ) -> RiskBreakdown:
-    """Per-family 0-100 scores plus the normalised weights used to combine them.
-
-    ``sender_domain`` (registrable) enables the protected-domain bonus in the
-    authentication score; when omitted it is taken from the sender DomainIntel.
-    ``url_model`` is an optional ``app.ai.url_model.UrlModelOutcome``; omitting
-    it (or passing None) reproduces the rule-only URL term exactly.
-    """
+    """Per-family 0-100 scores plus the normalised weights used to combine them."""
     domain_intel = list(domain_intel or [])
     if not sender_domain:
         sender_domain = next((d.domain.lower() for d in domain_intel if d.role == "sender"), "")
@@ -457,9 +384,7 @@ def rule_classify(
     risk_score: int,
     cfg: Settings,
 ) -> tuple[ThreatCategory, list[str]]:
-    """Deterministic first-match policy.  Rules are evaluated in the fixed
-    order Fraud > Phishing > Impersonated > Suspicious > Legitimate; inside the
-    winning rule every satisfied sub-condition contributes one evidence line."""
+    """Deterministic first-match policy.  Rules are evaluated in the fixed"""
     auth = header_analysis.auth
     sender_domain = _registrable(parsed.sender.domain)
     sender_free = _is_freemail(sender_domain)
@@ -481,9 +406,6 @@ def rule_classify(
 
     # 1. Fraud-Related -------------------------------------------------------
     why: list[str] = []
-    # A dominant credential-harvest pattern is a phishing signal; it must not
-    # be re-read as fraud just because the lure also mentions money or asks the
-    # victim to "update" an account number (KYC lures do exactly that).
     credential_dominant = cred_conf >= 0.5 and cred_conf >= max(payment_conf, invoice_conf)
     if payment_conf >= 0.5 and not credential_dominant:
         why.append(
@@ -580,11 +502,7 @@ def fuse_category(
     ml_probs: dict[str, float] | None,
     risk_score: int,
 ) -> tuple[ThreatCategory, float, bool]:
-    """The rule engine decides; the ML model modulates confidence.
-
-    Agreement: 0.75 + 0.25 * P(rule category), capped at 0.98.
-    Disagreement: 0.6, +0.1 when the risk score supports the rule verdict.
-    """
+    """The rule engine decides; the ML model modulates confidence."""
     rule_cat = _as_category(rule_cat)
     ml_cat = _as_category(ml_cat)
     agreement = rule_cat == ml_cat
@@ -645,13 +563,7 @@ def attribute_source(
     findings: list[Finding],
     cfg: Settings,
 ) -> Attribution:
-    """Explain the most plausible origin of the message.
-
-    A Legitimate verdict always maps to ``legitimate_sender``; the attacker
-    source types are then tested in the contract order (lookalike domain,
-    spoofed domain, compromised account, attacker infrastructure, throwaway
-    free-mail box) and fall through to ``undetermined``.
-    """
+    """Explain the most plausible origin of the message."""
     category = _as_category(category)
     domain_intel = list(domain_intel or [])
     auth = header_analysis.auth
@@ -848,8 +760,7 @@ def recommended_actions(
 
 # Findings merge
 def collect_findings(*finding_lists: Iterable[Finding] | None) -> list[Finding]:
-    """Merge finding lists, dedupe by (module, id) keeping the first, and sort
-    by severity descending, then module, then id."""
+    """Merge finding lists, dedupe by (module, id) keeping the first, and sort"""
     seen: set[tuple[str, str]] = set()
     merged: list[Finding] = []
     for group in finding_lists:
@@ -869,14 +780,7 @@ def collect_findings(*finding_lists: Iterable[Finding] | None) -> list[Finding]:
 def _score_urls_with_model(
     url_analysis: UrlAnalysis, domain_intel: list[DomainIntel], cfg: Settings
 ) -> tuple[Any, Finding | None]:
-    """(outcome, finding) from the XGBoost URL model, or ``(None, None)``.
-
-    The one place in this module that is not pure: it may load -- and, the very
-    first time, fit -- the cached model bundle.  Everything after that is a
-    microsecond-scale matrix multiply.  Missing package, disabled setting, no
-    links, or any failure at all: returns ``(None, None)`` and the URL pillar
-    falls back to the deterministic score with no behavioural change.
-    """
+    """(outcome, finding) from the XGBoost URL model, or ``(None, None)``."""
     if not url_analysis.urls or not getattr(cfg, "url_model_enabled", True):
         return None, None
     try:
@@ -954,13 +858,6 @@ def evaluate(
             f"p={url_model.max_probability:.2f} malicious; URL pillar {rule_only:.0f} -> {breakdown.url:.0f} "
             f"(rules stay the floor)."
         )
-        # NOTE: url_model_finding is deliberately NOT added to `findings` here.
-        # rule_classify's "Suspicious" arm counts high/critical findings, so
-        # letting the model's own finding into that list would give it a second,
-        # undesigned channel into the *category* -- it could turn a Legitimate
-        # verdict into Suspicious on its own opinion of one link. Its influence
-        # is confined to the URL pillar, where the rules stay the floor. The
-        # finding is merged into the report below, after the policy has decided.
 
     rule_cat, rule_lines = rule_classify(
         parsed, header_analysis, url_analysis, att_analysis, nlp_analysis, domain_intel, findings, raw_risk, cfg

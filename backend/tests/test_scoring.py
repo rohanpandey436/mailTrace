@@ -35,8 +35,6 @@ def test_risk_scale_and_breakdown(analyses):
     for key in ("phishing", "bec", "fraud"):
         assert analyses[key].verdict.risk_score >= 60
     b = analyses["phishing"].verdict.breakdown
-    # The five Stage 4 pillars all exist, are in range, and their weights normalise.
-    # THREAT SCORE = 0.20 Auth + 0.35 Text + 0.25 URL + 0.10 Network + 0.10 Entropy
     for pillar in ("auth", "text", "url", "network", "entropy"):
         value = getattr(b, pillar)
         assert 0 <= value <= 100, f"{pillar} out of range: {value}"

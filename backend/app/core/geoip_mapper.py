@@ -1,40 +1,4 @@
-"""
-IP geolocation and infrastructure intelligence.
-
-Approach
---------
-Every public IP in the Received chain is geolocated from a local MaxMind
-GeoLite2 database when one is configured and through the free ip-api.com JSON
-endpoint otherwise, then enriched with reverse DNS, the Tor bulk exit list, DNS
-blocklists (DNSBL) and, when a key is configured, AbuseIPDB.  Lookups are
-cached through the Store (``geo:<ip>``, ``rdns:<ip>``, ``dnsbl:<ip>``,
-``abuse:<ip>``, ``tor:list``), bounded by ``cfg.lookup_timeout`` and never
-raise into the pipeline; with ``cfg.enable_network`` off every function still
-returns complete objects tagged ``source="offline"``.
-
-MaxMind GeoLite2 (optional, recommended)
-----------------------------------------
-1. Create a free MaxMind account (https://www.maxmind.com/en/geolite2/signup).
-2. Download the *GeoLite2 City* database in MMDB form: ``GeoLite2-City.mmdb``.
-3. Point MailTrace at the file, in the environment or in ``.env``::
-
-       MAILTRACE_MAXMIND_DB=C:/GeoIP/GeoLite2-City.mmdb
-
-Dropping ``GeoLite2-ASN.mmdb`` into the same directory additionally fills in the
-AS number and network owner; pointing the setting straight at an ASN database
-also works (only ``asn``/``org`` are then populated).  The file is opened once
-per process and memory-mapped, so a 60 MB database costs nothing per lookup.
-
-Without a database nothing breaks: every lookup falls back to ip-api.com, which
-needs no key but is rate limited (~45 requests/minute) and, unlike the local
-database, requires outbound network access.
-
-``analyze_infrastructure`` enriches the originating IP fully (DNSBL and
-AbuseIPDB included) and the remaining public hops lightly, writes each GeoInfo
-into ``hop.geo`` in place, then derives the infrastructure flags (Tor exit,
-VPN/proxy, hosting provider, blocklists, suspected open relay, botnet-style
-delivery), a 0..1 score and analyst-readable findings.
-"""
+"""IP geolocation and infrastructure intelligence."""
 from __future__ import annotations
 
 import ipaddress
@@ -78,8 +42,6 @@ _RESOLVED_SOURCES = {"ip-api", "maxmind", "cache"}
 
 # RFC 6598 shared address space (CGNAT) is not covered by ipaddress.is_private.
 _SHARED_ADDRESS_SPACE = ipaddress.ip_network("100.64.0.0/10")
-# A DNSBL listing always answers inside 127.0.0.0/8; Spamhaus reserves
-# 127.255.255.0/24 for error codes (blocked resolver, query limit exceeded).
 _DNSBL_ANSWER_SPACE = ipaddress.ip_network("127.0.0.0/8")
 _DNSBL_ERROR_SPACE = ipaddress.ip_network("127.255.255.0/24")
 
@@ -115,9 +77,6 @@ _RESIDENTIAL_ISP_RE = re.compile(
     r"virgin media|telenor|\borange\b|telefonica|beeline|rostelecom",
     re.IGNORECASE,
 )
-# Major mail services whose egress ranges ip-api labels "hosting".  A match needs
-# BOTH the ASN owner (isp/org) and the PTR suffix; an attacker on rented
-# infrastructure cannot forge the two together.
 _MAIL_SERVICE_EGRESS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("google", ("google.com", "googlemail.com")),
     ("microsoft", ("outlook.com", "hotmail.com")),
@@ -141,9 +100,6 @@ _RDNS_TIMEOUT_SECONDS = 1.5
 _RDNS_TIMEOUT_TTL_SECONDS = 300
 
 _MAXMIND_LOCK = threading.Lock()
-# Opened readers keyed by absolute path.  A None value records "tried and
-# failed" so an absent package, a missing file or a corrupt database is logged
-# once instead of on every IP; a database installed later needs a restart.
 _maxmind_readers: dict[str, Any] = {}
 # Configured database path -> sibling ASN database path ('' = none alongside).
 _maxmind_asn_siblings: dict[str, str] = {}
@@ -151,8 +107,7 @@ _maxmind_asn_siblings: dict[str, str] = {}
 
 # Small utilities
 def _parse_ip(value: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
-    """Parse an IP literal as written in headers ('[1.2.3.4]', '[IPv6:::1]');
-    IPv4-mapped IPv6 collapses to the IPv4 address.  None when not an address."""
+    """Parse an IP literal as written in headers ('[1.2.3.4]', '[IPv6:::1]');"""
     text = (value or "").strip().strip("[]")
     if text.lower().startswith("ipv6:"):
         text = text[5:]
@@ -246,15 +201,7 @@ def is_public_ip(ip: str) -> bool:
 
 
 def reverse_dns(ip: str, cfg: Settings) -> str | None:
-    """Reverse (PTR) name of an IP, lowercase.
-
-    Returns the name, ``""`` when the resolver answered that there is none, and
-    ``None`` when the lookup timed out, which must not be cached as an answer.
-    ``socket.gethostbyaddr`` has no timeout, so it runs on a worker thread that
-    is abandoned after ``_rdns_timeout``.  The wait is capped below
-    ``cfg.lookup_timeout``: an existing PTR answers in milliseconds, while an
-    address without one can take 15 seconds to say so.
-    """
+    """Reverse (PTR) name of an IP, lowercase."""
     ip = _normalize_ip(ip)
     if not ip or not cfg.enable_network:
         return ""
@@ -319,13 +266,7 @@ def _db_key(path: str) -> str:
 
 
 def _maxmind_reader(path: str) -> Any:
-    """The process-wide reader for one .mmdb file, opened at most once.
-
-    GeoLite2-City is ~60 MB, so re-opening it per IP is not an option: the
-    reader is memory-mapped once and shared (``Reader.get`` is thread safe).
-    None when the ``maxminddb`` package is absent or the file is missing or
-    corrupt - each of which is logged once and then remembered.
-    """
+    """The process-wide reader for one .mmdb file, opened at most once."""
     key = _db_key(path)
     with _MAXMIND_LOCK:
         if key in _maxmind_readers:
@@ -349,12 +290,7 @@ def _maxmind_reader(path: str) -> Any:
 
 
 def _asn_sibling_path(path: str) -> str:
-    """An ASN database sitting next to the configured one; '' when there is none.
-
-    Pointing ``MAILTRACE_MAXMIND_DB`` at GeoLite2-City.mmdb therefore also picks
-    up a GeoLite2-ASN.mmdb downloaded into the same directory.  The directory is
-    scanned once per configured path.
-    """
+    """An ASN database sitting next to the configured one; '' when there is none."""
     key = _db_key(path)
     with _MAXMIND_LOCK:  # released before opening anything: the lock is not reentrant
         cached = _maxmind_asn_siblings.get(key)
@@ -426,25 +362,13 @@ def _apply_city_record(geo: GeoInfo, record: dict[str, Any]) -> None:
     if isinstance(location, dict):
         geo.lat = _number(location.get("latitude"))
         geo.lon = _number(location.get("longitude"))
-    # GeoLite2 carries no anonymiser traits (those live in the paid GeoIP2
-    # Anonymous-IP / Enterprise feeds), so is_proxy/is_hosting/is_mobile stay
-    # False here and VPN, Tor and hosting detection keeps working off reverse
-    # DNS, the ISP/org regexes and the Tor bulk exit list.
 
 
-#: A public address every GeoLite2-City build resolves, used to prove the
-#: database is not merely present but actually answering.
 _PROBE_IP = "8.8.8.8"
 
 
 def geoip_status(cfg: Settings) -> str:
-    """Where geolocation will actually come from, established by trying it.
-
-    Reporting the configured path would only say what was intended. A database
-    that is present but unreadable, of the wrong edition, or holding records
-    this module cannot use looks identical from the outside until a lookup
-    silently falls through to ip-api.com - so this performs one.
-    """
+    """Where geolocation will actually come from, established by trying it."""
     path = _text(getattr(cfg, "maxmind_db", ""))
     if not path:
         return "ip-api.com (no MaxMind database configured)"
@@ -458,14 +382,7 @@ def geoip_status(cfg: Settings) -> str:
 
 
 def maxmind_lookup(ip: str, cfg: Settings) -> GeoInfo | None:
-    """Geolocate one IP from the local GeoLite2 database at ``cfg.maxmind_db``.
-
-    Needs no network access and never raises.  None - so the caller falls back
-    to ip-api.com - when no database is configured, the package or file is
-    unusable, the address is not in the database, or the record holds nothing
-    useful.  A City database is enriched from a sibling ASN database when one
-    sits beside it; an ASN database on its own fills in ``asn``/``org`` only.
-    """
+    """Geolocate one IP from the local GeoLite2 database at ``cfg.maxmind_db``."""
     path = _text(getattr(cfg, "maxmind_db", ""))
     if not path:
         return None
@@ -492,15 +409,7 @@ def maxmind_lookup(ip: str, cfg: Settings) -> GeoInfo | None:
 
 
 def geolocate(ip: str, cfg: Settings, store: Store | None) -> GeoInfo:
-    """Geolocate one IP: the local MaxMind database first when ``cfg.maxmind_db``
-    points at one, else ip-api.com (cached as ``geo:<ip>``).
-
-    Order: private -> offline -> cache -> MaxMind -> ip-api -> unavailable.
-    Private addresses yield ``source="private"``, offline mode ``"offline"``,
-    a database hit ``"maxmind"``, any failure (transport error, HTTP 429 rate
-    limit, ``status != success``) ``"unavailable"``; a cache hit is tagged
-    ``"cache"``.
-    """
+    """Geolocate one IP: the local MaxMind database first when ``cfg.maxmind_db``"""
     normalized = _normalize_ip(ip)
     if not normalized:
         return GeoInfo(ip=_text(ip), source="unavailable")
@@ -521,8 +430,6 @@ def geolocate(ip: str, cfg: Settings, store: Store | None) -> GeoInfo:
             geo.source = "cache"
             return geo
 
-    # Local database beats the network service: no rate limit, no round trip.
-    # The answer is a memory-mapped read, so it earns no row in the Store cache.
     local = maxmind_lookup(ip, cfg)
     if local is not None:
         return local
@@ -561,9 +468,7 @@ def _download_tor_exit_list(cfg: Settings) -> set[str]:
 
 
 def tor_exit_ips(cfg: Settings, store: Store | None) -> set[str]:
-    """Current Tor exit addresses: module memo -> Store cache (``tor:list``, 1 h)
-    -> download.  Empty offline or when the list cannot be fetched (retried
-    after a short back-off).  Callers must not mutate the returned set."""
+    """Current Tor exit addresses: module memo -> Store cache (``tor:list``, 1 h)"""
     global _tor_memo
     if not cfg.enable_network:
         return set()
@@ -592,9 +497,7 @@ def _dnsbl_hit(answer_text: str) -> bool:
 
 
 def dnsbl_check(ip: str, cfg: Settings, store: Store | None) -> list[str]:
-    """Zones of knowledge.DNSBL_ZONES that list this IPv4 address (cached as
-    ``dnsbl:<ip>``).  NXDOMAIN means "not listed"; any other DNS problem is
-    treated the same way."""
+    """Zones of knowledge.DNSBL_ZONES that list this IPv4 address (cached as"""
     ip = _normalize_ip(ip)
     if not ip or ":" in ip or not is_public_ip(ip) or not cfg.enable_network or not DNSBL_ZONES:
         return []
@@ -633,8 +536,7 @@ def dnsbl_check(ip: str, cfg: Settings, store: Store | None) -> list[str]:
 
 
 def abuseipdb_check(ip: str, cfg: Settings, store: Store | None) -> int | None:
-    """AbuseIPDB abuse-confidence score (0-100) when ``cfg.abuseipdb_key`` is
-    set (cached as ``abuse:<ip>``); None otherwise or on any failure."""
+    """AbuseIPDB abuse-confidence score (0-100) when ``cfg.abuseipdb_key`` is"""
     ip = _normalize_ip(ip)
     if not ip or not cfg.abuseipdb_key or not cfg.enable_network or not is_public_ip(ip):
         return None
@@ -660,12 +562,7 @@ def abuseipdb_check(ip: str, cfg: Settings, store: Store | None) -> int | None:
 
 
 def _cached_reverse_dns(ip: str, cfg: Settings, store: Store | None) -> str:
-    """PTR name through the Store cache.
-
-    A definite answer, name or no-PTR, is cached for the usual period.  A
-    timeout is cached for ``_RDNS_TIMEOUT_TTL_SECONDS`` so a burst of mail from
-    one origin does not stall on the same lookup, and is retried after that.
-    """
+    """PTR name through the Store cache."""
     key = f"rdns:{ip}"
     cached = cache_get(store, key)
     if isinstance(cached, str):  # "" is a real cached answer: this IP has no PTR
@@ -679,8 +576,7 @@ def _cached_reverse_dns(ip: str, cfg: Settings, store: Store | None) -> str:
 
 
 def enrich_ip(ip: str, cfg: Settings, store: Store | None, full: bool) -> GeoInfo:
-    """geolocate + reverse DNS + Tor check; ``full`` adds DNSBL and AbuseIPDB
-    (used for the originating IP only).  Private IPs come back untouched."""
+    """geolocate + reverse DNS + Tor check; ``full`` adds DNSBL and AbuseIPDB"""
     geo = geolocate(ip, cfg, store)
     if geo.is_private or not is_public_ip(geo.ip):
         return geo
@@ -695,8 +591,7 @@ def enrich_ip(ip: str, cfg: Settings, store: Store | None, full: bool) -> GeoInf
 
 # Infrastructure analysis
 def _public_ips_in_order(header_analysis: HeaderAnalysis, origin: str) -> list[str]:
-    """Unique public IPs worth enriching: origin first, then the hops in
-    chronological order, then X-Originating-IP."""
+    """Unique public IPs worth enriching: origin first, then the hops in"""
     candidates = [origin, *(hop.from_ip for hop in header_analysis.hops), header_analysis.x_originating_ip]
     ordered: list[str] = []
     for candidate in candidates:
@@ -755,17 +650,14 @@ def _generic_rdns(rdns: str, ip: str) -> bool:
 
 
 def _anonymous_host(geo: GeoInfo) -> bool:
-    """No usable reverse DNS.  A missing PTR only counts once ip-api actually
-    answered for this IP, so an offline run or a resolver timeout is never
-    mistaken for anonymity."""
+    """No usable reverse DNS.  A missing PTR only counts once ip-api actually"""
     if geo.reverse_dns:
         return _generic_rdns(geo.reverse_dns, geo.ip)
     return geo.source in _RESOLVED_SOURCES
 
 
 def _open_relay_hops(hops: list[Hop]) -> list[Hop]:
-    """Public, non-internal hops that accepted the message over plain SMTP from
-    a host in another domain that is anonymous or blocklisted."""
+    """Public, non-internal hops that accepted the message over plain SMTP from"""
     suspects: list[Hop] = []
     for hop in hops:
         geo = hop.geo
@@ -790,9 +682,7 @@ def _residential_origin(geo: GeoInfo) -> bool:
 
 
 def _delivered_direct_to_mx(hops: list[Hop], origin_index: int | None) -> bool:
-    """From the origin hop onward every receiving server is on the recipient
-    side (internal, or in the final MX's registrable domain): the sender spoke
-    to the destination MX itself instead of submitting through a mail provider."""
+    """From the origin hop onward every receiving server is on the recipient"""
     if origin_index is None or not 0 <= origin_index < len(hops):
         return False
     origin_hop = hops[origin_index]
@@ -946,8 +836,7 @@ def _trail_finding(hops: list[Hop]) -> Finding | None:
 
 # Entry point
 def analyze_infrastructure(header_analysis: HeaderAnalysis, cfg: Settings, store: Store | None) -> InfraAnalysis:
-    """Enrich the public IPs of the Received chain (``hop.geo`` is set in
-    place), then derive infrastructure flags, score and findings."""
+    """Enrich the public IPs of the Received chain (``hop.geo`` is set in"""
     hops = header_analysis.hops
     origin = _normalize_ip(header_analysis.originating_ip)
     public_ips = _public_ips_in_order(header_analysis, origin)
@@ -970,9 +859,6 @@ def analyze_infrastructure(header_analysis: HeaderAnalysis, cfg: Settings, store
     # Flags -----------------------------------------------------------------
     tor_exit = origin_geo is not None and origin_geo.is_tor_exit
     vpn_match = _VPN_RE.search(_provider_text(origin_geo)) if origin_geo is not None else None
-    # ip-api marks the egress ranges of the big mail providers as proxies, which
-    # would label every genuine Gmail or Microsoft 365 message a VPN. Only trust
-    # the proxy flag when the address is not a recognised mail-service egress.
     vpn_or_proxy = (
         origin_geo is not None
         and not _is_mail_service_egress(origin_geo)

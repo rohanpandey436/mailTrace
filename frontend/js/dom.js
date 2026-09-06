@@ -1,12 +1,4 @@
 // @ts-check
-/**
- * HTML escaping for the one place React does not reach.
- *
- * React escapes everything it renders, so the application needs none of this.
- * Leaflet is the exception: `bindPopup` takes a string of markup and builds its
- * own DOM outside React, so the values interpolated into a popup have to be
- * escaped by hand.
- */
 
 const ESCAPES = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
 

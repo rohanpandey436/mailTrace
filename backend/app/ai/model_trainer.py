@@ -1,66 +1,4 @@
-"""
-Text classifier: training, caching, prediction and token-level explanation.
-
-Model
------
-A scikit-learn Pipeline: word TF-IDF (1-2 grams) + character TF-IDF
-(3-5 char_wb grams) concatenated by a FeatureUnion, feeding a balanced
-multinomial LogisticRegression.  It is small enough to train from the seed
-corpus in a couple of seconds at first start and is cached to
-``data/model.joblib`` keyed on the corpus hash, so editing the corpus
-retrains automatically.
-
-Explanation (exact SHAP)
-------------------------
-For a linear model ``f(x) = b + sum_i w_i x_i`` the Shapley value of feature
-``i`` has a closed form -- no sampling, no KernelSHAP approximation::
-
-    phi_i = w_i * (x_i - E[x_i])
-
-with ``E[x_i]`` the mean value of that feature over the training distribution,
-which is fitted alongside the model and stored in the bundle as
-``expected_features``.  The decomposition is exactly additive::
-
-    decision_c(x) = base_value_c + sum_i phi_i
-    base_value_c  = intercept_c + w_c . E[x]
-
-``shap_values()`` returns the signed contributions of the word/bigram features
-present in the text (negative values are evidence too: a token that argues
-*against* the predicted class).  ``additivity_check()`` proves the identity
-numerically against scikit-learn's own ``decision_function`` over *all*
-features, word and character blocks together.
-
-Only the word block of ``E[x]`` is persisted: the character block would add
-~80k floats to the bundle for tokens no analyst can read, and the full-width
-mean can be recomputed from the corpus when the additivity check needs it.
-
-Optional transformer backend
-----------------------------
-``transformer_predict()`` runs a DistilRoBERTa (or any other) sequence
-classification model when ``Settings.transformer_model`` is set.  It is
-**off by default and its dependencies are deliberately not in
-requirements.txt**: `transformers` + `torch` are ~1 GB installed and cannot be
-loaded inside the 512 MB free-tier deployment this project targets.  To use it
-locally::
-
-    pip install "transformers>=4.40" "torch>=2.2"      # ~1 GB, CPU wheel
-    set MAILTRACE_TRANSFORMER_MODEL=<hf-model-id>      # e.g. a fine-tuned distilroberta
-
-Every failure (packages absent, download blocked, out of memory, unmappable
-labels) is logged as a warning and returns ``None`` so the caller silently
-falls back to the linear model.  Its token attributions are computed by
-occlusion, not by SHAP, and are labelled as such wherever they surface.
-
-The module is import-safe without scikit-learn: every sklearn/joblib import
-happens inside functions and surfaces as ``ImportError`` to the caller
-(``nlp.py`` catches it and falls back to rules).
-
-CLI
----
-``python -m app.ai.model_trainer``                      retrain from the seed corpus
-``python -m app.ai.model_trainer --csv data.csv``       retrain from a CSV with
-``subject``/``body`` (or ``text``) and ``label`` columns; prints hold-out accuracy.
-"""
+"""Text classifier: training, caching, prediction and token-level explanation."""
 from __future__ import annotations
 
 import argparse
@@ -85,16 +23,11 @@ if TYPE_CHECKING:  # pragma: no cover - annotations only; numpy and scikit-learn
     from sklearn.linear_model import LogisticRegression
     from sklearn.pipeline import Pipeline
 
-#: A loaded text-classification pipeline from ``transformers``: called with one
-#: text or a batch, answers label/score dicts.  Typed loosely on purpose - the
-#: package is optional and ships no stubs.
 _Transformer = Callable[..., object]
 
 log = logging.getLogger("mailtrace.ml")
 
 LABELS: list[str] = ["Legitimate", "Suspicious", "Impersonated", "Phishing", "Fraud-Related"]
-# Bumped from tfidf-logreg-1 when expected_features (the SHAP baseline) was added:
-# an older cached bundle has no baseline, so the version check retrains it.
 MODEL_VERSION = "tfidf-logreg-2"
 
 #: Attribute holding the SHAP baseline E[x] (word block) on a loaded pipeline.
@@ -167,17 +100,12 @@ def build_pipeline() -> Pipeline:
 
 
 def _word_vectorizer(pipeline: Pipeline) -> TfidfVectorizer:
-    """The word/bigram TF-IDF block of the FeatureUnion (first block, so its
-    columns are ``[0, n_word)`` of the stacked matrix)."""
+    """The word/bigram TF-IDF block of the FeatureUnion (first block, so its"""
     return dict(pipeline.named_steps["features"].transformer_list)["word"]
 
 
 def expected_features(pipeline: Pipeline, texts: Sequence[str]) -> NDArray[np.float64]:
-    """Mean feature vector E[x] over ``texts``, full FeatureUnion width, dense.
-
-    This is the SHAP baseline: the "average e-mail" the model is asked to
-    compare this one against.
-    """
+    """Mean feature vector E[x] over ``texts``, full FeatureUnion width, dense."""
     import numpy as np
 
     matrix = pipeline.named_steps["features"].transform(list(texts))
@@ -185,8 +113,7 @@ def expected_features(pipeline: Pipeline, texts: Sequence[str]) -> NDArray[np.fl
 
 
 def attach_expected(pipeline: Pipeline, expected: ArrayLike | None) -> None:
-    """Hang the SHAP baseline off the fitted pipeline so ``shap_values`` can
-    find it without threading a second object through every call site."""
+    """Hang the SHAP baseline off the fitted pipeline so ``shap_values`` can"""
     import numpy as np
 
     try:
@@ -259,8 +186,7 @@ def _load_bundle(model_path: Path, expected_hash: str) -> Pipeline | None:
 
 
 def load_or_train(cfg: Settings | None = None) -> Pipeline:
-    """Return the process-wide fitted pipeline, training it once if needed.
-    Raises ImportError when scikit-learn/joblib are unavailable."""
+    """Return the process-wide fitted pipeline, training it once if needed."""
     cfg = cfg or default_settings
     key = str(cfg.model_path)
     with _lock:
@@ -288,11 +214,7 @@ def predict(pipeline: Pipeline, text: str) -> tuple[str, dict[str, float]]:
 
 # Exact SHAP for the linear model
 def _class_weights(classifier: LogisticRegression, label: str) -> tuple[NDArray[np.float64], float]:
-    """(coefficient row, intercept) of the decision function for ``label``.
-
-    A two-class LogisticRegression keeps a single row scoring ``classes_[1]``;
-    the decision for ``classes_[0]`` is its negation.
-    """
+    """(coefficient row, intercept) of the decision function for ``label``."""
     classes = [str(c) for c in classifier.classes_]
     if label not in classes:
         raise ValueError(f"unknown class {label!r}")
@@ -304,8 +226,7 @@ def _class_weights(classifier: LogisticRegression, label: str) -> tuple[NDArray[
 
 
 def _baseline(pipeline: Pipeline, width: int, expected: ArrayLike | None = None) -> NDArray[np.float64]:
-    """E[x] as a dense vector of ``width``, from the argument, the pipeline
-    attribute, or (last resort) zeros -- which degrades SHAP to coef*x."""
+    """E[x] as a dense vector of ``width``, from the argument, the pipeline"""
     import numpy as np
 
     if expected is None:
@@ -325,14 +246,7 @@ def _baseline(pipeline: Pipeline, width: int, expected: ArrayLike | None = None)
 def _word_contributions(
     pipeline: Pipeline, text: str, label: str, expected: ArrayLike | None = None
 ) -> list[tuple[str, float]]:
-    """Signed SHAP value of every word/bigram feature *present* in ``text``,
-    strongest magnitude first.
-
-    Features absent from the text still carry ``phi_i = -w_i * E[x_i]``; those
-    thousands of tiny terms are part of the additive identity (see
-    ``additivity_check``) but say nothing an analyst can act on, so they are
-    left out of the token list.
-    """
+    """Signed SHAP value of every word/bigram feature *present* in ``text``,"""
     classifier = pipeline.named_steps["clf"]
     vectorizer = _word_vectorizer(pipeline)
     coefficients, _ = _class_weights(classifier, label)
@@ -353,13 +267,7 @@ def _word_contributions(
 def shap_values(
     pipeline: Pipeline, text: str, label: str, top_k: int = 10, expected: ArrayLike | None = None
 ) -> list[tuple[str, float]]:
-    """Exact per-token SHAP values ``phi_i = w_i * (x_i - E[x_i])`` for ``label``.
-
-    Returns ``(token, phi)`` sorted by ``|phi|`` descending, keeping negative
-    contributions: a token that pushes the message *away* from the predicted
-    class is evidence in its own right.  ``top_k <= 0`` returns everything.
-    Explanation is best effort and never raises.
-    """
+    """Exact per-token SHAP values ``phi_i = w_i * (x_i - E[x_i])`` for ``label``."""
     try:
         contributions = _word_contributions(pipeline, text, label, expected)
     except Exception:  # explanation must never break analysis
@@ -369,11 +277,7 @@ def shap_values(
 
 
 def explain(pipeline: Pipeline, text: str, label: str, top_k: int = 8) -> list[str]:
-    """Word/bigram features that pushed ``text`` toward ``label`` the most.
-
-    Thin wrapper over :func:`shap_values` kept for the existing UI/report
-    fields: the tokens with a positive SHAP value, strongest first.
-    """
+    """Word/bigram features that pushed ``text`` toward ``label`` the most."""
     try:
         contributions = _word_contributions(pipeline, text, label)
     except Exception:  # explanation is best effort
@@ -390,14 +294,7 @@ def additivity_check(
     texts: Sequence[str] | None = None,
     expected_full: ArrayLike | None = None,
 ) -> dict[str, float]:
-    """Numerically verify ``decision == base_value + sum(phi)`` over ALL features.
-
-    The decision is read from scikit-learn's own ``decision_function`` while the
-    phis are summed elementwise from the SHAP definition, so the returned
-    residual is a real check of the decomposition rather than an algebraic
-    identity.  ``expected_full`` (or, failing that, ``texts``) supplies the
-    full-width baseline; the bundle only persists the word block.
-    """
+    """Numerically verify ``decision == base_value + sum(phi)`` over ALL features."""
     import numpy as np
 
     if expected_full is None:
@@ -430,9 +327,6 @@ def additivity_check(
     }
 
 
-# Optional transformer backend (DistilRoBERTa); off unless configured
-#: Token attributions from this backend are occlusion deltas, NOT Shapley
-#: values.  Anything that surfaces them must say so.
 TRANSFORMER_ATTRIBUTION = "occlusion"
 TRANSFORMER_MAX_TOKENS = 60          # forward passes per message: keep it bounded
 TRANSFORMER_CHAR_LIMIT = 4000        # the tokenizer truncates anyway
@@ -441,8 +335,6 @@ _transformer_lock = threading.Lock()
 _transformers: dict[str, _Transformer] = {}
 _transformer_failed: set[str] = set()
 
-#: The five MailTrace classes plus the label vocabularies public phishing
-#: models actually emit.  Matched case-insensitively on a normalised key.
 _TRANSFORMER_LABELS: dict[str, str] = {
     "legitimate": "Legitimate", "legit": "Legitimate", "benign": "Legitimate", "ham": "Legitimate",
     "safe": "Legitimate", "clean": "Legitimate", "normal": "Legitimate", "not_phishing": "Legitimate",
@@ -468,12 +360,7 @@ def map_transformer_label(raw: str) -> str | None:
 
 
 def _map_scores(scored: object) -> dict[str, float]:
-    """``[{'label': ..., 'score': ...}, ...]`` -> probabilities over LABELS.
-
-    Labels the model emits that MailTrace has no class for are dropped and the
-    remainder renormalised, so downstream code can keep assuming the five
-    probabilities sum to one.
-    """
+    """``[{'label': ..., 'score': ...}, ...]`` -> probabilities over LABELS."""
     probs = dict.fromkeys(LABELS, 0.0)
     items: list[object] = [scored] if isinstance(scored, dict) else list(scored) if isinstance(scored, list) else []
     unmapped: list[str] = []
@@ -499,8 +386,6 @@ def _get_transformer(model_id: str) -> _Transformer:
         cached = _transformers.get(model_id)
         if cached is not None:
             return cached
-        # Imported here on purpose: transformers/torch are optional and absent
-        # from requirements.txt (see the module docstring).
         import torch  # noqa: F401 - fail fast when the backend is missing
         from transformers import pipeline as hf_pipeline
 
@@ -511,14 +396,7 @@ def _get_transformer(model_id: str) -> _Transformer:
 
 
 def _occlusion_attributions(clf: _Transformer, text: str, label: str, base_prob: float) -> list[tuple[str, float]]:
-    """Leave-one-token-out attributions: how much p(label) falls when a token
-    is removed.  Honest and model-agnostic, but NOT a Shapley value -- it is a
-    single-order ablation, not an average over coalitions.
-
-    Only the first ``TRANSFORMER_MAX_TOKENS`` whitespace tokens are occluded
-    (one forward pass each, batched into a single call).  Repeated tokens keep
-    their strongest attribution.
-    """
+    """Leave-one-token-out attributions: how much p(label) falls when a token"""
     tokens = (text or "").split()
     head = tokens[:TRANSFORMER_MAX_TOKENS]
     if not head:
@@ -537,16 +415,7 @@ def _occlusion_attributions(clf: _Transformer, text: str, label: str, base_prob:
 
 
 def transformer_predict(text: str, cfg: Settings) -> tuple[str, dict[str, float], list[tuple[str, float]]] | None:
-    """(label, probabilities over the five classes, token attributions), or None.
-
-    Returns None -- never raises -- when ``cfg.transformer_model`` is unset, the
-    optional packages are missing, the weights cannot be downloaded, the process
-    runs out of memory, or none of the model's labels map onto a MailTrace
-    class.  The caller then falls back to the linear model.
-
-    The attributions are occlusion deltas (see ``TRANSFORMER_ATTRIBUTION``),
-    not SHAP values; whoever renders them must name the method.
-    """
+    """(label, probabilities over the five classes, token attributions), or None."""
     model_id = (getattr(cfg, "transformer_model", "") or "").strip()
     if not model_id:
         return None

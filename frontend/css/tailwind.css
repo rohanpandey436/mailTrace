@@ -1,17 +1,3 @@
-/*
- * Tailwind entry point. frontend/build_css.py compiles this into css/app.css,
- * which index.html loads and which is committed (no Node or bundler here).
- *
- * The design tokens live in the @theme block so Tailwind emits each one as a
- * CSS variable and generates the matching utilities: var(--color-brand) in a
- * component and bg-brand in the markup are the same value, and js/theme.js
- * reads them off :root for Leaflet and Cytoscape.
- *
- * Layers, in cascade order: theme (tokens), base (preflight, then this
- * project's reset), components (the hand-written classes), utilities. A
- * utility in the markup therefore beats a component rule. vendor.css is left
- * unlayered so it outranks the CDN stylesheets it overrides.
- */
 @layer theme, base, components, utilities;
 
 @import "tailwindcss/theme.css" layer(theme);
@@ -26,24 +12,6 @@
 @source "../index.html";
 @source "../js/**/*.js";
 
-/*
- * Tailwind scans source text, so identifiers such as `array.filter(` and the
- * word "container" also yield utilities, and it regenerates names this project
- * defines (.grid, .table, .truncate, .text-ok). No element uses the invented
- * names and the colliding definitions are identical, so no prefix is used.
- */
-
-/*
- * Design tokens.
- *
- * Every colour, size, radius and shadow the dashboard uses is named here once.
- * No other stylesheet, and no JavaScript module, carries a literal value:
- * components read tokens, and the map and graph libraries read them through
- * js/theme.js. The palette is a single, deliberately light theme.
- *
- * @theme static: js/theme.js reads several of these at runtime, and Tailwind
- * otherwise emits only the variables its utilities reference.
- */
 @theme static {
   --color-paper: #f7f8fa;
   --color-card: #ffffff;

@@ -1,17 +1,4 @@
-"""
-Download the MaxMind GeoLite2-City database at build time.
-
-MaxMind's licence does not permit redistributing the database, so it cannot be
-committed: every deployment fetches its own copy with its own licence key.  Run
-from ``backend/``::
-
-    MAXMIND_LICENSE_KEY=... python scripts/fetch_geolite2.py
-
-With no key the script prints why and exits 0.  That is deliberate - it runs
-inside the Render build command, and a missing key must leave the deploy
-working on ip-api.com rather than failing it.  ``/api/health`` reports which
-source geolocation actually used.
-"""
+"""Download the MaxMind GeoLite2-City database at build time."""
 from __future__ import annotations
 
 import io

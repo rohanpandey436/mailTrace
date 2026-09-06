@@ -1,22 +1,4 @@
-"""
-Analyst decisions on a case (Stage 6).
-
-What a decision does, and - more importantly - what it does not do.
-
-Recording a decision writes the analyst's choice and its author into the
-hash-linked chain of custody, gives the case a status the case list can
-filter and display, and hands back the indicators (IOCs) to feed to whatever
-actually enforces: a mail gateway, a firewall, a SIEM, or the outbound
-webhooks in ``app/api/alerts.py``.
-
-It does NOT contact Microsoft 365, Google Workspace or any mail transfer
-agent.  Nothing is moved to a quarantine folder, no sender is added to a
-block list, no message is recalled or deleted.  MailTrace is a forensic
-analysis tool with no mailbox credentials and no write access to mail flow,
-and a button that silently did nothing while claiming otherwise would be
-worse than no button at all.  ``CaseDecision.enforced`` is therefore always
-False, and the dashboard wording says "record decision", not "quarantine".
-"""
+"""Analyst decisions on a case (Stage 6)."""
 from __future__ import annotations
 
 from typing import Literal
@@ -34,10 +16,6 @@ DECISIONS: dict[DecisionName, tuple[CaseStatus, str]] = {
 }
 _DECISION_ACTIONS = {action for _, action in DECISIONS.values()}
 
-# The correlation engine and the attribution engine label the same fact
-# differently ("ip:" vs "origin_ip:", "domain:" vs "sender_domain:"), so a plain
-# string dedupe across the two would list every shared fact twice and inflate
-# the count an analyst is shown.  The prefix is normalised before comparing.
 _INDICATOR_ALIASES: dict[str, str] = {
     "origin_ip": "ip",
     "sender_domain": "domain",
@@ -65,12 +43,7 @@ def _indicator_key(indicator: str) -> str:
 
 
 def indicators(result: AnalysisResult) -> list[str]:
-    """IOCs worth handing to the system that does enforce, newest evidence first.
-
-    Deduplicated by the fact each one states rather than by its exact
-    spelling, so the same IP appearing as both ``ip:`` and ``origin_ip:`` is
-    listed once.
-    """
+    """IOCs worth handing to the system that does enforce, newest evidence first."""
     seen: set[str] = set()
     unique: list[str] = []
     for indicator in [*result.intel.indicators, *result.attribution.indicators]:
@@ -112,8 +85,6 @@ def record(store: Store, email_id: str, decision: DecisionName, actor: str) -> C
             "category": result.verdict.category.value,
             "risk_score": result.verdict.risk_score,
             "indicator_count": len(indicators(result)),
-            # Recorded in the ledger itself so a reader of the chain, years
-            # later, cannot mistake this for gateway enforcement.
             "enforced": False,
             "note": "analyst decision recorded in MailTrace; no mail system was contacted",
         },

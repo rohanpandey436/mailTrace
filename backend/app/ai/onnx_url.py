@@ -1,23 +1,4 @@
-"""
-The URL/domain model, served by ONNX Runtime.
-
-Training stays with XGBoost: it is the better tool for fitting a small gradient
--boosted ensemble, and ``url_model.train`` is unchanged.  Inference does not
-need it.  Exporting the fitted booster to ONNX once, committing the 26 KB graph
-beside this module and serving it with ``onnxruntime`` means a deployment
-carries a 13 MB wheel instead of xgboost's 87 MB unpacked - a real saving on a
-512 MB instance - and starts without training anything.
-
-The export is exact: over the full generated dataset the largest probability
-difference against the booster is 1.3e-07 and every label agrees.
-``tests/test_url_model_onnx.py`` re-checks that whenever xgboost is installed,
-so the two can never drift apart unnoticed.
-
-Note on int8: dynamic quantisation does not apply here.  A tree ensemble is a
-``TreeEnsembleClassifier`` node in the ``ai.onnx.ml`` domain with no MatMul to
-quantise, and ``quantize_dynamic`` refuses it.  int8 belongs to the transformer
-backend, where the weights actually are matrices.
-"""
+"""The URL/domain model, served by ONNX Runtime."""
 from __future__ import annotations
 
 import logging
@@ -41,11 +22,7 @@ _INPUT = "input"
 
 
 class OnnxUrlScorer:
-    """A fitted URL model backed by an ONNX session.
-
-    Exposes only ``predict_proba``, which is all the scoring path uses, so it
-    drops in wherever the ``XGBClassifier`` did.
-    """
+    """A fitted URL model backed by an ONNX session."""
 
     __slots__ = ("_session", "fingerprint")
 
@@ -59,20 +36,13 @@ class OnnxUrlScorer:
 
         outputs = self._session.run(None, {_INPUT: np.asarray(rows, dtype=np.float32)})
         probabilities = outputs[1]
-        # The ZipMap output is a list of {class: probability} dicts; without it
-        # the same values arrive as a plain array. Accept both.
         if isinstance(probabilities, list):
             return np.asarray([[row[0], row[1]] for row in probabilities], dtype=np.float64)
         return np.asarray(probabilities, dtype=np.float64)
 
 
 def export(model: Any, fingerprint: str, path: Path = BUNDLED) -> Path:
-    """Convert a fitted ``XGBClassifier`` to ONNX and stamp it with ``fingerprint``.
-
-    Raises ``ImportError`` when the conversion packages are absent - they are
-    development dependencies, because only ``python -m app.ai.url_model`` needs
-    them.
-    """
+    """Convert a fitted ``XGBClassifier`` to ONNX and stamp it with ``fingerprint``."""
     from onnxmltools.convert import convert_xgboost
     from onnxmltools.convert.common.data_types import FloatTensorType
 
@@ -90,12 +60,7 @@ def export(model: Any, fingerprint: str, path: Path = BUNDLED) -> Path:
 
 
 def load(fingerprint: str, path: Path = BUNDLED) -> OnnxUrlScorer | None:
-    """The bundled graph when it matches ``fingerprint``; None otherwise.
-
-    A mismatch means the knowledge base, the sample messages or the feature list
-    changed after the export, so the caller retrains rather than serving a model
-    that no longer describes its own inputs.
-    """
+    """The bundled graph when it matches ``fingerprint``; None otherwise."""
     if not path.is_file():
         return None
     try:

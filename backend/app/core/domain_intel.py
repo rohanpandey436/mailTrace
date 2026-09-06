@@ -1,23 +1,4 @@
-"""
-Domain intelligence: registration age, DNS posture, hosting fingerprint,
-reputation feeds and lookalike detection for every domain an email touches.
-
-Approach
---------
-* ``collect_domains`` decides *which* domains matter (sender, Reply-To,
-  Return-Path, Message-ID, then link hosts by risk) and caps the lookups.
-* ``whois_lookup`` speaks the WHOIS protocol directly over port 43 (registry
-  table with an IANA referral fallback) and parses the half-dozen date and
-  registrar spellings registries use.
-* ``dns_lookup`` gathers A / MX / NS / SPF / DMARC with dnspython.
-* ``domain_reputation`` queries URLhaus and applies local tags (disposable
-  provider, abuse-prone TLD).
-* ``analyze_domain`` fuses those into a ``DomainIntel`` with findings.
-
-Every network call is optional (``cfg.enable_network``), bounded by
-``cfg.lookup_timeout``, cached through the store when one is supplied and
-wrapped so a failure yields a partial record instead of an exception.
-"""
+"""Domain intelligence: registration age, DNS posture, hosting fingerprint, reputation feeds and lookalike detection for every domain an email touches."""
 from __future__ import annotations
 
 import ipaddress
@@ -292,9 +273,6 @@ def domain_reputation(domain: str, cfg: Settings, store: Store | None) -> list[s
     tld = domain.rsplit(".", 1)[-1]
     if tld in SUSPICIOUS_TLDS and domain not in FREEMAIL_DOMAINS:
         tags.append("suspicious_tld")
-    # URLhaus began requiring an Auth-Key in 2025 and answers 401 without one.
-    # Skipping the call when no key is configured keeps the local tags above and
-    # saves a doomed round trip per domain on every analysis.
     if not cfg.enable_network or _is_ip(domain) or not cfg.urlhaus_key:
         return tags
     cache_key = f"rep:{domain}"

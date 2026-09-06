@@ -1,18 +1,4 @@
-"""
-MailTrace data contracts.
-
-Every analyzer produces Findings and a typed sub-report; the pipeline fuses them
-into an AnalysisResult which is the single persisted/served artefact.  Reports,
-graphs and campaign views are all projections of AnalysisResult.
-
-Conventions
------------
-* All scores inside sub-reports are floats in [0, 1].  Only Verdict/RiskBreakdown
-  use the 0-100 analyst scale.
-* Findings carry their own evidence so the UI and the forensic report never need
-  to re-derive anything.
-* Datetimes are timezone-aware UTC where known, else None.
-"""
+"""MailTrace data contracts."""
 from __future__ import annotations
 
 from datetime import datetime
@@ -67,9 +53,6 @@ SourceType = Literal[
 
 NodeType = Literal["email", "address", "domain", "ip", "asn", "url", "attachment", "campaign"]
 
-# Stage 6 quick-bar: the analyst's decision on a case.  This is a MailTrace
-# bookkeeping state and nothing more - see ``app/api/analyze.py`` - it does not
-# mean a mail gateway quarantined or blocked anything.
 CaseStatus = Literal["open", "quarantined", "blocked"]
 CASE_STATUSES: tuple[CaseStatus, ...] = ("open", "quarantined", "blocked")
 
@@ -124,11 +107,7 @@ class AttachmentMeta(BaseModel):
 
 
 class FuzzyDigest(BaseModel):
-    """Locality-sensitive digests of the message body.
-
-    Unlike SHA-256, these stay close when the text is only slightly edited, so
-    a campaign that rewrites a few words per victim still clusters together.
-    """
+    """Locality-sensitive digests of the message body."""
 
     simhash: str = Field(default="", description="64-bit Charikar SimHash over body shingles, hex")
     tlsh: str = Field(default="", description="TLSH digest when the py-tlsh package is installed and the body is long enough")
@@ -276,41 +255,21 @@ class BecPattern(BaseModel):
 
 
 class ShapWeight(BaseModel):
-    """One token's signed contribution to the predicted class.
-
-    For the linear classifier these are exact SHAP values,
-    ``phi_i = coef_i * (x_i - E[x_i])``, where the expectation is the mean
-    feature value over the training corpus. Positive pushes toward the
-    predicted class, negative pushes away from it.
-    """
+    """One token's signed contribution to the predicted class."""
 
     token: str
     weight: float = Field(description="SHAP value in log-odds units; sign carries the direction")
 
 
 class LimeWeight(BaseModel):
-    """One token's coefficient in the LIME local surrogate.
-
-    Not a SHAP value and not in the same units: this is the slope of a weighted
-    ridge regression fitted to the classifier's *probability* for the predicted
-    class over a neighbourhood of messages with words randomly removed. It reads
-    as "dropping this word moves p(class) by about this much". SHAP reads the
-    model's coefficients exactly; LIME measures what the whole pipeline does
-    when the input changes. Agreement between them is corroboration, not
-    duplication.
-    """
+    """One token's coefficient in the LIME local surrogate."""
 
     token: str
     weight: float = Field(description="Local surrogate coefficient in probability units; sign carries the direction")
 
 
 class LimeReport(BaseModel):
-    """A case's LIME explanation, built on request rather than during ingest.
-
-    ``available`` is False when LIME is switched off, when the transformer
-    backend produced the verdict (its neighbourhood would be 160 forward
-    passes), or when the surrogate could not be fitted.
-    """
+    """A case's LIME explanation, built on request rather than during ingest."""
 
     email_id: str
     available: bool = False
@@ -342,8 +301,6 @@ class NlpAnalysis(BaseModel):
     shap_weights: list[ShapWeight] = Field(
         default_factory=list, description="Token-level SHAP attributions for ml_category, strongest first",
     )
-    # Filled in by app/core/explanations.py on the report path; empty on a
-    # freshly ingested case, which is what keeps ingest inside its budget.
     lime_weights: list[LimeWeight] = Field(
         default_factory=list,
         description="LIME local-surrogate coefficients for ml_category, strongest first; empty when LIME is off or unavailable",
@@ -447,10 +404,7 @@ class AttributionGraph(BaseModel):
 
 # Verdict
 class RiskBreakdown(BaseModel):
-    """The five terms of the Stage 4 threat score, each 0-100 before weighting.
-
-    THREAT SCORE = 0.20 Auth + 0.35 Text + 0.25 URL + 0.10 Network + 0.10 Entropy
-    """
+    """The five terms of the Stage 4 threat score, each 0-100 before weighting."""
 
     auth: float = Field(ge=0, le=100, description="SPF, DKIM, DMARC, alignment and forged sender fields")
     text: float = Field(ge=0, le=100, description="NLP intent, BEC patterns and social-engineering language")
@@ -568,11 +522,7 @@ class CaseSummary(BaseModel):
 
 
 class CaseDecision(BaseModel):
-    """The analyst decision currently recorded against a case.
-
-    ``enforced`` is always False: MailTrace records and exports decisions, it
-    does not actuate a mail gateway.  See ``POST /api/emails/{id}/quarantine``.
-    """
+    """The analyst decision currently recorded against a case."""
 
     email_id: str
     status: CaseStatus = "open"
@@ -582,15 +532,7 @@ class CaseDecision(BaseModel):
 
 
 class Section65BCertificate(BaseModel):
-    """Statement of the particulars required by Section 65B(4) of the Indian
-    Evidence Act 1872 (carried forward as Section 63(4) of the Bharatiya Sakshya
-    Adhiniyam 2023) for electronic records produced by a computer.
-
-    The tool states the facts it can attest to. Clauses (a) to (d) still have to
-    be signed by a person occupying a responsible official position in relation
-    to the operation of the device; ``signatory_name`` and ``signatory_position``
-    are left for that person to complete.
-    """
+    """Statement of the particulars required by Section 65B(4) of the Indian"""
 
     statement_of_record: str = Field(description="65B(4)(a) - what the electronic record is and how it was produced")
     computer_description: str = Field(description="65B(4)(b) - the computer that produced it and its regular use")
@@ -702,12 +644,7 @@ class AnalyzeResponse(BaseModel):
 
 
 class JobSummary(BaseModel):
-    """What a finished analysis job reports.
-
-    A summary, not the full ``AnalysisResult``: the case is read back through
-    ``/api/emails/{email_id}`` with masking, and a full result would leave
-    unmasked PII in the result backend.
-    """
+    """What a finished analysis job reports."""
 
     email_id: str
     filename: str

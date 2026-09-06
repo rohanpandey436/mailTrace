@@ -50,13 +50,6 @@ struct Node {
     std::vector<HeaderField> headers;
     std::vector<Node> children;  ///< Container only.
 
-    /// EmbeddedMessage only.  RFC 2046 gives the newline before a boundary to
-    /// the boundary, and CPython applies that to the last Message it built -
-    /// which for a message/rfc822 part is the *nested* message, not the part.
-    /// Trimming it here would be wrong (the nested message may itself be a
-    /// boundary-less multipart, which CPython leaves alone), so `body` is
-    /// handed over untouched and this flag tells the caller to apply the rule
-    /// after it has parsed the nested message.
     bool trim_last = false;
 };
 
@@ -66,50 +59,18 @@ struct Dissection {
     Node root;
 };
 
-/// Structural dissection of one raw message.  Never throws for malformed input
-/// and never reads outside `raw`; hostile input yields either a best-effort
-/// tree or `ok == false`.
 [[nodiscard]] Dissection dissect(std::string_view raw);
 
-// --------------------------------------------------------------------------
-// Content-transfer decoding
-//
-// These are used by the convenience `parse_message()` binding only.  The
-// MailTrace Python integration decodes with the standard library instead, so
-// that transfer decoding is provably identical on both code paths; see
-// engine/README.md.
-// --------------------------------------------------------------------------
-
-/// base64 following CPython's email._encoded_words.decode_b: non-alphabet
-/// bytes (including '=') are discarded, a trailing group of 2 or 3 symbols
-/// still yields its whole bytes, and input whose symbol count is 1 more than a
-/// multiple of 4 is undecodable and comes back unchanged.  Verified against
-/// decode_b over 200k random inputs; the one known divergence is that the
-/// undecodable case strips only CR and LF, where Python has already applied
-/// bytes.splitlines() before calling decode_b.
 [[nodiscard]] std::string decode_base64(std::string_view data);
 
-/// quoted-printable following binascii.a2b_qp, which is what
-/// quopri.decodestring and the email package actually use.  It honours soft
-/// line breaks and "==" but, unlike the pure-Python quopri fallback, does not
-/// strip trailing blanks and does not normalise line endings.  Verified
-/// against quopri.decodestring over 200k random inputs.
 [[nodiscard]] std::string decode_quoted_printable(std::string_view data);
 
-/// Applies `encoding` (case-insensitive; base64 / quoted-printable) to `data`;
-/// any other encoding returns `data` unchanged, as RFC 2045 requires.
 [[nodiscard]] std::string decode_transfer_encoding(std::string_view data, std::string_view encoding);
-
-// --------------------------------------------------------------------------
-// Small header helpers, exposed for the bindings and for unit tests.
-// --------------------------------------------------------------------------
 
 /// First header with `name` (ASCII case-insensitive), or nullptr.
 [[nodiscard]] const HeaderField* find_header(const std::vector<HeaderField>& headers,
                                              std::string_view name) noexcept;
 
-/// Value of parameter `name` from a structured header value such as a
-/// Content-Type or Content-Disposition, unquoted.  Returns false if absent.
 [[nodiscard]] bool header_parameter(std::string_view header_value, std::string_view name,
                                     std::string& out);
 

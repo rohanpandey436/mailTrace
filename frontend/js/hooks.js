@@ -1,12 +1,4 @@
 // @ts-check
-/**
- * Shared hooks.
- *
- * `useAsync` is the loading/error/cancel pattern every view needs, written once:
- * a request that is still in flight when the view unmounts, or when its inputs
- * change, resolves into a component that is no longer mounted, and its result
- * must be dropped rather than rendered.
- */
 import { useCallback, useEffect, useState } from "./react.js";
 
 /**
@@ -46,8 +38,6 @@ export function useAsync(load, deps) {
     return () => {
       cancelled = true;
     };
-    // `load` is rebuilt on every render, so the caller's deps are the contract.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [...deps, attempt]);
 
   return { data, error, loading, reload };

@@ -1,13 +1,4 @@
-"""
-Campaign and relationship-graph endpoints.
-
-A campaign view is a projection over its member analyses: the member rows
-come straight from the store and the graph is ``graph_builder.merge_graphs``
-over every member's stored graph, which adds the campaign node and marks the
-pivot nodes shared by several emails.  When PII masking is requested each
-member result is masked *before* merging, so address nodes carry the same
-hashed id across members and still merge correctly.
-"""
+"""Campaign and relationship-graph endpoints."""
 from __future__ import annotations
 
 from typing import Annotated

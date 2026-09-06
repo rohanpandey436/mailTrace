@@ -1,11 +1,3 @@
-# MailTrace continuous integration.
-#
-# `test` runs without the C++ engine or the optional extras: the pure-Python
-# path must be correct on its own. It is offline (tests/conftest.py sets
-# enable_network=False) and uses SQLite.
-# `engine` builds the C++20 extension against OpenSSL and runs the suite with it.
-# `queue` runs Redis and a Celery worker in a separate process.
-# `docker` builds and runs the deployment image.
 name: CI
 
 on:
@@ -27,8 +19,6 @@ jobs:
     timeout-minutes: 5
     defaults:
       run:
-        # Everything happens from backend/: pyproject.toml lives there and
-        # tests/conftest.py resolves samples/ relative to it.
         working-directory: backend
 
     steps:
@@ -43,16 +33,11 @@ jobs:
           cache-dependency-path: backend/requirements-dev.txt
 
       - name: Install dependencies
-        # requirements-dev.txt pulls in requirements.txt via "-r".  The optional
-        # extras (requirements-ml.txt, requirements-pg.txt) are deliberately NOT
-        # installed: CI must prove the service works without them.
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
 
       - name: Lint
-        # Style, import order, modern syntax and - via BLE001 - the rule that a
-        # catch-everything except is allowed only at a fault-isolation boundary.
         run: python -m ruff check app tests
 
       - name: Type-check
@@ -60,9 +45,6 @@ jobs:
         run: python -m mypy app
 
       - name: Import every module
-        # Catches a syntax error, a circular import or a missing guard around an
-        # optional dependency in a module no test happens to touch - the failure
-        # mode that otherwise only shows up at startup in production.
         run: |
           python - <<'PY'
           import importlib, pkgutil, sys
@@ -120,8 +102,6 @@ jobs:
           print(f"mailtrace_engine {engine.__version__}, SHA-256 backend: {backend}")
           assert backend == "openssl", f"expected the OpenSSL backend, got {backend!r}"
 
-          # The digests must match hashlib: a custody ledger written by one build must
-          # verify under the other. Block boundaries are covered.
           vectors = [b"", b"abc", b"a" * 63, b"a" * 64, b"a" * 65]
           vectors += [os.urandom(n) for n in (55, 56, 57, 119, 120, 121, 4096)]
           for data in vectors:
@@ -235,8 +215,6 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Build the image
-        # From the repository root, not deploy/: the image needs backend/,
-        # frontend/ and samples/ together, exactly as deploy/Dockerfile says.
         run: docker build -f deploy/Dockerfile -t mailtrace:ci .
 
       - name: Run it and wait for the health check
