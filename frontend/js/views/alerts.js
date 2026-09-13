@@ -1,5 +1,3 @@
-// @ts-check
-/** Alerts: the list, the unread badges, and the "mark as seen" action. */
 import { api, errorMessage } from "../api.js";
 import { formatDate } from "../format.js";
 import { useAsync } from "../hooks.js";
@@ -9,22 +7,15 @@ import { unreadAlerts } from "../state.js";
 import { categoryChip, chip, emptyState, errorState, pageHead, riskBar, skeleton } from "../ui/primitives.js";
 import { toast } from "../ui/toast.js";
 
-/** @typedef {import('../types.js').Alert} Alert */
-
 const LIST_LIMIT = 100;
 
-/** Ask the server how many are unread and publish it to the shell. */
 export async function refreshUnreadCount() {
   try {
     unreadAlerts.set((await api.listAlerts({ limit: LIST_LIMIT, unacknowledgedOnly: true })).length);
   } catch {
-    // The badge keeps its last value; the next alert or page load corrects it.
   }
 }
 
-/**
- * @param {{ alert: Alert, onAcknowledged: (id: string) => void }} props
- */
 function AlertRow({ alert, onAcknowledged }) {
   const [busy, setBusy] = useState(false);
   async function acknowledge() {
@@ -55,8 +46,8 @@ function AlertRow({ alert, onAcknowledged }) {
 
 export function AlertsView() {
   const { data, error, loading, reload } = useAsync(() => api.listAlerts({ limit: LIST_LIMIT }), []);
-  const [live, setLive] = useState(/** @type {Alert[]} */ ([]));
-  const [seen, setSeen] = useState(/** @type {Set<string>} */ (new Set()));
+  const [live, setLive] = useState(([]));
+  const [seen, setSeen] = useState((new Set()));
 
   useEffect(() => {
     unreadAlerts.set(0);
@@ -73,7 +64,7 @@ export function AlertsView() {
       (alert) => html`<${AlertRow}
         key=${alert.id}
         alert=${seen.has(alert.id) ? { ...alert, acknowledged: true } : alert}
-        onAcknowledged=${(/** @type {string} */ id) => setSeen((current) => new Set(current).add(id))}
+        onAcknowledged=${(id) => setSeen((current) => new Set(current).add(id))}
       />`,
     );
   };

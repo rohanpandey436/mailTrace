@@ -1,4 +1,3 @@
-"""URL extraction and analysis."""
 from __future__ import annotations
 
 import base64
@@ -25,7 +24,6 @@ from .knowledge import (
 
 log = logging.getLogger("mailtrace.urls")
 
-# Registrable domain (public-suffix aware, no network)
 _FALLBACK_SUFFIXES: frozenset[str] = frozenset({
     "co.in", "net.in", "org.in", "ac.in", "gov.in", "nic.in", "res.in", "edu.in", "firm.in", "gen.in", "ind.in",
     "co.uk", "org.uk", "ac.uk", "gov.uk", "me.uk", "ltd.uk", "plc.uk",
@@ -41,7 +39,7 @@ _FALLBACK_SUFFIXES: frozenset[str] = frozenset({
 })
 
 _EXTRACTOR = None
-try:  # tldextract ships a bundled public-suffix snapshot; never touch the network
+try:
     import tldextract
 
     _EXTRACTOR = tldextract.TLDExtract(suffix_list_urls=(), cache_dir=None)
@@ -58,7 +56,6 @@ def _is_ip(value: str) -> bool:
 
 
 def registrable_domain(host: str) -> str:
-    """Return the organisational (registrable) domain of ``host``."""
     host = (host or "").strip().lower().rstrip(".")
     if not host:
         return ""
@@ -73,7 +70,7 @@ def registrable_domain(host: str) -> str:
                 return f"{ext.domain}.{ext.suffix}"
             if ext.domain:
                 return ext.domain
-        except (ValueError, TypeError):  # a label tldextract cannot split
+        except (ValueError, TypeError):
             pass
     labels = [label for label in host.split(".") if label]
     if len(labels) >= 3 and ".".join(labels[-2:]) in _FALLBACK_SUFFIXES:
@@ -83,7 +80,6 @@ def registrable_domain(host: str) -> str:
     return host
 
 
-# Brand knowledge derived once
 BRAND_LEGIT_DOMAINS: frozenset[str] = frozenset(d.lower() for domains in BRANDS.values() for d in domains)
 _DOMAIN_TO_BRAND: dict[str, str] = {}
 for _key, _domains in BRANDS.items():
@@ -108,7 +104,6 @@ _SAAS_TENANT_DOMAINS: frozenset[str] = frozenset({
     "bamboohr.com", "servicenow.com", "onmicrosoft.com", "office.net", "slack.com",
     "zoho.com", "zohodesk.com", "notion.site", "wixsite.com", "squarespace.com",
 })
-# TLDs accepted when deciding whether visible anchor text "looks like" a host.
 _PLAUSIBLE_TLDS: frozenset[str] = frozenset({
     "com", "net", "org", "in", "co", "io", "gov", "edu", "info", "biz", "me", "us", "uk", "de",
     "fr", "au", "ca", "jp", "sg", "ae", "sbi", "bank", "xyz", "top", "online", "site", "app",
@@ -120,7 +115,6 @@ _RISK_VALUE: dict[str, float] = {"info": 0.0, "low": 0.2, "medium": 0.45, "high"
 _MAX_URLS = 60
 
 
-# Extraction
 _TEXT_URL_RE = re.compile(
     r"""
     (?:https?|ftp)://[^\s<>"'`\)\]]+                                   # explicit scheme
@@ -134,7 +128,6 @@ _SKIP_SCHEMES = ("mailto:", "cid:", "tel:", "sms:", "callto:")
 
 
 class _LinkParser(HTMLParser):
-    """Collects hrefs with their visible anchor text."""
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
@@ -189,7 +182,6 @@ def _clean_text_url(raw: str) -> str:
     url = raw.strip()
     while url and url[-1] in _TRAILING_PUNCT:
         url = url[:-1]
-    # A closing parenthesis only belongs to the URL if it was opened inside it.
     while url.endswith(")") and url.count("(") < url.count(")"):
         url = url[:-1]
     return url
@@ -203,7 +195,6 @@ def _keep(url: str) -> bool:
 
 
 def extract_urls(text: str, html: str) -> list[tuple[str, str]]:
-    """Return ``(url, anchor_text)`` pairs from both message parts, deduplicated"""
     found: dict[str, tuple[str, str]] = {}
 
     def add(url: str, anchor: str) -> None:
@@ -225,12 +216,11 @@ def extract_urls(text: str, html: str) -> list[tuple[str, str]]:
         try:
             parser.feed(html)
             parser.close()
-        except Exception:  # malformed HTML must not abort
+        except Exception:
             log.debug("HTML link parsing stopped early", exc_info=True)
         parser.finish()
         for href, anchor in parser.links:
             add(href, anchor)
-        # Links that only appear as text inside the HTML (unlinked URLs).
         for match in _TEXT_URL_RE.finditer(_strip_tags(html)):
             add(_clean_text_url(match.group(0)), "")
     if text:
@@ -246,7 +236,6 @@ def _strip_tags(html: str) -> str:
     return _TAG_RE.sub(" ", html)
 
 
-# Normalisation
 _UNRESERVED = set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
 _PCT_RE = re.compile(r"%([0-9A-Fa-f]{2})")
 
@@ -260,7 +249,6 @@ def _unquote_unreserved(value: str) -> str:
 
 
 def normalize_url(url: str) -> str:
-    """Lower-case scheme/host, drop the fragment and default ports, decode"""
     url = (url or "").strip()
     if not url:
         return ""
@@ -281,7 +269,7 @@ def normalize_url(url: str) -> str:
     try:
         host = (parts.hostname or "").lower().rstrip(".")
         port = parts.port
-    except ValueError:  # e.g. non-numeric port
+    except ValueError:
         host, port = parts.netloc.lower(), None
     if not host:
         return ""
@@ -302,7 +290,6 @@ _MAX_TYPOSQUAT_DISTANCE = 2
 
 
 def damerau_levenshtein(a: str, b: str) -> int:
-    """Optimal-string-alignment distance (insert, delete, substitute, transpose)."""
     if a == b:
         return 0
     if not a:
@@ -344,7 +331,6 @@ def _sld(registrable: str) -> str:
 
 
 def _candidates(cfg: Settings) -> dict[str, tuple[str, frozenset[str]]]:
-    """key -> (display name, legitimate domains).  Brands first, then the"""
     result: dict[str, tuple[str, frozenset[str]]] = {}
     for key, domains in BRANDS.items():
         result[key] = (key, frozenset(d.lower() for d in domains))
@@ -374,7 +360,6 @@ def _token_contains(sld: str, key: str) -> bool:
 
 
 def is_lookalike(host: str, cfg: Settings) -> tuple[str, str]:
-    """Return ``(imitated, technique)`` or ``("", "")``."""
     host = (host or "").strip().lower().rstrip(".")
     if not host or _is_ip(host):
         return "", ""
@@ -394,7 +379,6 @@ def is_lookalike(host: str, cfg: Settings) -> tuple[str, str]:
             host = decoded
             rd = registrable_domain(host)
             if rd in all_legit:
-                # An IDN encoding of a legitimate name is itself deceptive.
                 return _DOMAIN_TO_BRAND.get(rd, rd), "punycode"
     sld = _sld(rd)
     if not sld:
@@ -403,7 +387,6 @@ def is_lookalike(host: str, cfg: Settings) -> tuple[str, str]:
     def result(name: str, technique: str) -> tuple[str, str]:
         return name, (technique_prefix or technique)
 
-    # 2. homoglyph -------------------------------------------------------
     folded = _fold_homoglyphs(sld)
     if folded != sld:
         suffix = rd[len(sld) + 1:] if len(rd) > len(sld) else ""
@@ -427,30 +410,26 @@ def is_lookalike(host: str, cfg: Settings) -> tuple[str, str]:
         if distance == 2 and len(key) >= 8:
             return result(name, "typosquat")
 
-    # 4. tld swap --------------------------------------------------------
     for key, (name, legit) in candidates.items():
         if sld == key and rd not in legit:
             return result(name, "tld_swap")
 
-    # 5. extra token -----------------------------------------------------
     for key, (name, legit) in candidates.items():
         if rd not in legit and _token_contains(sld, key):
             return result(name, "extra_token")
 
-    # 6. sub-domain abuse ------------------------------------------------
     sub = host[: -len(rd)].rstrip(".") if host.endswith(rd) and len(host) > len(rd) else ""
     if sub:
         labels = sub.split(".")
         dotted_sub = f".{sub}."
         for key, (name, legit) in candidates.items():
             if name in org_domains and rd in _SAAS_TENANT_DOMAINS:
-                continue  # "<org>.zendesk.com" is a normal tenant host
+                continue
             if key in labels or any(f".{d}." in dotted_sub for d in legit):
                 return result(name, "subdomain_abuse")
     return "", ""
 
 
-# Per-URL analysis
 _HOST_IN_TEXT_RE = re.compile(
     r"(?:(?:https?|ftp)://)?(?:www\.)?((?:[a-z0-9-]+\.)+[a-z]{2,24})(?:[/:?#]|$)", re.IGNORECASE
 )
@@ -460,7 +439,6 @@ _B64_RE = re.compile(r"^[A-Za-z0-9+/_-]{16,}={0,2}$")
 
 
 def _anchor_host(anchor_text: str) -> str:
-    """Host named by visible link text such as 'https://onlinesbi.sbi' or"""
     text = (anchor_text or "").strip().lower()
     if not text:
         return ""
@@ -476,7 +454,6 @@ def _anchor_host(anchor_text: str) -> str:
 
 
 def _numeric_ip_form(host: str) -> bool:
-    """Decimal (3232235777), hex (0xC0A80101) or mixed/octal dotted forms."""
     if host.isdigit() and int(host) > 255:
         return True
     if _HEX_IP_RE.match(host):
@@ -506,7 +483,6 @@ def _path_extension(path: str) -> str:
 
 
 def analyze_url(url: str, anchor_text: str, cfg: Settings) -> UrlInfo:
-    """Classify one link.  Never raises."""
     original = (url or "").strip()
     normalized = normalize_url(original)
     info = UrlInfo(url=original[:2048], normalized=normalized[:2048], anchor_text=(anchor_text or "")[:200])
@@ -531,11 +507,11 @@ def analyze_url(url: str, anchor_text: str, cfg: Settings) -> UrlInfo:
         info.reasons = ["Could not be parsed as a URL"]
         return info
 
-    parts = urlsplit(normalized)  # normalize_url already proved this splits
+    parts = urlsplit(normalized)
     host = (parts.hostname or "").lower()
     try:
         port = parts.port
-    except ValueError:  # non-numeric port survives normalisation as text
+    except ValueError:
         port = None
     userinfo = "@" in parts.netloc
     try:
@@ -550,7 +526,6 @@ def analyze_url(url: str, anchor_text: str, cfg: Settings) -> UrlInfo:
     org_domains = {registrable_domain(d) for d in cfg.org_domains if d}
     legit_brand = info.registrable_domain in BRAND_LEGIT_DOMAINS or info.registrable_domain in org_domains
 
-    # Host shape -----------------------------------------------------------
     if _is_ip(host):
         info.is_ip_literal = True
         reasons.append(f"Link points at a raw IP address ({host}) instead of a domain name")
@@ -568,7 +543,6 @@ def analyze_url(url: str, anchor_text: str, cfg: Settings) -> UrlInfo:
         info.has_userinfo = True
         reasons.append("Authority contains '@': the text before it is a decoy, the real host follows it")
 
-    # Obfuscation ------------------------------------------------------------
     if "%" in raw_netloc:
         obfuscation.append("percent_encoded_host")
     if host and not info.is_ip_literal:
@@ -613,7 +587,6 @@ def analyze_url(url: str, anchor_text: str, cfg: Settings) -> UrlInfo:
         obfuscation.append("file_extension_executable")
         reasons.append(f"Link downloads a .{extension} file")
 
-    # Keywords & lookalike ---------------------------------------------------
     haystack = f"{host} {unquote(parts.path).lower()}" if normalized else host
     info.suspicious_keywords = [kw for kw in URL_SUSPICIOUS_KEYWORDS if kw in haystack]
     imitated, technique = ("", "") if legit_brand else is_lookalike(host, cfg)
@@ -621,7 +594,6 @@ def analyze_url(url: str, anchor_text: str, cfg: Settings) -> UrlInfo:
         info.lookalike_of = imitated
         reasons.append(f"Host {host} imitates {imitated} ({technique})")
 
-    # Anchor mismatch ----------------------------------------------------------
     anchor_host = _anchor_host(anchor_text)
     if anchor_host:
         anchor_rd = registrable_domain(anchor_host)
@@ -633,7 +605,6 @@ def analyze_url(url: str, anchor_text: str, cfg: Settings) -> UrlInfo:
     if cred_keywords and not legit_brand:
         reasons.append(f"Path/host contains credential-harvest keywords {', '.join(cred_keywords[:4])}")
 
-    # Risk -----------------------------------------------------------------------
     brand_userinfo = info.has_userinfo and any(key in lowered.split("@")[0] for key in BRANDS)
     if executable or ((imitated or "brand_in_subdomain" in obfuscation) and info.suspicious_keywords) or brand_userinfo:
         risk = Severity.CRITICAL
@@ -656,19 +627,17 @@ def analyze_url(url: str, anchor_text: str, cfg: Settings) -> UrlInfo:
     return info
 
 
-# Whole-message analysis
 def _finding(fid: str, severity: Severity, title: str, detail: str, evidence: dict[str, object]) -> Finding:
     return Finding(id=fid, module="urls", severity=severity, title=title, detail=detail, evidence=evidence)
 
 
 def analyze_urls(parsed: ParsedEmail, cfg: Settings) -> UrlAnalysis:
-    """Extract and classify every link; aggregate a score and findings."""
     pairs = extract_urls(parsed.text_body or "", parsed.html_body or "")
     urls: list[UrlInfo] = []
     for url, anchor in pairs:
         try:
             urls.append(analyze_url(url, anchor, cfg))
-        except Exception:  # one bad link must not abort the analysis
+        except Exception:
             log.exception("failed to analyse url %r", url[:200])
     unique_domains: list[str] = []
     for u in urls:

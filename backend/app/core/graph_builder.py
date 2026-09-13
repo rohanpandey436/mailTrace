@@ -1,4 +1,3 @@
-"""Relationship graph for one analysed email and for a whole campaign."""
 from __future__ import annotations
 
 import logging
@@ -33,9 +32,7 @@ LABEL_MAX = 60
 NEWLY_REGISTERED_DAYS = 30
 ABUSE_CONFIDENCE_CRITICAL = 50
 
-# Address role -> relation of the edge from the email node.
 _ROLE_RELATION: dict[str, str] = {"sender": "sent_by", "reply_to": "reply_to", "return_path": "return_path"}
-# Address role -> header/auth finding ids whose severity flags that address.
 _ROLE_FINDINGS: dict[str, tuple[str, ...]] = {
     "sender": ("display_name_spoof", "executive_impersonation_display", "spf_fail", "spf_softfail", "dkim_fail", "dmarc_fail"),
     "reply_to": ("reply_to_mismatch",),
@@ -43,9 +40,7 @@ _ROLE_FINDINGS: dict[str, tuple[str, ...]] = {
 }
 
 
-# Small pure helpers
 def _name(severity: Any) -> str:
-    """Plain severity string from an enum or a string."""
     return str(getattr(severity, "value", severity))
 
 
@@ -54,7 +49,6 @@ def _rank(severity: Any) -> int:
 
 
 def _max_severity(severities: Iterable[Any], floor: Severity = Severity.INFO) -> Severity:
-    """Highest severity among ``severities``, never below ``floor``."""
     best: Any = floor
     for severity in severities:
         if _rank(severity) > _rank(best):
@@ -88,16 +82,13 @@ def _registrable(host: str) -> str:
     return (registrable_domain(host) or host).lower()
 
 
-# Builder: the single place where nodes and edges are deduplicated
 class _GraphBuilder:
-    """Accumulates nodes keyed by id and edges keyed by (source, target, relation)."""
 
     def __init__(self) -> None:
         self.nodes: dict[str, GraphNode] = {}
         self.edges: dict[tuple[str, str, str], GraphEdge] = {}
 
     def add(self, node: GraphNode) -> str:
-        """Insert ``node`` or merge it into the node with the same id: the"""
         existing = self.nodes.get(node.id)
         if existing is None:
             self.nodes[node.id] = node
@@ -125,16 +116,13 @@ class _GraphBuilder:
         return AttributionGraph(nodes=list(self.nodes.values()), edges=list(self.edges.values()))
 
 
-# Per-entity risk and attributes
 def _url_domain(url: UrlInfo) -> str:
-    """Registrable domain behind a link; IP-literal hosts have none."""
     if url.is_ip_literal:
         return ""
     return _registrable(url.registrable_domain or url.host)
 
 
 def _domain_risk(info: DomainIntel | None, url_risk: Severity) -> Severity:
-    """Contract override first (lookalike / newly registered / blocklisted are"""
     if info is None:
         return url_risk
     newly = info.age_days is not None and info.age_days < NEWLY_REGISTERED_DAYS and not info.is_free_mail
@@ -162,7 +150,6 @@ def _ip_profile(
     infra: InfraAnalysis,
     intel: ThreatIntel,
 ) -> tuple[Severity, dict[str, Any]]:
-    """Risk and attributes of one public IP from its geo record, the threat"""
     blacklists = _unique([*(geo.blacklists if geo is not None else []), *intel.ip_blacklists.get(ip, [])])
     tor = bool(geo is not None and geo.is_tor_exit) or ip in intel.tor_exits or (is_origin and infra.tor_exit)
     abusive = geo is not None and geo.abuse_confidence is not None and geo.abuse_confidence >= ABUSE_CONFIDENCE_CRITICAL
@@ -187,7 +174,6 @@ def _ip_profile(
     return risk, attrs
 
 
-# Entry points
 def build_graph(
     email_id: str,
     parsed: ParsedEmail,
@@ -199,7 +185,6 @@ def build_graph(
     intel: ThreatIntel,
     verdict: Verdict,
 ) -> AttributionGraph:
-    """Project one analysis into an AttributionGraph (see module docstring)."""
     builder = _GraphBuilder()
     intel_by_domain = {d.domain.strip().lower(): d for d in (domain_intel or []) if d.domain}
     email_node = builder.node(
@@ -210,7 +195,6 @@ def build_graph(
         {"risk_score": verdict.risk_score, "category": verdict.category.value},
     )
 
-    # Links: one node per host; a host's domain inherits the worst link on it.
     host_urls: dict[str, list[UrlInfo]] = {}
     for url in url_analysis.urls:
         host = url.host.strip().lower().rstrip(".")
@@ -223,7 +207,6 @@ def build_graph(
         if domain:
             url_domain_risk[domain] = _max_severity((u.risk for u in urls), url_domain_risk.get(domain, Severity.INFO))
 
-    # Addresses: sender / reply-to / return-path, one node per mailbox with its role list.
     address_roles: dict[str, list[str]] = {}
     address_domain: dict[str, str] = {}
     labelled = [("sender", parsed.sender), *(("reply_to", r) for r in parsed.reply_to), ("return_path", parsed.return_path)]
@@ -237,7 +220,6 @@ def build_graph(
         fallback_domain = address.rpartition("@")[2] if "@" in address else ""
         address_domain.setdefault(address, _registrable(mailbox.domain or fallback_domain))
 
-    # Domains: every address domain and every link domain.
     domain_ids: dict[str, str] = {}
     for domain in _unique([*address_domain.values(), *host_domain.values()]):
         info = intel_by_domain.get(domain)
@@ -262,7 +244,6 @@ def build_graph(
         if host_domain[host]:
             builder.edge(url_node, domain_ids[host_domain[host]], "resolves_to")
 
-    # Routing: the origin first, then every public relay; ASN nodes hang off the IPs.
     origin_ip = header_analysis.originating_ip.strip()
     hop_by_ip: dict[str, Hop] = {}
     for hop in header_analysis.hops:
@@ -288,7 +269,6 @@ def build_graph(
         if asn:
             builder.edge(ip_node, builder.node("asn", asn, asn, Severity.INFO), "hosted_on")
 
-    # Attachments keyed by content hash so identical payloads collapse across emails.
     for att in att_analysis.attachments:
         key = (att.sha256 or att.md5 or att.filename).strip().lower()
         if not key:
@@ -298,7 +278,6 @@ def build_graph(
         )
         builder.edge(email_node, att_node, "contains")
 
-    # Domain -> IP for A records that already appear as routing nodes.
     for domain, domain_node in domain_ids.items():
         info = intel_by_domain.get(domain)
         if info is None:
@@ -314,7 +293,6 @@ def build_graph(
 
 
 def merge_graphs(graphs: list[AttributionGraph], campaign: Campaign | None = None) -> AttributionGraph:
-    """Union of member graphs; nodes present in two or more members carry"""
     builder = _GraphBuilder()
     members: dict[str, int] = {}
     for graph in graphs:

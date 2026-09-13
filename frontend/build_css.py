@@ -1,22 +1,10 @@
-"""
-Build the dashboard stylesheet with Tailwind CSS.
-
-The frontend has no Node or bundler, so this uses Tailwind's standalone CLI: a
-single binary downloaded on demand into a cache directory outside the
-repository.  Its output, css/app.css, is committed so every deployment serves
-the dashboard without a toolchain.
-
-    python frontend/build_css.py            # build css/app.css
-    python frontend/build_css.py --check    # fail if the committed CSS is stale
-
-CI runs ``--check`` so the committed file cannot drift from its source.
-"""
 from __future__ import annotations
 
 import argparse
 import hashlib
 import os
 import platform
+import re
 import stat
 import subprocess
 import sys
@@ -27,16 +15,13 @@ HERE = Path(__file__).resolve().parent
 SOURCE = HERE / "css" / "tailwind.css"
 OUTPUT = HERE / "css" / "app.css"
 
-#: Pinned so every machine and CI produce identical bytes.
 TAILWIND_VERSION = "v4.3.3"
 RELEASE = f"https://github.com/tailwindlabs/tailwindcss/releases/download/{TAILWIND_VERSION}"
 
-#: Outside the repository; shared between checkouts.
 CACHE = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache") / "mailtrace-tailwind"
 
 
 def asset_name() -> str:
-    """The release asset for this machine."""
     system = platform.system().lower()
     machine = platform.machine().lower()
     arm = machine in {"arm64", "aarch64"}
@@ -50,7 +35,6 @@ def asset_name() -> str:
 
 
 def cli() -> Path:
-    """Path to the Tailwind CLI, downloading it the first time."""
     name = asset_name()
     binary = CACHE / f"{TAILWIND_VERSION}-{name}"
     if binary.is_file() and binary.stat().st_size > 0:
@@ -59,7 +43,6 @@ def cli() -> Path:
     url = f"{RELEASE}/{name}"
     print(f"downloading Tailwind {TAILWIND_VERSION} ({name})…")
     CACHE.mkdir(parents=True, exist_ok=True)
-    # Temporary name first, so an interrupted download is never mistaken for a cached binary.
     partial = binary.with_suffix(binary.suffix + ".partial")
     try:
         with urllib.request.urlopen(url, timeout=300) as response, partial.open("wb") as handle:
@@ -75,20 +58,19 @@ def cli() -> Path:
 
 
 def build(destination: Path) -> None:
-    """Run Tailwind over tailwind.css, writing ``destination``."""
     command = [
         str(cli()),
         "--input", str(SOURCE),
         "--output", str(destination),
         "--minify",
     ]
-    # The @source globs in tailwind.css resolve relative to the frontend directory.
     result = subprocess.run(command, cwd=HERE, capture_output=True, text=True)
     if result.returncode != 0:
         sys.stderr.write(result.stdout + result.stderr)
         raise SystemExit(f"tailwindcss exited {result.returncode}")
-    # Tailwind reports its timing on stderr even when it succeeds.
     sys.stderr.write(result.stderr)
+    data = destination.read_bytes()
+    destination.write_bytes(re.sub(rb"/[*].*?[*]/", b"", data, flags=re.S))
 
 
 def main() -> int:

@@ -24,7 +24,7 @@ def test_custody_chain_links_and_verifies(store: Store):
 def test_tampering_breaks_the_chain(store: Store):
     store.record_custody("m1", "system", "ingested", {"filename": "a.eml"}, "ab" * 32)
     store.record_custody("m1", "system", "analyzed", {"risk_score": 12}, "ab" * 32)
-    with store._lock:  # simulate an attacker editing the ledger directly
+    with store._lock:
         store._conn.execute("UPDATE custody SET detail_json = ? WHERE seq = 2", ('{"risk_score":99}',))
     valid, _ = store.verify_chain()
     assert valid is False

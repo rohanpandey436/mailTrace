@@ -1,11 +1,3 @@
-// SPDX-License-Identifier: MIT
-//
-// See include/mailtrace/parser.hpp for the scope and the compatibility contract.
-//
-// Every function here works on std::string_view slices of the caller's buffer
-// and indexes only after a bounds test, so a truncated or hostile message can
-// terminate the walk early but cannot read out of range.  There is no `new`,
-// no `delete` and no owning raw pointer anywhere in this file.
 #include "mailtrace/parser.hpp"
 
 #include <algorithm>
@@ -116,7 +108,6 @@ constexpr std::string_view kAsciiSpace = " \t\n\r\f\v";
     return i < line.size() && line[i] == ':';
 }
 
-/// feedparser's NLCRE.match(line): the line *is* just a terminator.
 [[nodiscard]] bool is_blank_line(std::string_view line) noexcept {
     return !line.empty() && (line[0] == '\r' || line[0] == '\n');
 }
@@ -180,7 +171,6 @@ void replace_all(std::string& text, std::string_view needle, std::string_view re
     }
 }
 
-/// email.utils.unquote
 [[nodiscard]] std::string unquote(std::string_view value) {
     if (value.size() > 1 && value.front() == '"' && value.back() == '"') {
         std::string inner(value.substr(1, value.size() - 2));
@@ -201,7 +191,7 @@ void replace_all(std::string& text, std::string_view needle, std::string_view re
     for (std::size_t i = 0; i < value.size(); ++i) {
         const char c = value[i];
         if (in_quotes && c == '\\') {
-            ++i;  // skip the escaped character; the bounds test above re-runs
+            ++i;
             continue;
         }
         if (c == '"') {
@@ -217,12 +207,12 @@ void replace_all(std::string& text, std::string_view needle, std::string_view re
     return segments;
 }
 
-}  // namespace
+}
 
 const HeaderField* find_header(const std::vector<HeaderField>& headers, std::string_view name) noexcept {
     for (const HeaderField& field : headers) {
         if (iequals(field.name, name)) {
-            return &field;  // Message.get() returns the first match.
+            return &field;
         }
     }
     return nullptr;
@@ -375,11 +365,11 @@ Node parse_node(std::string_view region, std::string_view default_type,
                 ctx.decline("boundary scan desynchronised");
                 return false;
             }
-            pos = end;  // preamble line
+            pos = end;
             continue;
         }
         if (match.is_end) {
-            break;  // closing boundary; the epilogue is not needed
+            break;
         }
         saw_start_boundary = true;
         pos = end;
@@ -465,7 +455,7 @@ Node parse_node(std::string_view region, std::string_view default_type,
     }
 
     if (!split_multipart(node, boundary, ancestors, depth, ctx)) {
-        return node;  // ctx has been declined; the caller discards this tree
+        return node;
     }
 
     node.kind = NodeKind::Container;
@@ -475,7 +465,7 @@ Node parse_node(std::string_view region, std::string_view default_type,
     return node;
 }
 
-}  // namespace
+}
 
 Dissection dissect(std::string_view raw) {
     Dissection result;
@@ -526,7 +516,7 @@ namespace {
     return -1;
 }
 
-}  // namespace
+}
 
 std::string decode_base64(std::string_view data) {
     std::size_t symbols = 0;
@@ -554,7 +544,7 @@ std::string decode_base64(std::string_view data) {
     for (const char raw_char : data) {
         const int value = base64_value(static_cast<unsigned char>(raw_char));
         if (value < 0) {
-            continue;  // padding, newlines and junk are all simply ignored
+            continue;
         }
         accumulator = (accumulator << 6) | static_cast<std::uint32_t>(value);
         if (++collected == 4) {
@@ -587,7 +577,7 @@ std::string decode_quoted_printable(std::string_view data) {
         }
         ++i;
         if (i >= data.size()) {
-            break;  // a trailing '=' is dropped
+            break;
         }
         if (data[i] == '\n' || data[i] == '\r') {
             if (data[i] != '\n') {
@@ -601,7 +591,7 @@ std::string decode_quoted_printable(std::string_view data) {
             continue;
         }
         if (data[i] == '=') {
-            out.push_back('=');  // "==" from a broken encoder
+            out.push_back('=');
             ++i;
             continue;
         }
@@ -614,7 +604,6 @@ std::string decode_quoted_printable(std::string_view data) {
                 continue;
             }
         }
-        // Not an escape at all: emit the '=' and re-examine the byte after it.
         out.push_back('=');
     }
     return out;
@@ -631,4 +620,4 @@ std::string decode_transfer_encoding(std::string_view data, std::string_view enc
     return std::string(data);
 }
 
-}  // namespace mailtrace
+}

@@ -8,7 +8,6 @@
   font-family: var(--font-sans);
 }
 
-/* Mute the basemap so the markers, not the streets, are what the eye lands on. */
 .leaflet-tile-pane {
   filter: saturate(0.45) brightness(1.04);
 }

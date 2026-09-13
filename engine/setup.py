@@ -1,22 +1,3 @@
-"""
-Build the optional MailTrace C++20 parse engine as the Python extension module
-``mailtrace_engine``.
-
-This build is OPTIONAL in the strongest sense: nothing in the MailTrace install
-path runs it, nothing in backend/requirements.txt refers to it, and the backend
-starts, serves and analyses identically when the extension is absent.  See
-engine/README.md.
-
-Build-time requirements (deliberately NOT in backend/requirements.txt, because
-they need a C++ compiler and the Render free tier has none):
-
-    pip install pybind11>=2.11
-    pip install ./engine          # or: cd engine && python setup.py build_ext --inplace
-
-pyproject.toml declares pybind11 as a PEP 518 build dependency, so
-``pip install ./engine`` fetches it into an isolated build environment without
-adding anything to the runtime environment.
-"""
 from __future__ import annotations
 
 import os
@@ -29,7 +10,7 @@ HERE = Path(__file__).resolve().parent
 
 try:
     from pybind11.setup_helpers import ParallelCompile, Pybind11Extension, build_ext
-except ImportError:  # pragma: no cover - build-time only
+except ImportError:
     sys.exit(
         "pybind11 is required to build mailtrace_engine.\n"
         "    pip install pybind11>=2.11\n"
@@ -37,10 +18,8 @@ except ImportError:  # pragma: no cover - build-time only
         "parser is used automatically when it is missing."
     )
 
-# Honour CPU count for the four translation units; harmless if unsupported.
 ParallelCompile("MAILTRACE_BUILD_JOBS", default=0).install()
 
-#: Compiles and links, so a header without a usable library still fails.
 _OPENSSL_PROBE = """
 #include <openssl/evp.h>
 int main(void) {
@@ -52,13 +31,6 @@ int main(void) {
 
 
 def openssl_usable() -> bool:
-    """Whether this toolchain can compile and link against libcrypto.
-
-    A wrong guess fails the whole extension build and drops the backend to the
-    pure-Python parser, so this probes like a configure script instead of
-    checking for a header.  MAILTRACE_OPENSSL=0 skips the probe; =1 makes an
-    unusable OpenSSL a build error, which is what CI and the Docker image use.
-    """
     setting = os.environ.get("MAILTRACE_OPENSSL", "").strip().lower()
     if setting in {"0", "false", "no", "off"}:
         return False
@@ -66,9 +38,9 @@ def openssl_usable() -> bool:
 
     import tempfile
 
-    try:  # Python 3.12 dropped distutils from the stdlib; setuptools vendors it.
+    try:
         from setuptools._distutils.ccompiler import new_compiler
-    except ImportError:  # pragma: no cover - very old setuptools
+    except ImportError:
         from distutils.ccompiler import new_compiler
 
     library = "libcrypto" if sys.platform == "win32" else "crypto"
@@ -79,7 +51,7 @@ def openssl_usable() -> bool:
             compiler = new_compiler()
             objects = compiler.compile([str(source)], output_dir=work)
             compiler.link_executable(objects, str(Path(work) / "probe"), libraries=[library])
-    except Exception as exc:  # noqa: BLE001 - any failure at all means "not usable"
+    except Exception as exc:
         if required:
             raise SystemExit(
                 "MAILTRACE_OPENSSL=1 was set, but OpenSSL could not be compiled and "
@@ -117,8 +89,6 @@ extension = Pybind11Extension(
     libraries=LIBRARIES,
 )
 
-# Warnings-as-information, not as errors: a build that fails on a pedantic
-# warning would be worse than no extension at all, since the fallback is fine.
 if sys.platform == "win32":
     extension.extra_compile_args += ["/W4", "/permissive-", "/EHsc"]
 else:

@@ -1,5 +1,3 @@
-// @ts-check
-/** Home: the drop zone, the headline numbers and the most recent cases. */
 import { api } from "../api.js";
 import { useAsync } from "../hooks.js";
 import { categoryOf } from "../labels.js";
@@ -8,13 +6,8 @@ import { CasesTable } from "../ui/cases-table.js";
 import { errorState, kpi, pageHead, section, skeleton } from "../ui/primitives.js";
 import { Dropzone } from "../ui/upload.js";
 
-/** @typedef {import('../types.js').DashboardStats} DashboardStats */
-
 const RECENT_LIMIT = 8;
 
-/**
- * @param {{ stats: DashboardStats }} props
- */
 function Headline({ stats }) {
   return html`<div class="grid grid--kpi section">
     ${kpi("Emails checked", stats.total_emails, "info")}${kpi("Dangerous ones", stats.high_risk, "bad")}
@@ -22,9 +15,6 @@ function Headline({ stats }) {
   </div>`;
 }
 
-/**
- * @param {{ stats: DashboardStats }} props
- */
 function Distribution({ stats }) {
   const total = stats.total_emails;
   const categories = Object.entries(stats.by_category).filter(([, count]) => count > 0);
@@ -52,9 +42,6 @@ function Distribution({ stats }) {
   </>`;
 }
 
-/**
- * @param {{ stats: DashboardStats }} props
- */
 function Countries({ stats }) {
   if (stats.top_countries.length === 0) {
     return html`<div class="hint">No locations yet. Locations need internet lookups switched on.</div>`;
@@ -110,4 +97,3 @@ export function DashboardView() {
     ${body()}
   </>`;
 }
-

@@ -1,4 +1,3 @@
-"""The Celery queue: eager execution, the job endpoints and, when a broker is configured, a worker that consumes from it.  The broker test is skipped without"""
 from __future__ import annotations
 
 import os
@@ -13,7 +12,6 @@ from app import tasks
 from app.main import create_app
 
 REDIS_URL = os.environ.get("MAILTRACE_REDIS_URL", "").strip()
-# CI sets this to 0 and starts a separate worker process.
 QUEUE_WORKERS = int(os.environ.get("MAILTRACE_QUEUE_WORKERS", "1"))
 requires_broker = pytest.mark.skipif(not REDIS_URL, reason="no MAILTRACE_REDIS_URL; eager mode covers the rest")
 
@@ -33,21 +31,16 @@ def _submit(client, sample, *names):
 
 
 def test_eager_mode_is_the_default(cfg):
-    """With no broker configured, tasks must run in-process rather than block."""
     assert not cfg.redis_url
-    # Built from cfg: CI configures the module-level application with a broker.
     configured = tasks.build_celery(cfg)
     assert configured.conf.task_always_eager is True
-    # Without this every eager job stays PENDING.
     assert configured.conf.task_store_eager_result is True
     assert "eager" in tasks.queue_status(cfg)
 
 
 def test_reconfiguring_moves_the_live_connections(cfg):
-    """configure() must move the live backend and producer pool, not just the settings."""
     tasks.configure(cfg)
     assert type(tasks.celery_app.backend).__name__ == "CacheBackend"
-    # Publishing creates the producer pool.
     tasks.enqueue(b"From: a@b\r\nSubject: warm\r\n\r\nx\r\n", "warm.eml", "analyst")
     assert tasks.celery_app.amqp.producer_pool.connections.connection.as_uri().startswith("memory://")
 
@@ -78,13 +71,11 @@ def test_async_upload_returns_jobs_that_resolve(client, sample):
         assert state["state"] == "SUCCESS", state
         assert state["result"]["email_id"]
 
-    # Cases from the queue are readable exactly like synchronous ones.
     listing = client.get("/api/emails").json()
     assert listing["total"] == 2
     verdicts = {item["filename"]: item["category"] for item in listing["items"]}
     assert verdicts["phishing.eml"] == "Phishing"
 
-    # The job's email_id is the case id.
     email_id = client.get(f"/api/jobs/{by_name['phishing.eml']['job_id']}").json()["result"]["email_id"]
     detail = client.get(f"/api/emails/{email_id}")
     assert detail.status_code == 200
@@ -106,7 +97,6 @@ def test_batch_polling_matches_single_polling(client, sample):
 
 
 def test_async_upload_enforces_the_same_limits_as_the_sync_endpoint(client, cfg, sample):
-    """A payload the worker could never handle is refused before it is queued."""
     empty = client.post("/api/analyze/async", files=[("files", ("empty.eml", b"", "message/rfc822"))])
     assert empty.status_code == 400
 
@@ -114,12 +104,10 @@ def test_async_upload_enforces_the_same_limits_as_the_sync_endpoint(client, cfg,
     too_big = client.post("/api/analyze/async", files=[("files", ("big.eml", oversized, "message/rfc822"))])
     assert too_big.status_code == 413
 
-    # Nothing was accepted, so nothing was analysed.
     assert client.get("/api/emails").json()["total"] == 0
 
 
 def test_unknown_and_malformed_job_ids(client):
-    """A well-formed id nobody issued is PENDING; anything else is a 422."""
     unknown = client.get("/api/jobs/00000000-0000-4000-8000-000000000000")
     assert unknown.status_code == 200
     assert unknown.json()["state"] == "PENDING"
@@ -132,8 +120,6 @@ def test_unknown_and_malformed_job_ids(client):
 
 
 def test_an_unreachable_broker_is_refused_rather_than_waited_on(cfg, sample):
-    """A dead Redis must fail the upload quickly with a 503, not hang on retries."""
-    # Port 1: refused immediately. queue_workers=0 avoids leaving a worker thread retrying.
     broken = replace(cfg, redis_url="redis://127.0.0.1:1/0", queue_workers=0)
     app = create_app(broken)
     started = time.monotonic()
@@ -147,7 +133,7 @@ def test_an_unreachable_broker_is_refused_rather_than_waited_on(cfg, sample):
     assert response.status_code == 503, response.text
     assert "queue is unreachable" in response.text
     assert elapsed < 30, f"took {elapsed:.1f}s; the retry policy is not bounded"
-    tasks.configure(cfg)  # leave the module pointed back at the default
+    tasks.configure(cfg)
 
 
 def test_health_reports_how_tasks_execute(client):
@@ -156,7 +142,6 @@ def test_health_reports_how_tasks_execute(client):
 
 
 def test_task_result_carries_no_message_content(client, sample):
-    """The result backend must never hold message content, only an id and a verdict."""
     body = _submit(client, sample, ("phishing", "phishing.eml"))
     result = client.get(f"/api/jobs/{body['jobs'][0]['job_id']}").json()["result"]
     assert set(result) == {
@@ -169,7 +154,6 @@ def test_task_result_carries_no_message_content(client, sample):
 
 @requires_broker
 def test_a_real_worker_consumes_from_the_broker(sample):
-    """Publish here, consume in a Celery worker, read the case back."""
     from app.config import Settings
 
     cfg = Settings.from_env()
@@ -179,7 +163,6 @@ def test_a_real_worker_consumes_from_the_broker(sample):
     app = create_app(cfg)
     with TestClient(app) as client:
         assert "redis" in client.get("/api/health").json()["queue"]
-        # The database is shared with the worker and may not be empty.
         filename = f"phishing-{uuid.uuid4().hex[:8]}.eml"
         response = client.post(
             "/api/analyze/async",
@@ -188,7 +171,6 @@ def test_a_real_worker_consumes_from_the_broker(sample):
         assert response.status_code == 202, response.text
         job_id = response.json()["jobs"][0]["job_id"]
 
-        # PENDING at first is the point: with a broker the work has not run yet.
         deadline = time.monotonic() + 60
         state = "PENDING"
         while time.monotonic() < deadline:

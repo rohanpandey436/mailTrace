@@ -1,4 +1,3 @@
-"""URL / domain risk model (XGBoost), the learned half of the Stage 4 URL pillar."""
 from __future__ import annotations
 
 import argparse
@@ -37,16 +36,14 @@ from ..core.link_analyzer import (
 from ..schemas import DomainIntel, UrlInfo
 from . import onnx_url
 
-if TYPE_CHECKING:  # pragma: no cover - annotations only; xgboost is imported lazily at runtime
+if TYPE_CHECKING:
     from xgboost import XGBClassifier
 
 log = logging.getLogger("mailtrace.ml.url")
 
-#: Bump whenever FEATURE_NAMES or the dataset generator changes shape.
 MODEL_VERSION = "xgb-url-1"
 
 FEATURE_NAMES: list[str] = [
-    # --- URL shape (continuous; the model's own view, not read off the rules)
     "url_length",
     "host_length",
     "path_length",
@@ -59,7 +56,6 @@ FEATURE_NAMES: list[str] = [
     "path_depth",
     "host_entropy",
     "longest_label_length",
-    # --- deception flags lifted from the deterministic extractor
     "is_ip_literal",
     "is_shortener",
     "is_punycode",
@@ -74,10 +70,8 @@ FEATURE_NAMES: list[str] = [
     "redirect_parameter",
     "executable_path",
     "known_good_domain",
-    # --- lookalike geometry
     "lookalike_flag",
     "lookalike_distance",
-    # --- domain intelligence (NaN when enrichment did not run)
     "domain_age_days",
     "resolves",
     "has_mx",
@@ -89,15 +83,12 @@ _CREDENTIAL_KEYWORDS: frozenset[str] = frozenset({
     "owa", "update", "aadhaar", "pan", "wallet",
 }) & frozenset(URL_SUSPICIOUS_KEYWORDS)
 
-#: Brand keys long enough that an edit-distance comparison means anything.
 _BRAND_KEYS: tuple[str, ...] = tuple(sorted({k for k in BRANDS if len(k) >= 4}))
 
 _NAN = float("nan")
 
 
-# Feature engineering
 def shannon_entropy(value: str) -> float:
-    """Shannon entropy of the character distribution of ``value``, bits/char."""
     text = value or ""
     if not text:
         return 0.0
@@ -113,7 +104,6 @@ def _sld(registrable: str) -> str:
 
 
 def lookalike_distance(host: str) -> float:
-    """Normalised Damerau-Levenshtein distance from the host's second-level"""
     sld = _sld(registrable_domain(host))
     if not sld:
         return 1.0
@@ -121,7 +111,7 @@ def lookalike_distance(host: str) -> float:
     for key in _BRAND_KEYS:
         span = max(len(sld), len(key))
         if not span or abs(len(sld) - len(key)) / span >= best:
-            continue  # cannot beat the incumbent: length gap alone exceeds it
+            continue
         best = min(best, damerau_levenshtein(sld, key) / span)
         if best == 0.0:
             break
@@ -129,7 +119,6 @@ def lookalike_distance(host: str) -> float:
 
 
 def _intel_features(intel: DomainIntel | None) -> tuple[float, float, float]:
-    """(age_days, resolves, has_mx) with NaN wherever nothing was observed."""
     if intel is None:
         return _NAN, _NAN, _NAN
     age = _NAN if intel.age_days is None else float(intel.age_days)
@@ -140,7 +129,6 @@ def _intel_features(intel: DomainIntel | None) -> tuple[float, float, float]:
 
 
 def features(info: UrlInfo, intel: DomainIntel | None = None) -> list[float]:
-    """Feature row for one link, in ``FEATURE_NAMES`` order.  Never raises."""
     normalized = info.normalized or info.url or ""
     host = (info.host or "").lower()
     path = info.path or ""
@@ -194,14 +182,13 @@ def features(info: UrlInfo, intel: DomainIntel | None = None) -> list[float]:
 
 
 def features_for(url: str, anchor: str, cfg: Settings, intel: DomainIntel | None = None) -> list[float]:
-    """Convenience wrapper: run the deterministic extractor, then featurise."""
     return features(analyze_url(url, anchor, cfg), intel)
 
 
-_PRIOR_MISSING_RATE = 0.5          # fraction of rows with no enrichment at all
-_PRIOR_BENIGN_AGE = (900, 9000)    # days: an established brand or corporate site
-_PRIOR_MALICIOUS_AGE = (1, 220)    # days: purpose-built attack infrastructure
-_PRIOR_MALICIOUS_MX_RATE = 0.25    # attack hosts that do publish an MX anyway
+_PRIOR_MISSING_RATE = 0.5
+_PRIOR_BENIGN_AGE = (900, 9000)
+_PRIOR_MALICIOUS_AGE = (1, 220)
+_PRIOR_MALICIOUS_MX_RATE = 0.25
 
 _BENIGN_PATHS: tuple[str, ...] = (
     "/", "/about", "/help", "/support/contact", "/blog/2026/quarterly-update",
@@ -215,7 +202,6 @@ _BENIGN_PATHS: tuple[str, ...] = (
     "/e/c/eyJlbWFpbF9pZCI6IjQ0MTIwIn0/aHR0cHM6Ly9leGFtcGxlLmNvbQ?mkt_tok=NDQxMjA",
 )
 _BENIGN_SUBDOMAINS: tuple[str, ...] = ("", "www.", "mail.", "support.", "cdn.", "static.", "docs.", "app.")
-#: Word stock for ordinary, non-brand business hosts (the hard negatives).
 _ORDINARY_WORDS: tuple[str, ...] = (
     "northwind", "bluepeak", "sundaram", "vertex", "greenfield", "orbit", "kestrel",
     "meridian", "harbour", "lakeview", "silverline", "tatva", "prayaan", "quanta",
@@ -248,7 +234,6 @@ _ATTACK_WORDS: tuple[str, ...] = (
 )
 
 _URL_IN_TEXT_RE = re.compile(r"(?:https?://|www\.)[^\s<>\"'`\)\]]+", re.IGNORECASE)
-#: Weak label carried by each seed-corpus / sample class.
 _MALICIOUS_LABELS: frozenset[str] = frozenset({"Phishing", "Fraud-Related", "Impersonated", "Suspicious"})
 
 
@@ -262,16 +247,15 @@ def _homoglyph_swap(word: str, rng: random.Random) -> str:
 
 
 def _typo(word: str, rng: random.Random) -> str:
-    """One edit that keeps the first character, the shape real typosquats take."""
     if len(word) < 4:
         return word + word[-1]
     kind = rng.randrange(4)
     i = rng.randrange(1, len(word))
-    if kind == 0:                                   # doubled character
+    if kind == 0:
         return word[:i] + word[i] + word[i:]
-    if kind == 1:                                   # dropped character
+    if kind == 1:
         return word[:i] + word[i + 1:]
-    if kind == 2 and i < len(word) - 1:             # transposition
+    if kind == 2 and i < len(word) - 1:
         return word[:i] + word[i + 1] + word[i] + word[i + 2:]
     return _homoglyph_swap(word, rng)
 
@@ -281,7 +265,6 @@ _MALICIOUS_HTTPS_RATE = 0.80
 
 
 def _benign_rows(rng: random.Random, cfg: Settings) -> list[tuple[str, str]]:
-    """(url, anchor) pairs that a real message would legitimately carry."""
     rows: list[tuple[str, str]] = []
 
     def add(host: str, path: str, anchor: str = "") -> None:
@@ -298,7 +281,6 @@ def _benign_rows(rng: random.Random, cfg: Settings) -> list[tuple[str, str]]:
             sub = rng.choice(_BENIGN_SUBDOMAINS) if host.count(".") <= 2 else ""
             add(f"{sub}{host}", rng.choice(_BENIGN_PATHS))
 
-    # Ordinary businesses: no brand, no reputation, entirely legitimate.
     for first in _ORDINARY_WORDS:
         for _ in range(9):
             shape = rng.randrange(4)
@@ -316,7 +298,6 @@ def _benign_rows(rng: random.Random, cfg: Settings) -> list[tuple[str, str]]:
 
 
 def _malicious_rows(rng: random.Random, cfg: Settings) -> list[tuple[str, str]]:
-    """(url, anchor) pairs composing the documented deception techniques."""
     rows: list[tuple[str, str]] = []
     brands = [(key, domains[0]) for key, domains in sorted(BRANDS.items()) if domains]
     org_domains = [registrable_domain(d) for d in cfg.org_domains if d]
@@ -328,16 +309,14 @@ def _malicious_rows(rng: random.Random, cfg: Settings) -> list[tuple[str, str]]:
     for key, legit in brands:
         sld, _, suffix = legit.partition(".")
         bad_tld = rng.choice(_BAD_TLDS)
-        add(f"{_typo(sld, rng)}.{suffix or 'com'}")                       # typosquat
-        add(f"{sld}.{bad_tld}")                                          # TLD swap
-        add(f"{sld}-{rng.choice(_ATTACK_WORDS)}.{bad_tld}")              # extra token
-        add(f"{rng.choice(_ATTACK_WORDS)}-{sld}.{bad_tld}")              # extra token
-        add(f"{key}.{rng.choice(_ATTACK_WORDS)}.{bad_tld}")              # brand in sub-domain
-        add(f"{legit}.{rng.choice(_ATTACK_WORDS)}-{rng.choice(_ATTACK_WORDS)}.{bad_tld}")  # sub-domain abuse
-        add(f"xn--{sld[:6]}-{rng.randrange(10, 99)}a.{suffix or 'com'}")  # punycode
-        # The '@' trick: everything before it is decoy text the browser ignores.
+        add(f"{_typo(sld, rng)}.{suffix or 'com'}")
+        add(f"{sld}.{bad_tld}")
+        add(f"{sld}-{rng.choice(_ATTACK_WORDS)}.{bad_tld}")
+        add(f"{rng.choice(_ATTACK_WORDS)}-{sld}.{bad_tld}")
+        add(f"{key}.{rng.choice(_ATTACK_WORDS)}.{bad_tld}")
+        add(f"{legit}.{rng.choice(_ATTACK_WORDS)}-{rng.choice(_ATTACK_WORDS)}.{bad_tld}")
+        add(f"xn--{sld[:6]}-{rng.randrange(10, 99)}a.{suffix or 'com'}")
         add(f"{legit}@{rng.choice(_ATTACK_WORDS)}-{rng.randrange(100, 999)}.{bad_tld}", anchor=legit)
-        # Visible anchor text naming the brand while the href goes elsewhere.
         add(f"{rng.choice(_ATTACK_WORDS)}{rng.randrange(10, 99)}.{bad_tld}", anchor=f"https://{legit}/login")
 
     for org in org_domains:
@@ -345,17 +324,17 @@ def _malicious_rows(rng: random.Random, cfg: Settings) -> list[tuple[str, str]]:
         add(f"{_typo(sld, rng)}.{suffix or 'com'}")
         add(f"{sld}-{rng.choice(_ATTACK_WORDS)}.{rng.choice(_BAD_TLDS)}")
 
-    for _ in range(60):                                                   # raw IP literals
+    for _ in range(60):
         octets = ".".join(str(rng.randrange(1, 254)) for _ in range(4))
         add(octets)
-    for shortener in sorted(URL_SHORTENERS):                              # shorteners
+    for shortener in sorted(URL_SHORTENERS):
         add(shortener, path=f"/{''.join(rng.choice('abcdefghijkmnpqrstuvwxyz0123456789') for _ in range(7))}")
-    for _ in range(80):                                                   # DGA-ish hosts
+    for _ in range(80):
         label = "".join(rng.choice("abcdefghijklmnopqrstuvwxyz0123456789") for _ in range(rng.randrange(10, 22)))
         add(f"{label}.{rng.choice(_BAD_TLDS)}")
-    for _ in range(50):                                                   # executable downloads
+    for _ in range(50):
         add(f"{rng.choice(_ATTACK_WORDS)}-{rng.randrange(10, 999)}.{rng.choice(_BAD_TLDS)}", path=rng.choice(_EXEC_PATHS))
-    for _ in range(40):                                                   # excessive sub-domains
+    for _ in range(40):
         depth = rng.randrange(4, 7)
         host = ".".join(rng.choice(_ATTACK_WORDS) for _ in range(depth)) + "." + rng.choice(_BAD_TLDS)
         add(host)
@@ -363,7 +342,6 @@ def _malicious_rows(rng: random.Random, cfg: Settings) -> list[tuple[str, str]]:
 
 
 def _corpus_rows(cfg: Settings) -> list[tuple[str, str, int]]:
-    """(url, anchor, label) weakly labelled from the seed corpus message class."""
     rows: list[tuple[str, str, int]] = []
     try:
         raw = json.loads(Path(cfg.corpus_path).read_text(encoding="utf-8"))
@@ -386,18 +364,17 @@ def _corpus_rows(cfg: Settings) -> list[tuple[str, str, int]]:
 
 
 def _sample_rows(cfg: Settings) -> list[tuple[str, str, int]]:
-    """Same weak labelling applied to the bundled ``samples/*.eml`` corpus."""
     rows: list[tuple[str, str, int]] = []
     directory = Path(cfg.samples_dir)
     if not directory.is_dir():
         return rows
-    from ..core.parser import parse_email  # local: keeps module import cheap
+    from ..core.parser import parse_email
 
     for path in sorted(directory.glob("*.eml")):
         malicious = not path.name.startswith("legit")
         try:
             parsed, _ = parse_email(path.read_bytes())
-        except Exception:  # a bad sample must not stop training
+        except Exception:
             log.debug("sample %s could not be parsed for the URL dataset", path.name, exc_info=True)
             continue
         for url, anchor in extract_urls(parsed.text_body or "", parsed.html_body or ""):
@@ -409,7 +386,6 @@ def _sample_rows(cfg: Settings) -> list[tuple[str, str, int]]:
 
 
 def _apply_intel_prior(row: list[float], label: int, rng: random.Random) -> None:
-    """Fill the three DomainIntel columns from the documented prior, in place."""
     age_i = FEATURE_NAMES.index("domain_age_days")
     res_i = FEATURE_NAMES.index("resolves")
     mx_i = FEATURE_NAMES.index("has_mx")
@@ -423,7 +399,6 @@ def _apply_intel_prior(row: list[float], label: int, rng: random.Random) -> None
 
 
 def build_dataset(cfg: Settings | None = None, seed: int = 20260905) -> tuple[list[list[float]], list[int], dict[str, Any]]:
-    """(X, y, meta).  Deterministic for a given seed and knowledge base."""
     cfg = cfg or default_settings
     rng = random.Random(seed)
     labelled: list[tuple[str, str, int]] = []
@@ -445,7 +420,7 @@ def build_dataset(cfg: Settings | None = None, seed: int = 20260905) -> tuple[li
         seen.add(key)
         try:
             row = features(analyze_url(url, anchor, cfg))
-        except Exception:  # one bad row must not stop training
+        except Exception:
             log.debug("could not featurise %r", url[:120], exc_info=True)
             continue
         _apply_intel_prior(row, label, rng)
@@ -462,14 +437,7 @@ def build_dataset(cfg: Settings | None = None, seed: int = 20260905) -> tuple[li
     return x, y, meta
 
 
-# Fingerprint / persistence
 def _sha256_file(path: Path) -> str:
-    """Hash one fingerprint input, ignoring line endings.
-
-    A Windows checkout stores source files with CRLF and a Linux one with LF,
-    so hashing raw bytes yields a different fingerprint per platform and the
-    committed graph is refused on whichever machine did not export it.
-    """
     try:
         raw = Path(path).read_bytes()
         return hashlib.sha256(raw.replace(b"\r\n", b"\n")).hexdigest()
@@ -478,7 +446,6 @@ def _sha256_file(path: Path) -> str:
 
 
 def dataset_fingerprint(cfg: Settings | None = None) -> str:
-    """Hash of every input the dataset is generated from."""
     cfg = cfg or default_settings
     digest = hashlib.sha256()
     digest.update(MODEL_VERSION.encode())
@@ -495,7 +462,6 @@ def dataset_fingerprint(cfg: Settings | None = None) -> str:
 
 
 def build_classifier() -> XGBClassifier:
-    """A deliberately small booster: 120 trees of depth 4, single-threaded."""
     from xgboost import XGBClassifier
 
     return XGBClassifier(
@@ -529,7 +495,6 @@ def _bundle(model: XGBClassifier, meta: dict[str, Any], fingerprint: str, metric
 
 
 def _holdout_metrics(x: list[list[float]], y: list[int]) -> dict[str, float]:
-    """Stratified 80/20 hold-out.  Self-consistency with the generated set, not"""
     from sklearn.metrics import accuracy_score, roc_auc_score
     from sklearn.model_selection import train_test_split
 
@@ -547,7 +512,6 @@ def _holdout_metrics(x: list[list[float]], y: list[int]) -> dict[str, float]:
 
 
 def train(cfg: Settings | None = None, model_path: Path | None = None, with_metrics: bool = True) -> XGBClassifier:
-    """Generate the dataset, fit, persist the bundle, return the fitted model."""
     import joblib
 
     cfg = cfg or default_settings
@@ -576,7 +540,7 @@ def _load_bundle(path: Path, fingerprint: str) -> XGBClassifier | None:
         return None
     try:
         bundle = joblib.load(path)
-    except Exception:  # noqa: BLE001 - corrupt cache, or xgboost gone -> retrain/degrade
+    except Exception:
         log.warning("cached URL model at %s could not be loaded; retraining", path)
         return None
     if not isinstance(bundle, dict) or bundle.get("version") != MODEL_VERSION:
@@ -588,23 +552,20 @@ def _load_bundle(path: Path, fingerprint: str) -> XGBClassifier | None:
     return bundle.get("model")
 
 
-# Process-wide cache
 _lock = threading.Lock()
 _models: dict[str, XGBClassifier] = {}
 _failed: set[str] = set()
 
 
 def available() -> bool:
-    """True when xgboost can be imported in this process."""
     try:
-        import xgboost  # noqa: F401
-    except (ImportError, OSError):  # missing, or a broken native install
+        import xgboost
+    except (ImportError, OSError):
         return False
     return True
 
 
 def load_or_train(cfg: Settings | None = None) -> XGBClassifier | onnx_url.OnnxUrlScorer | None:
-    """The fitted model, training it once if needed; ``None`` if unavailable."""
     cfg = cfg or default_settings
     if not getattr(cfg, "url_model_enabled", True):
         return None
@@ -631,7 +592,7 @@ def load_or_train(cfg: Settings | None = None) -> XGBClassifier | onnx_url.OnnxU
             _failed.add(fingerprint)
             log.warning("xgboost unavailable (%s); the URL pillar stays rule-only", exc)
             return None
-        except Exception:  # never let a model break the analysis
+        except Exception:
             _failed.add(fingerprint)
             log.exception("URL model could not be trained; the URL pillar stays rule-only")
             return None
@@ -641,7 +602,6 @@ def load_or_train(cfg: Settings | None = None) -> XGBClassifier | onnx_url.OnnxU
 
 
 def loaded_backend() -> str:
-    """Which backend is serving, without forcing a load."""
     with _lock:
         models = list(_models.values())
     if not models:
@@ -649,10 +609,8 @@ def loaded_backend() -> str:
     return "onnx" if isinstance(models[0], onnx_url.OnnxUrlScorer) else "xgboost"
 
 
-# Scoring
 @dataclass
 class UrlModelOutcome:
-    """What the model concluded about one message's links."""
 
     max_probability: float = 0.0
     per_url: list[tuple[str, float]] = field(default_factory=list)
@@ -671,7 +629,6 @@ def _intel_index(domain_intel: Any) -> dict[str, DomainIntel]:
 
 
 def score_urls(urls: Any, domain_intel: Any, cfg: Settings | None = None) -> UrlModelOutcome | None:
-    """``P(malicious)`` for every link in the message, worst-first."""
     cfg = cfg or default_settings
     items: list[UrlInfo] = [u for u in (urls or []) if getattr(u, "url", "")]
     if not items:
@@ -691,7 +648,7 @@ def score_urls(urls: Any, domain_intel: Any, cfg: Settings | None = None) -> Url
                 matched += 1
             rows.append(features(info, intel))
         probabilities = model.predict_proba(np.asarray(rows, dtype=np.float32))[:, 1]
-    except Exception:  # inference failure must never abort scoring
+    except Exception:
         log.exception("URL model inference failed; the URL pillar stays rule-only")
         return None
     per_url = sorted(
@@ -707,7 +664,6 @@ def score_urls(urls: Any, domain_intel: Any, cfg: Settings | None = None) -> Url
     )
 
 
-# CLI
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Train the MailTrace URL/domain risk model.")
     parser.add_argument("--out", type=Path, default=None, help="model output path")

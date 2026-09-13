@@ -1,4 +1,3 @@
-"""Threat-intelligence correlation and campaign clustering."""
 from __future__ import annotations
 
 import ipaddress
@@ -31,14 +30,13 @@ from .knowledge import COMMON_URL_HOSTS, FREEMAIL_DOMAINS
 from .link_analyzer import registrable_domain
 from .parser import hamming_distance, tlsh_diff
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:
     from ..database.case_manager import Store
 
 log = logging.getLogger("mailtrace.campaigns")
 
 STRONG_PREFIXES: tuple[str, ...] = ("ip:", "sender:", "domain:", "replyto:", "urlhost:", "file:")
 WEAK_PREFIXES: tuple[str, ...] = ("subject:", "asn:", "mailer:")
-# Stored so a later message can be compared against them; never voted on.
 FUZZY_PREFIXES: tuple[str, ...] = ("simhash:", "tlsh:")
 FUZZY_MATCH_PREFIXES: tuple[str, ...] = ("simhash~", "tlsh~")
 FUZZY_MIN_BODY = 200
@@ -117,10 +115,9 @@ def extract_indicators(
 
 
 def _related(store: Store, indicators: list[str], exclude_email_id: str) -> dict[str, list[str]]:
-    """email_id -> shared indicators, keeping only convincing overlaps."""
     try:
         raw = store.find_emails_by_indicators(indicators, exclude_email_id)
-    except Exception:  # correlation must never abort an analysis
+    except Exception:
         log.exception("indicator lookup failed")
         return {}
     matches: dict[str, list[str]] = {}
@@ -136,7 +133,6 @@ def _related(store: Store, indicators: list[str], exclude_email_id: str) -> dict
 def _fuzzy_related(
     store: Store, fuzzy: FuzzyDigest, exclude_email_id: str, cfg: Settings
 ) -> dict[str, list[str]]:
-    """email_id -> ['simhash~3'] for prior messages whose body is a near-duplicate."""
     if fuzzy.body_length < FUZZY_MIN_BODY or not (fuzzy.simhash or fuzzy.tlsh):
         return {}
     matches: dict[str, list[str]] = {}
@@ -148,7 +144,7 @@ def _fuzzy_related(
             continue
         try:
             stored = store.find_indicators_by_prefix(prefix, exclude_email_id)
-        except Exception:  # correlation must never abort an analysis
+        except Exception:
             log.exception("fuzzy digest lookup for %s failed", prefix)
             continue
         for email_id, keys in stored.items():
@@ -160,7 +156,6 @@ def _fuzzy_related(
 
 
 def _merge_matches(exact: dict[str, list[str]], fuzzy: dict[str, list[str]]) -> dict[str, list[str]]:
-    """Union of the exact and fuzzy relations, per related email."""
     merged: dict[str, list[str]] = {email_id: list(shared) for email_id, shared in exact.items()}
     for email_id, tags in fuzzy.items():
         merged[email_id] = sorted(set(merged.get(email_id, [])) | set(tags))
@@ -223,7 +218,7 @@ def correlate(
         if matches:
             try:
                 summaries = store.summaries_for(list(matches))
-            except Exception:  # correlation must never abort an analysis
+            except Exception:
                 log.exception("summary lookup failed")
         for summary in summaries:
             intel.related_incidents.append(RelatedIncident(
@@ -263,7 +258,7 @@ def correlate(
                 intel.campaign_id = next(
                     (cid for cid in (store.campaign_for_email(r.email_id) for r in intel.related_incidents) if cid), None
                 )
-            except Exception:  # noqa: BLE001
+            except Exception:
                 intel.campaign_id = None
         else:
             findings.append(_finding(
@@ -288,7 +283,6 @@ def campaign_name(result: AnalysisResult, summaries: list[CaseSummary]) -> str:
 
 
 def assign_campaign(result: AnalysisResult, store: Store, cfg: Settings | None = None) -> str | None:
-    """Cluster ``result`` with related prior emails; returns the campaign id."""
     cfg = cfg or default_settings
     indicators = result.intel.indicators or []
     store.save_indicators(result.id, indicators)

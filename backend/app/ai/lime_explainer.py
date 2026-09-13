@@ -1,4 +1,3 @@
-"""LIME for the text classifier: a local, sampling-based second explanation."""
 from __future__ import annotations
 
 import logging
@@ -6,22 +5,17 @@ import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable, Sequence
 
-if TYPE_CHECKING:  # pragma: no cover - annotations only; numpy is imported lazily at runtime
+if TYPE_CHECKING:
     import numpy as np
     from numpy.typing import NDArray
 
 log = logging.getLogger("mailtrace.ml.lime")
 
-#: Name recorded on the analysis so a reader knows which implementation ran.
 METHOD = "lime-builtin"
 
-#: LIME's default exponential kernel width for text.
 KERNEL_WIDTH = 25.0
-#: Ridge penalty of the local surrogate; LIME's default model_regressor.
 RIDGE_ALPHA = 1.0
-#: Characters of the message fed to LIME (see the deviations note above).
 CHAR_LIMIT = 2400
-#: Below this many distinct words a local surrogate is meaningless.
 MIN_FEATURES = 2
 
 _TOKEN_RE = re.compile(r"\W+", re.UNICODE)
@@ -29,7 +23,6 @@ _TOKEN_RE = re.compile(r"\W+", re.UNICODE)
 
 @dataclass
 class LimeExplanation:
-    """Coefficients of the local weighted ridge surrogate, strongest first."""
 
     weights: list[tuple[str, float]] = field(default_factory=list)
     intercept: float = 0.0
@@ -43,7 +36,6 @@ class LimeExplanation:
 
 
 def tokenize(text: str) -> tuple[list[str], list[str]]:
-    r"""(pieces, vocabulary): the message split on ``\W+`` keeping the"""
     body = (text or "")[:CHAR_LIMIT]
     pieces = re.split(r"(\W+)", body, flags=re.UNICODE)
     seen: dict[str, None] = {}
@@ -56,7 +48,6 @@ def tokenize(text: str) -> tuple[list[str], list[str]]:
 def _perturbations(
     pieces: Sequence[str], vocabulary: Sequence[str], n_samples: int, rng: np.random.Generator
 ) -> tuple[list[str], NDArray[np.float64]]:
-    """``n_samples`` neighbours plus the binary on/off matrix that describes them."""
     import numpy as np
 
     index = {word: i for i, word in enumerate(vocabulary)}
@@ -73,7 +64,6 @@ def _perturbations(
 
 
 def _kernel(mask: NDArray[np.float64], width: float = KERNEL_WIDTH) -> NDArray[np.float64]:
-    """LIME's exponential kernel over the cosine distance from the original."""
     import numpy as np
 
     reference = np.ones((1, mask.shape[1]), dtype=np.float64)
@@ -93,12 +83,11 @@ def explain(
     top_k: int = 12,
     seed: int = 42,
 ) -> LimeExplanation:
-    """Fit a local linear surrogate around ``text`` and return its coefficients."""
     empty = LimeExplanation()
     try:
         import numpy as np
         from sklearn.linear_model import Ridge
-    except ImportError as exc:  # pragma: no cover - sklearn is a hard dependency
+    except ImportError as exc:
         log.warning("LIME needs numpy/scikit-learn (%s); skipping", exc)
         return empty
 
@@ -120,11 +109,10 @@ def explain(
         scout.fit(mask, target, sample_weight=weights)
         keep = list(np.argsort(np.abs(scout.coef_))[::-1][: max(1, int(top_k))])
 
-        # 2. The explanation itself: refit on just those features.
         surrogate = Ridge(alpha=RIDGE_ALPHA, fit_intercept=True, random_state=seed)
         surrogate.fit(mask[:, keep], target, sample_weight=weights)
         r2 = float(surrogate.score(mask[:, keep], target, sample_weight=weights))
-    except Exception:  # explanation must never break analysis
+    except Exception:
         log.debug("LIME explanation failed", exc_info=True)
         return empty
 
@@ -133,7 +121,7 @@ def explain(
     return LimeExplanation(
         weights=pairs,
         intercept=float(surrogate.intercept_),
-        local_r2=r2 if r2 == r2 else 0.0,          # NaN R^2 (degenerate target) -> 0
+        local_r2=r2 if r2 == r2 else 0.0,
         n_samples=len(texts),
         n_features=len(vocabulary),
         method=METHOD,
@@ -143,7 +131,6 @@ def explain(
 def explain_pipeline(
     pipeline: Any, text: str, label: str, n_samples: int = 160, top_k: int = 12, seed: int = 42
 ) -> LimeExplanation:
-    """LIME over a fitted scikit-learn classification pipeline for one class."""
     try:
         classes = [str(c) for c in pipeline.classes_]
         class_index = classes.index(str(label))
@@ -161,7 +148,6 @@ def explain_pipeline(
 
 
 def resolve_samples(cfg: Any | None = None, default: int = 160) -> int:
-    """``Settings.lime_samples`` clamped to a sane range."""
     raw = getattr(cfg, "lime_samples", default) if cfg is not None else default
     try:
         value = int(raw)

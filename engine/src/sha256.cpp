@@ -1,9 +1,3 @@
-// SPDX-License-Identifier: MIT
-//
-// FIPS 180-4 SHA-256.  Straight transcription of the specification; the only
-// deviations from the pseudo-code are the use of fixed-size std::array storage
-// (no allocation, no raw pointers to own) and a copy-on-finalize digest() so a
-// Sha256 can be queried without being consumed.
 #include "mailtrace/sha256.hpp"
 
 #include <cstring>
@@ -40,7 +34,7 @@ constexpr std::array<std::uint32_t, 64> kRoundConstants = {
 
 constexpr char kHexDigits[] = "0123456789abcdef";
 
-}  // namespace
+}
 
 Sha256::Sha256() noexcept {
     state_ = {0x6a09e667u, 0xbb67ae85u, 0x3c6ef372u, 0xa54ff53au,
@@ -134,7 +128,6 @@ void Sha256::update(std::string_view data) noexcept {
 void Sha256::finalize() noexcept {
     const std::uint64_t bits = length_bits_;
 
-    // Append 0x80, then zeroes, then the 64-bit big-endian bit length.
     buffer_[buffered_++] = static_cast<std::uint8_t>(0x80u);
     if (buffered_ > kBlockSize - 8) {
         while (buffered_ < kBlockSize) {
@@ -205,4 +198,4 @@ std::string sha256_hex(std::string_view data) {
     return sha256_hex(reinterpret_cast<const std::uint8_t*>(data.data()), data.size());
 }
 
-}  // namespace mailtrace
+}

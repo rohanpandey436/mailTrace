@@ -1,4 +1,3 @@
-"""LIME, computed when someone asks to see it."""
 from __future__ import annotations
 
 import logging
@@ -9,12 +8,11 @@ from ..schemas import AnalysisResult, Finding, LimeReport, LimeWeight, Severity
 from ..utils.cache import cache_get, cache_set
 from .ai_engine import model_input
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:
     from ..database.case_manager import Store
 
 log = logging.getLogger("mailtrace.explanations")
 
-#: How many surrogate coefficients are carried on the report.
 TOP_K = 12
 CACHE_TTL_SECONDS = 30 * 24 * 3600
 
@@ -24,7 +22,6 @@ def _cache_key(email_id: str) -> str:
 
 
 def _compute(result: AnalysisResult, cfg: Settings) -> LimeReport:
-    """Fit the surrogate.  Returns an unavailable report rather than raising."""
     unavailable = LimeReport(email_id=result.id, category=result.nlp.ml_category)
     if not cfg.lime_enabled:
         return unavailable
@@ -32,7 +29,7 @@ def _compute(result: AnalysisResult, cfg: Settings) -> LimeReport:
         return unavailable
     try:
         from ..ai import lime_explainer, model_trainer
-    except ImportError:  # pragma: no cover - both ship with the app
+    except ImportError:
         log.debug("LIME is unavailable in this install", exc_info=True)
         return unavailable
 
@@ -45,7 +42,7 @@ def _compute(result: AnalysisResult, cfg: Settings) -> LimeReport:
     except ImportError as exc:
         log.warning("LIME needs the ML packages (%s); no explanation produced", exc)
         return unavailable
-    except Exception:  # an explanation must never break a case view
+    except Exception:
         log.exception("LIME failed for email %s", result.id)
         return unavailable
     if not explanation:
@@ -67,13 +64,12 @@ def _compute(result: AnalysisResult, cfg: Settings) -> LimeReport:
 
 
 def lime_report(result: AnalysisResult, cfg: Settings, store: Store | None = None) -> LimeReport:
-    """The LIME explanation for a stored case, from the cache when it is there."""
     key = _cache_key(result.id)
     cached = cache_get(store, key)
     if isinstance(cached, dict):
         try:
             return LimeReport.model_validate(cached)
-        except ValueError:  # an entry written by an older schema
+        except ValueError:
             log.debug("discarding a malformed cached explanation for %s", result.id)
     report = _compute(result, cfg)
     if report.available:
@@ -82,7 +78,6 @@ def lime_report(result: AnalysisResult, cfg: Settings, store: Store | None = Non
 
 
 def finding(report: LimeReport) -> Finding:
-    """The report's evidence entry."""
     summary = ", ".join(f"{weight.token} {weight.weight:+.3f}" for weight in report.weights[:5])
     return Finding(
         id="lime_explanation",
@@ -108,7 +103,6 @@ def finding(report: LimeReport) -> Finding:
 
 
 def attach(result: AnalysisResult, cfg: Settings, store: Store | None = None) -> AnalysisResult:
-    """``result`` with the LIME fields and evidence entry filled in."""
     report = lime_report(result, cfg, store)
     if not report.available:
         return result

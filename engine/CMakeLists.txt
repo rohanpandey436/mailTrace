@@ -1,24 +1,9 @@
-# Alternative build for the OPTIONAL mailtrace_engine extension.
-#
-# setup.py is the supported path (see engine/README.md).  This file exists for
-# IDE integration, for sanitiser builds, and for anyone who would rather drive
-# the compiler directly:
-#
-#   cmake -S engine -B build -DCMAKE_BUILD_TYPE=Release
-#   cmake --build build --config Release
-#
-# It needs pybind11's CMake package.  `pip install pybind11` provides it;
-# point CMake at it with:
-#
-#   -Dpybind11_DIR=$(python -m pybind11 --cmakedir)
-#
-# Or set -DMAILTRACE_FETCH_PYBIND11=ON to have CMake download pybind11 itself.
 cmake_minimum_required(VERSION 3.18)
 project(mailtrace_engine LANGUAGES CXX VERSION 1.0.0)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)          # no compiler-specific extensions
+set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 option(MAILTRACE_FETCH_PYBIND11 "Download pybind11 with FetchContent if it is not installed" OFF)
@@ -58,7 +43,3 @@ if(MSVC)
 else()
   target_compile_options(mailtrace_engine PRIVATE -Wall -Wextra -O2)
 endif()
-
-# Optional hardening for a debug/CI build:
-#   cmake -S engine -B build -DCMAKE_BUILD_TYPE=Debug \
-#         -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"

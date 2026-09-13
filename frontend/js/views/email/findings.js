@@ -1,17 +1,8 @@
-// @ts-check
-/** "What we found": findings, the five-pillar breakdown, actions, background notes. */
 import { plural } from "../../format.js";
 import { MODULE, PILLARS, categoryOf, toneForScore } from "../../labels.js";
 import { Fragment, html } from "../../react.js";
 import { bar, chip, section, severityChip } from "../../ui/primitives.js";
 
-/** @typedef {import('../../types.js').AnalysisResult} AnalysisResult */
-/** @typedef {import('../../types.js').Finding} Finding */
-/** @typedef {import('../../types.js').Verdict} Verdict */
-
-/**
- * @param {{ finding: Finding }} props
- */
 function FindingRow({ finding }) {
   return html`<details class="card finding">
     <summary class="finding__summary">
@@ -24,9 +15,6 @@ function FindingRow({ finding }) {
   </details>`;
 }
 
-/**
- * @param {{ verdict: Verdict }} props
- */
 function Agreement({ verdict }) {
   if (verdict.dual_validation_agreement) {
     return html`<${Fragment}><b class="text-ok">They agreed</b>, which raises our confidence.</>`;
@@ -37,9 +25,6 @@ function Agreement({ verdict }) {
   </>`;
 }
 
-/**
- * @param {AnalysisResult} result
- */
 export function findingsTab(result) {
   const warnings = result.findings.filter((finding) => finding.severity !== "info");
   const notes = result.findings.filter((finding) => finding.severity === "info");
@@ -56,7 +41,6 @@ export function findingsTab(result) {
     },
   );
 
-  // The five Stage 4 pillars, in plain English with the spec name in brackets.
   const breakdown = section(
     `Why we scored it ${verdict.risk_score} out of 100`,
     html`<${Fragment}>

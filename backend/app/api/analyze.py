@@ -1,4 +1,3 @@
-"""Ingestion and case endpoints."""
 from __future__ import annotations
 
 import hashlib
@@ -44,15 +43,12 @@ _SOURCE_TYPES = set(get_args(SourceType))
 MAX_EXPORT_ROWS = 5000
 _EXPORT_PAGE = 500
 
-# Per-request cap on messages enqueued; the client submits the next batch.
 MAX_ASYNC_FILES = 500
-# Job ids are broker-issued UUIDs; checked before use as a cache key.
 _MAX_POLL_IDS = 100
 _JOB_ID = re.compile("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
 
 
 def _choice(value: str | None, allowed: set[str], name: str) -> str | None:
-    """Normalise an optional enum-like filter: blank means 'no filter', anything else must be a known value."""
     value = (value or "").strip()
     if not value:
         return None
@@ -64,7 +60,6 @@ def _choice(value: str | None, allowed: set[str], name: str) -> str | None:
 
 
 def _clean_filename(name: str | None, fallback: str) -> str:
-    """Last path segment only, trimmed, never empty."""
     tail = _PATH_SEPARATORS.split((name or "").strip())[-1].strip()
     return (tail or fallback)[:_MAX_FILENAME]
 
@@ -80,7 +75,6 @@ def _check_size(size: int, filename: str, settings: Settings) -> None:
 
 
 def _check_job_id(job_id: str) -> None:
-    """Reject anything that is not a broker-issued id before it is used as a key."""
     if not _JOB_ID.fullmatch(job_id):
         raise HTTPException(status_code=422, detail=f"'{job_id[:64]}' is not a job id")
 
@@ -88,7 +82,6 @@ def _check_job_id(job_id: str) -> None:
 def _process(
     raw: bytes, filename: str, actor: str, mask: bool, store: Store, settings: Settings
 ) -> tuple[AnalysisResult, Alert | None]:
-    """Worker-thread body: pipeline, alerting, optional masking."""
     result = pipeline.analyze_bytes(raw, filename, store, settings, actor)
     alert = maybe_alert(result, store, settings)
     if mask:
@@ -98,7 +91,6 @@ def _process(
 
 
 class CaseFilters:
-    """The filters ``GET /api/emails`` and its CSV export share."""
 
     def __init__(
         self,
@@ -176,7 +168,6 @@ async def analyze_upload_async(
     files: Annotated[list[UploadFile], File(description="One or more RFC 822 messages (.eml / .txt)")],
     actor: ActorParam = DEFAULT_ACTOR,
 ) -> AsyncAnalyzeResponse:
-    """Queue messages for analysis and return job ids."""
     if len(files) > MAX_ASYNC_FILES:
         raise HTTPException(
             status_code=413,
@@ -192,7 +183,6 @@ async def analyze_upload_async(
 
     jobs: list[JobStatus] = []
     for filename, raw in payloads:
-        # apply_async does socket I/O (and in eager mode, the whole analysis).
         try:
             job_id = await run_in_threadpool(tasks.enqueue, raw, filename, actor)
         except tasks.QueueUnavailable as exc:
@@ -209,7 +199,6 @@ async def analyze_upload_async(
 
 @router.get("/jobs/{job_id}")
 async def get_job(job_id: str) -> JobStatus:
-    """Poll one queued message."""
     _check_job_id(job_id)
     return JobStatus(**await run_in_threadpool(tasks.job_state, job_id))
 
@@ -218,7 +207,6 @@ async def get_job(job_id: str) -> JobStatus:
 async def get_jobs(
     ids: Annotated[str, Query(max_length=_MAX_POLL_IDS * 40, description="Comma-separated job ids")],
 ) -> list[JobStatus]:
-    """Poll a batch in one request instead of one connection per job."""
     job_ids = [part.strip() for part in ids.split(",") if part.strip()]
     if not job_ids:
         raise HTTPException(status_code=422, detail="ids must name at least one job")
@@ -251,7 +239,6 @@ def export_emails_csv(
     mask: MaskDep,
     limit: Annotated[int, Query(ge=1, le=MAX_EXPORT_ROWS, description="Hard cap on exported rows")] = MAX_EXPORT_ROWS,
 ) -> Response:
-    """The case list as a CSV, with the same filters ``GET /api/emails`` accepts."""
     rows: list[CaseSummary] = []
     while len(rows) < limit:
         page, total = filters.page(store, limit=min(_EXPORT_PAGE, limit - len(rows)), offset=len(rows))
@@ -303,25 +290,21 @@ def get_raw(email_id: str, store: StoreDep, settings: SettingsDep) -> Response:
 
 @router.post("/emails/{email_id}/quarantine")
 def quarantine_email(email_id: str, store: StoreDep, actor: ActorParam = DEFAULT_ACTOR) -> CaseDecision:
-    """Record a decision to quarantine this message and return its IOCs."""
     return decisions.record(store, email_id, "quarantine", actor)
 
 
 @router.post("/emails/{email_id}/block")
 def block_email(email_id: str, store: StoreDep, actor: ActorParam = DEFAULT_ACTOR) -> CaseDecision:
-    """Record a decision to block this sender/infrastructure and return its IOCs."""
     return decisions.record(store, email_id, "block", actor)
 
 
 @router.get("/emails/{email_id}/decision")
 def get_decision(email_id: str, store: StoreDep) -> CaseDecision:
-    """The decision currently recorded against a case, with its ledger history."""
     return decisions.current(store, decisions.load_case(store, email_id))
 
 
 @router.get("/emails/{email_id}/explanation")
 async def get_explanation(email_id: str, store: StoreDep, settings: SettingsDep) -> LimeReport:
-    """The LIME explanation for a case, fitted on the first request and cached."""
     result = decisions.load_case(store, email_id)
     return await run_in_threadpool(explanations.lime_report, result, settings, store)
 

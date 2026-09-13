@@ -1,4 +1,3 @@
-"""Entry point: ``python run.py`` starts the MailTrace web server with the settings read from the environment / ``.env`` (see ``app/config.py``)."""
 from __future__ import annotations
 
 import logging
@@ -11,9 +10,7 @@ from app.schemas import ENGINE_VERSION
 
 
 def lan_addresses() -> list[str]:
-    """This machine's addresses on the local network, best effort."""
     found: list[str] = []
-    # The UDP "connect" needs no traffic; it just picks the outbound interface.
     probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         probe.connect(("10.255.255.255", 1))

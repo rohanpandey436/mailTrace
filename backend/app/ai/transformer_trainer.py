@@ -1,4 +1,3 @@
-"""Fine-tune DistilRoBERTa for the five MailTrace classes and export it to ONNX int8."""
 from __future__ import annotations
 
 import argparse
@@ -16,7 +15,6 @@ from .model_trainer import LABELS, load_corpus
 log = logging.getLogger("mailtrace.ml.transformer")
 
 BASE_MODEL = "distilroberta-base"
-#: Public binary phishing corpus used for stage 1.
 PRETRAIN_DATASET = "zefang-liu/phishing-email-dataset"
 MAX_TOKENS = 192
 SEED = 42
@@ -29,12 +27,11 @@ def _device_note() -> str:
 
 
 def _pretrain_frame() -> tuple[list[str], list[int]] | None:
-    """(texts, 0/1 labels) from the public corpus, or None when unreachable."""
     try:
         from datasets import load_dataset
 
         data = load_dataset(PRETRAIN_DATASET, split="train")
-    except Exception as exc:  # noqa: BLE001 - an offline machine must still be able to train
+    except Exception as exc:
         log.warning("could not load %s (%s); skipping stage 1", PRETRAIN_DATASET, exc)
         return None
     text_column = next((c for c in data.column_names if "text" in c.lower()), None)
@@ -105,7 +102,6 @@ def _accuracy(model: Any, tokenizer: Any, texts: list[str], labels: list[int]) -
 
 
 def _onnx_accuracy(directory: Path, texts: list[str], labels: list[int]) -> float:
-    """Accuracy of the exported graph, read back the way the service reads it."""
     from .transformer import TransformerClassifier
 
     classifier = TransformerClassifier.load(directory)
@@ -142,7 +138,6 @@ def main(argv: list[str] | None = None) -> int:
 
     tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL)
 
-    # Stage 1 -------------------------------------------------------------
     if not args.skip_pretrain:
         frame = _pretrain_frame()
         if frame is not None:
@@ -163,7 +158,6 @@ def main(argv: list[str] | None = None) -> int:
         base = BASE_MODEL
     print(f"stage 2 starts from {base}", flush=True)
 
-    # Stage 2 -------------------------------------------------------------
     corpus_texts, corpus_labels = load_corpus(default_settings.corpus_path)
     y = [LABELS.index(label) for label in corpus_labels]
     x_train, x_test, y_train, y_test = train_test_split(
@@ -182,7 +176,6 @@ def main(argv: list[str] | None = None) -> int:
     torch_accuracy = _accuracy(model, tokenizer, x_test, y_test)
     print(f"\nfloat32 (PyTorch) hold-out accuracy: {torch_accuracy:.4f}", flush=True)
 
-    # Export ---------------------------------------------------------------
     from optimum.onnxruntime import ORTModelForSequenceClassification, ORTQuantizer
     from optimum.onnxruntime.configuration import AutoQuantizationConfig
 

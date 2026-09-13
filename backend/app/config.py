@@ -1,26 +1,24 @@
-"""Runtime configuration."""
 from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
-BASE_DIR = Path(__file__).resolve().parent.parent   # .../mailtrace/backend
-PROJECT_DIR = BASE_DIR.parent                        # .../mailtrace
+BASE_DIR = Path(__file__).resolve().parent.parent
+PROJECT_DIR = BASE_DIR.parent
 ENV_PREFIX = "MAILTRACE_"
 
 DEFAULT_WEIGHTS: dict[str, float] = {
-    "auth": 0.20,     # SPF / DKIM / DMARC / alignment / forged sender fields
-    "text": 0.35,     # NLP intent, BEC patterns, social-engineering language
-    "url": 0.25,      # link risk, lookalike and deceptive domains
-    "network": 0.10,  # origin infrastructure, VPN / TOR, routing anomalies, blocklists
-    "entropy": 0.10,  # attachment Shannon entropy and file-level payload risk
+    "auth": 0.20,
+    "text": 0.35,
+    "url": 0.25,
+    "network": 0.10,
+    "entropy": 0.10,
 }
 PILLARS: tuple[str, ...] = tuple(DEFAULT_WEIGHTS)
 
 
 def _load_dotenv(path: Path) -> None:
-    """Minimal .env loader: KEY=VALUE lines, '#' comments, no interpolation."""
     if not path.is_file():
         return
     for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
@@ -60,7 +58,6 @@ def _env_float(name: str, default: float) -> float:
 
 
 def _downloaded_geolite() -> str:
-    """The GeoLite2 database ``scripts/fetch_geolite2.py`` writes, when it is there."""
     path = BASE_DIR / "data" / "GeoLite2-City.mmdb"
     return str(path) if path.is_file() else ""
 
@@ -74,20 +71,16 @@ def _env_list(name: str, default: list[str]) -> list[str]:
 
 @dataclass
 class Settings:
-    # Storage
     data_dir: Path = field(default_factory=lambda: BASE_DIR / "data")
     database_url: str = ""
     redis_url: str = ""
     queue_workers: int = 1
-    # How long a finished job stays pollable. The case itself is in the database.
     queue_result_ttl: int = 3600
-    # Organisation context (the party being protected)
     org_name: str = "Protected Organisation"
     org_domains: list[str] = field(default_factory=lambda: ["example.org"])
     executives: list[str] = field(default_factory=lambda: ["ceo", "cfo", "managing director"])
     protected_brands: list[str] = field(default_factory=list)
     trusted_relays: list[str] = field(default_factory=list)
-    # Network enrichment
     enable_network: bool = True
     lookup_timeout: float = 3.0
     max_domain_lookups: int = 6
@@ -104,23 +97,17 @@ class Settings:
     entropy_threshold: float = 7.0
     simhash_max_distance: int = 12
     tlsh_max_distance: int = 60
-    # Stage 5B: outbound alert webhooks (comma separated), e.g. a SIEM or Slack URL.
     webhook_urls: list[str] = field(default_factory=list)
-    # Stage 5C: analyse and return, storing nothing on disk.
     zero_persistence: bool = False
     cache_ttl_seconds: int = 6 * 3600
-    # Privacy / alerting
     pii_mask_default: bool = False
     alert_threshold: int = 70
-    # Scoring
     weights: dict[str, float] = field(default_factory=lambda: dict(DEFAULT_WEIGHTS))
-    # Web
     host: str = "127.0.0.1"
     port: int = 8000
     max_upload_bytes: int = 15 * 1024 * 1024
     log_level: str = "info"
 
-    # Derived paths -------------------------------------------------------
     @property
     def db_path(self) -> Path:
         return self.data_dir / "mailtrace.db"
@@ -135,7 +122,6 @@ class Settings:
 
     @property
     def url_model_path(self) -> Path:
-        """Cache for the XGBoost URL/domain model, beside the text model."""
         return self.data_dir / "url_model.joblib"
 
     @property
@@ -144,7 +130,6 @@ class Settings:
 
     @property
     def static_dir(self) -> Path:
-        """The single-page dashboard, which lives outside the backend package."""
         return PROJECT_DIR / "frontend"
 
     @property
@@ -167,7 +152,6 @@ class Settings:
         return cls(
             data_dir=Path(_env("DATA_DIR", "").strip() or str(BASE_DIR / "data")),
             database_url=_env("DATABASE_URL", os.environ.get("DATABASE_URL", "")).strip(),
-            # Render, Heroku and docker-compose publish a bare REDIS_URL; the prefixed name wins.
             redis_url=_env("REDIS_URL", os.environ.get("REDIS_URL", "")).strip(),
             queue_workers=_env_int("QUEUE_WORKERS", 1),
             queue_result_ttl=_env_int("QUEUE_RESULT_TTL", 3600),
@@ -192,7 +176,6 @@ class Settings:
             entropy_threshold=_env_float("ENTROPY_THRESHOLD", 7.0),
             simhash_max_distance=_env_int("SIMHASH_MAX_DISTANCE", 12),
             tlsh_max_distance=_env_int("TLSH_MAX_DISTANCE", 60),
-            # URLs keep their case, so _env_list (which lowercases) is not used here.
             webhook_urls=[u.strip() for u in _env("WEBHOOK_URLS", "").split(",") if u.strip()],
             zero_persistence=_env_bool("ZERO_PERSISTENCE", False),
             cache_ttl_seconds=_env_int("CACHE_TTL_SECONDS", 6 * 3600),

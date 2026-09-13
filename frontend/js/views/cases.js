@@ -1,5 +1,3 @@
-// @ts-check
-/** The case list: search, filter, page, and export the same selection as CSV. */
 import { api, urls } from "../api.js";
 import { plural } from "../format.js";
 import { useAsync } from "../hooks.js";
@@ -13,11 +11,9 @@ const PAGE_SIZE = 25;
 
 export function CasesView() {
   const [filters, setFilters] = useState(session.listFilters);
-  // The range input updates as it is dragged; the query only follows on release.
   const [riskDraft, setRiskDraft] = useState(session.listFilters.minRisk);
   const [draftQuery, setDraftQuery] = useState(session.listFilters.q);
 
-  /** @param {Partial<typeof filters>} patch */
   const apply = (patch) => {
     const next = { ...filters, ...patch, page: patch.page ?? 0 };
     session.listFilters = next;
@@ -56,7 +52,7 @@ export function CasesView() {
     ${pageHead("Checked emails", "Every email you have run through MailTrace. Click any row to open the full report.")}
     <form
       class="card card--tight section grid grid--filters"
-      onSubmit=${(/** @type {SubmitEvent} */ event) => {
+      onSubmit=${(event) => {
         event.preventDefault();
         apply({ q: draftQuery.trim() });
       }}
@@ -68,7 +64,7 @@ export function CasesView() {
           value=${draftQuery}
           placeholder="subject, sender, IP, domain"
           autoComplete="off"
-          onChange=${(/** @type {{ target: HTMLInputElement }} */ event) => setDraftQuery(event.target.value)}
+          onChange=${(event) => setDraftQuery(event.target.value)}
         />
       </label>
       <label class="field">
@@ -76,7 +72,7 @@ export function CasesView() {
         <select
           class="input"
           value=${filters.category}
-          onChange=${(/** @type {{ target: HTMLSelectElement }} */ event) => apply({ category: event.target.value })}
+          onChange=${(event) => apply({ category: event.target.value })}
         >
           <option value="">Show all</option>
           ${Object.entries(CATEGORY).map(([value, label]) => html`<option key=${value} value=${value}>${label.label}</option>`)}
@@ -91,7 +87,7 @@ export function CasesView() {
           max="100"
           step="5"
           value=${riskDraft}
-          onChange=${(/** @type {{ target: HTMLInputElement }} */ event) => setRiskDraft(Number(event.target.value))}
+          onChange=${(event) => setRiskDraft(Number(event.target.value))}
           onMouseUp=${() => apply({ minRisk: riskDraft })}
           onTouchEnd=${() => apply({ minRisk: riskDraft })}
           onKeyUp=${() => apply({ minRisk: riskDraft })}

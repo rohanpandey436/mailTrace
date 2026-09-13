@@ -27,7 +27,7 @@ def test_registrable_domain():
 def test_damerau_levenshtein():
     assert damerau_levenshtein("paypal", "paypal") == 0
     assert damerau_levenshtein("paypal", "paypa") == 1
-    assert damerau_levenshtein("paypal", "papyal") == 1  # transposition
+    assert damerau_levenshtein("paypal", "papyal") == 1
     assert damerau_levenshtein("", "abc") == 3
 
 
@@ -39,7 +39,6 @@ def test_lookalike_detection(cfg):
     assert is_lookalike("paypal.xyz", cfg) == ("paypal", "tld_swap")
     assert is_lookalike("login.microsoft.com.evil.top", cfg) == ("microsoft", "subdomain_abuse")
     assert is_lookalike("xn--pypal-4ve.com", cfg)[1] == "punycode"
-    # never flag the real thing, its sub-domains, the protected org or free-mail
     assert is_lookalike("mail.google.com", cfg) == ("", "")
     assert is_lookalike("github.io", cfg) == ("", "")
     assert is_lookalike("acme-corp.in", cfg) == ("", "")
@@ -105,7 +104,6 @@ def test_analyze_urls_on_samples(sample, cfg):
 
 
 def _typosquat_unpruned(sld: str, key: str) -> bool:
-    """Stage 3's acceptance test as it read before the prune was added."""
     distance = damerau_levenshtein(sld, key)
     if distance == 1 and sld[0] == key[0]:
         return True
@@ -113,7 +111,6 @@ def _typosquat_unpruned(sld: str, key: str) -> bool:
 
 
 def _typosquat_pruned(sld: str, key: str) -> bool:
-    """Stage 3's acceptance test as it reads now, cheap checks first."""
     if sld[0] != key[0] or abs(len(sld) - len(key)) > _MAX_TYPOSQUAT_DISTANCE:
         return False
     distance = damerau_levenshtein(sld, key)
@@ -121,7 +118,6 @@ def _typosquat_pruned(sld: str, key: str) -> bool:
 
 
 def test_typosquat_prune_is_exact(cfg):
-    """The prune in stage 3 of ``is_lookalike`` must flag exactly what it used to."""
     keys = [key for key in _candidates(cfg) if len(key) >= 5]
     assert len(keys) > 50, "the brand table should be large enough for this to mean something"
 
@@ -129,11 +125,11 @@ def test_typosquat_prune_is_exact(cfg):
     for key in keys:
         probes.add(key)
         for index in range(len(key)):
-            probes.add(key[:index] + key[index + 1:])                    # deletion
-            probes.add(key[:index] + "x" + key[index:])                  # insertion
-            probes.add(key[:index] + "1" + key[index + 1:])              # substitution
+            probes.add(key[:index] + key[index + 1:])
+            probes.add(key[:index] + "x" + key[index:])
+            probes.add(key[:index] + "1" + key[index + 1:])
             if index + 1 < len(key):
-                probes.add(key[:index] + key[index + 1] + key[index] + key[index + 2:])  # transposition
+                probes.add(key[:index] + key[index + 1] + key[index] + key[index + 2:])
 
     pairs = skipped = matched = 0
     for sld in sorted(probes):

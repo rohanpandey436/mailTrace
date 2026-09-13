@@ -1,4 +1,3 @@
-
 name: mailtrace
 
 services:
@@ -20,7 +19,6 @@ services:
       - "8000:8000"
     environment:
       MAILTRACE_REDIS_URL: redis://redis:6379/0
-      # 0 = enqueue only; the worker service does the analysis.
       MAILTRACE_QUEUE_WORKERS: "0"
       MAILTRACE_ENABLE_NETWORK: "false"
     volumes:
@@ -30,7 +28,6 @@ services:
         condition: service_healthy
 
   worker:
-    # The same image, started as a Celery worker.
     build:
       context: ..
       dockerfile: deploy/Dockerfile
@@ -42,7 +39,6 @@ services:
       - worker
       - --queues=mailtrace.analysis
       - --loglevel=info
-      # Analysis is CPU-bound; scale the service rather than the concurrency.
       - --concurrency=1
     environment:
       MAILTRACE_REDIS_URL: redis://redis:6379/0

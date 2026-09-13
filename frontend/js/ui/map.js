@@ -1,29 +1,20 @@
-// @ts-check
 import { esc } from "../dom.js";
 import { place } from "../format.js";
 import { html, useEffect, useRef } from "../react.js";
 import { color } from "../theme.js";
 
-/** @typedef {import('../types.js').Hop} Hop */
-
 const TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
 const ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
 const TILE_MAX_ZOOM = 18;
-/** Where the map rests when nothing could be located. */
-const WORLD_CENTRE = /** @type {L.LatLngTuple} */ ([22, 20]);
+const WORLD_CENTRE = ([22, 20]);
 const WORLD_ZOOM = 2;
 const SINGLE_POINT_ZOOM = 5;
 const FIT_MAX_ZOOM = 8;
 const FIT_PADDING = 0.35;
 const ORIGIN_RADIUS = 10;
 const HOP_RADIUS = 7;
-/** Leaflet measures its container once; give the layout a moment to settle first. */
 const LAYOUT_SETTLE_MS = 60;
 
-/**
- * @param {Hop} hop
- * @param {boolean} origin
- */
 function popup(hop, origin) {
   const geo = hop.geo;
   return `<div class="map-popup"><b>Step ${hop.index + 1}${origin ? " · started here" : ""}</b><br>${esc(hop.from_ip)}<br>${esc(
@@ -31,14 +22,10 @@ function popup(hop, origin) {
   )}<br>${esc(geo?.isp)}</div>`;
 }
 
-/**
- * @param {{ hops: Hop[], originIndex: number | null, selected: number | null, onSelect: (index: number) => void }} props
- */
 export function RouteMap({ hops, originIndex, selected, onSelect }) {
-  const container = useRef(/** @type {HTMLDivElement | null} */ (null));
-  const map = useRef(/** @type {L.Map | null} */ (null));
-  const pins = useRef(/** @type {Map<number, L.CircleMarker>} */ (new Map()));
-  // Kept in a ref so rebuilding the map does not depend on the handler's identity.
+  const container = useRef((null));
+  const map = useRef((null));
+  const pins = useRef((new Map()));
   const select = useRef(onSelect);
   select.current = onSelect;
 
@@ -51,7 +38,6 @@ export function RouteMap({ hops, originIndex, selected, onSelect }) {
     pins.current = new Map();
     L.tileLayer(TILE_URL, { attribution: ATTRIBUTION, maxZoom: TILE_MAX_ZOOM }).addTo(instance);
 
-    /** @type {Array<{ hop: Hop, point: L.LatLngTuple }>} */
     const located = [];
     for (const hop of hops) {
       if (hop.geo && hop.geo.lat !== null && hop.geo.lon !== null) located.push({ hop, point: [hop.geo.lat, hop.geo.lon] });

@@ -1,5 +1,3 @@
-
-# Version control and CI
 .git/
 .github/
 .gitignore
@@ -33,7 +31,6 @@ engine/*.egg-info/
 
 backend/tests/
 
-# Editor / OS noise
 .vscode/
 .idea/
 .DS_Store

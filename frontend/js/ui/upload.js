@@ -1,27 +1,18 @@
-// @ts-check
-/** The drop zone: choose or drop `.eml` files, or paste the raw message source. */
 import { api, errorMessage } from "../api.js";
 import { plural } from "../format.js";
 import { html, useEffect, useRef, useState } from "../react.js";
 import { navigate } from "../router.js";
 import { toast } from "./toast.js";
 
-/** @typedef {import('../types.js').AnalyzeResponse} AnalyzeResponse */
-/** @typedef {import('../types.js').JobStatus} JobStatus */
-/** @typedef {'help' | 'paste' | null} OpenPanel */
-
-/** Batches of this size or more go through the queue; smaller ones use the direct endpoint and land on the case. */
 const QUEUE_FROM = 5;
 const POLL_MS = 1200;
-/** A job that will never change again. */
 const TERMINAL = new Set(["SUCCESS", "FAILURE", "REVOKED"]);
 
-/** @param {number} ms */
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export function Dropzone() {
-  const fileInput = useRef(/** @type {HTMLInputElement | null} */ (null));
-  const [panel, setPanel] = useState(/** @type {OpenPanel} */ (null));
+  const fileInput = useRef((null));
+  const [panel, setPanel] = useState((null));
   const [pasted, setPasted] = useState("");
   const [status, setStatus] = useState("");
   const [over, setOver] = useState(false);
@@ -31,10 +22,6 @@ export function Dropzone() {
     gone.current = true;
   }, []);
 
-  /**
-   * @param {() => Promise<AnalyzeResponse>} call
-   * @param {string} label what is being checked, for the status line
-   */
   async function run(call, label) {
     setBusy(true);
     setStatus(`Checking ${label}… this takes a few seconds when internet lookups are on.`);
@@ -61,12 +48,6 @@ export function Dropzone() {
     }
   }
 
-  /**
-   * Queue a batch and poll it to completion. With a broker the upload returns
-   * immediately and a worker does the work; without one every job is already
-   * finished on the first poll.
-   * @param {File[]} files
-   */
   async function runBatch(files) {
     setBusy(true);
     setStatus(`Queueing ${plural(files.length, "email")}…`);
@@ -76,11 +57,9 @@ export function Dropzone() {
         toast("Nothing came back.", "error");
         return;
       }
-      /** @type {Map<string, string>} filenames, which only the submission knows */
       const names = new Map(jobs.map((job) => [job.job_id, job.filename]));
       const ids = jobs.map((job) => job.job_id);
 
-      /** @type {JobStatus[]} */
       let states = jobs;
       while (!gone.current) {
         const finished = states.filter((job) => TERMINAL.has(job.state));
@@ -99,7 +78,6 @@ export function Dropzone() {
         const first = names.get(failed[0].job_id) || failed[0].job_id;
         toast(html`${plural(failed.length, "email")} could not be checked, starting with <b>${first}</b>.`, "error");
       }
-      // The list, not one case: a batch has no single result to land on.
       if (done > 0) navigate("#/cases");
     } catch (error) {
       toast(html`Could not check those: ${errorMessage(error)}`, "error");
@@ -109,7 +87,6 @@ export function Dropzone() {
     }
   }
 
-  /** @param {FileList | null} files */
   const analyseFiles = (files) => {
     if (busy || !files || files.length === 0) return;
     const chosen = Array.from(files);
@@ -120,8 +97,7 @@ export function Dropzone() {
     }
   };
 
-  /** Clicks inside a panel, or on a button, are not a request for the file picker. */
-  const openPicker = (/** @type {{ target: EventTarget | null }} */ event) => {
+  const openPicker = (event) => {
     if (event.target instanceof Element && event.target.closest(".dropzone__panel, button")) return;
     fileInput.current?.click();
   };
@@ -133,12 +109,12 @@ export function Dropzone() {
     aria-label="Choose email files to check"
     aria-busy=${String(busy)}
     onClick=${openPicker}
-    onDragOver=${(/** @type {DragEvent} */ event) => {
+    onDragOver=${(event) => {
       event.preventDefault();
       setOver(true);
     }}
     onDragLeave=${() => setOver(false)}
-    onDrop=${(/** @type {DragEvent} */ event) => {
+    onDrop=${(event) => {
       event.preventDefault();
       setOver(false);
       analyseFiles(event.dataTransfer?.files ?? null);
@@ -169,7 +145,7 @@ export function Dropzone() {
         class="input input--area"
         placeholder=${'Paste the whole message source here, starting from the lines that look like "Received:" and "From:"…'}
         value=${pasted}
-        onChange=${(/** @type {{ target: HTMLTextAreaElement }} */ event) => setPasted(event.target.value)}
+        onChange=${(event) => setPasted(event.target.value)}
       ></textarea>
       <div class="cluster cluster--end dropzone__actions">
         <button
@@ -195,7 +171,7 @@ export function Dropzone() {
       multiple
       hidden
       ref=${fileInput}
-      onChange=${(/** @type {{ target: HTMLInputElement }} */ event) => {
+      onChange=${(event) => {
         analyseFiles(event.target.files);
         event.target.value = "";
       }}

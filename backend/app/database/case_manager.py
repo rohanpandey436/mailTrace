@@ -1,4 +1,3 @@
-"""Persistence: SQLite store for analyses, indicators, campaigns, alerts, a lookup cache and the hash-chained chain-of-custody ledger."""
 from __future__ import annotations
 
 import hashlib
@@ -31,7 +30,7 @@ from ..schemas import (
     ThreatCategory,
 )
 
-if TYPE_CHECKING:  # pragma: no cover - annotations only; psycopg is an optional runtime dependency
+if TYPE_CHECKING:
     import psycopg
 
 log = logging.getLogger("mailtrace.db")
@@ -39,7 +38,6 @@ log = logging.getLogger("mailtrace.db")
 GENESIS_HASH = "0" * 64
 HIGH_RISK_THRESHOLD = 70
 DEFAULT_CASE_STATUS: CaseStatus = "open"
-# Column text -> the typed status; anything else normalises to the default.
 _STATUS_BY_NAME: dict[str, CaseStatus] = {str(name): name for name in CASE_STATUSES}
 
 
@@ -137,7 +135,6 @@ def _parse_dt(value: str) -> datetime:
 
 
 def canonical_json(value: Any) -> str:
-    """Deterministic JSON used for hashing (sorted keys, compact, UTF-8)."""
     return json.dumps(value, sort_keys=True, separators=(",", ":"), default=str, ensure_ascii=False)
 
 
@@ -151,7 +148,6 @@ def chain_hash(
 POSTGRES_SCHEMES = ("postgres://", "postgresql://")
 
 Connection = Any
-# A result row: readable by column name and by position (sqlite3.Row / _PgRow).
 Row = Any
 
 
@@ -160,7 +156,6 @@ def _insert_columns(columns: list[str]) -> tuple[str, str]:
 
 
 class _SqliteDialect:
-    """The historical behaviour of this module, unchanged."""
 
     name = "sqlite"
 
@@ -175,8 +170,6 @@ class _SqliteDialect:
 
     def init_schema(self, conn: Connection) -> None:
         if self.on_disk:
-            # WAL is meaningless for :memory: (its journal mode is always "memory"),
-            # and both pragmas exist only to make on-disk writes cheap and concurrent.
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA synchronous=NORMAL")
         conn.executescript(_SCHEMA)
@@ -193,7 +186,6 @@ class _SqliteDialect:
 
 
 class _PgRow:
-    """A row readable both as ``row["column"]`` and ``row[0]``, like sqlite3.Row."""
 
     __slots__ = ("_index", "_values")
 
@@ -224,7 +216,6 @@ def _pg_row_factory(cursor: psycopg.Cursor[object]) -> Callable[[Sequence[object
 
 
 class _PgConnection:
-    """Makes a psycopg connection answer to the small sqlite3 API used here."""
 
     def __init__(self, conn: Any) -> None:
         self._conn = conn
@@ -250,7 +241,6 @@ class _PgConnection:
 
 
 class _PostgresDialect:
-    """PostgreSQL / Supabase backend (optional: needs ``psycopg``)."""
 
     name = "postgresql"
 
@@ -258,7 +248,7 @@ class _PostgresDialect:
         self.url = url
 
     def connect(self) -> Connection:
-        import psycopg  # optional dependency, imported only when configured
+        import psycopg
 
         conn = psycopg.connect(
             self.url, autocommit=True, row_factory=_pg_row_factory, prepare_threshold=None
@@ -271,7 +261,6 @@ class _PostgresDialect:
 
     @staticmethod
     def _schema_statements() -> list[str]:
-        """``_SCHEMA`` is already valid PostgreSQL (TEXT/INTEGER/REAL, IF NOT"""
         schema = _SCHEMA.replace("    indicator TEXT NOT NULL,", '    indicator TEXT COLLATE "C" NOT NULL,')
         return [statement.strip() for statement in schema.split(";") if statement.strip()]
 
@@ -290,7 +279,6 @@ class _PostgresDialect:
 
 
 def _make_dialect(target: str, database_url: str, *, on_disk: bool) -> Any:
-    """PostgreSQL when it is configured, reachable and importable; SQLite otherwise."""
     url = (database_url or "").strip()
     if not url or not url.startswith(POSTGRES_SCHEMES):
         return _SqliteDialect(target, on_disk=on_disk)
@@ -301,7 +289,6 @@ def _make_dialect(target: str, database_url: str, *, on_disk: bool) -> Any:
 
 
 class Store:
-    """Thread-safe SQLite persistence for MailTrace."""
 
     def __init__(
         self, db_path: Path, evidence_dir: Path, *, in_memory: bool = False, database_url: str = ""
@@ -320,7 +307,7 @@ class Store:
             self.backend_note = "MAILTRACE_DATABASE_URL is set but is not a postgres:// or postgresql:// URL"
         try:
             self._conn = self._dialect.connect()
-        except Exception as exc:  # noqa: BLE001 - an unreachable server must not stop the service
+        except Exception as exc:
             self.backend_note = f"{type(exc).__name__}: {exc}"[:400]
             log.error(
                 "PostgreSQL backend unavailable (%s: %s); falling back to SQLite at %s. "
@@ -340,24 +327,22 @@ class Store:
 
     @property
     def backend(self) -> str:
-        """``"sqlite"`` or ``"postgresql"``: the engine actually in use."""
         return str(self._dialect.name)
 
     def close(self) -> None:
         with self._lock:
             try:
                 self._conn.close()
-            except Exception:  # sqlite3.Error or a psycopg error
+            except Exception:
                 log.debug("closing store failed", exc_info=True)
 
     @contextmanager
     def _tx(self) -> Iterator[Connection]:
-        """Explicit transaction (the connection runs in autocommit mode)."""
         with self._lock:
             self._conn.execute("BEGIN")
             try:
                 yield self._conn
-            except Exception:  # sqlite3.Error or a psycopg error; closing is best effort
+            except Exception:
                 self._conn.execute("ROLLBACK")
                 raise
             else:
@@ -404,7 +389,7 @@ class Store:
             return None
         try:
             return AnalysisResult.model_validate_json(row["result_json"])
-        except ValidationError:  # schema drift on old rows
+        except ValidationError:
             log.exception("stored analysis %s is unreadable", email_id)
             return None
 
@@ -419,7 +404,6 @@ class Store:
 
     @staticmethod
     def _row_status(row: Row) -> CaseStatus:
-        """Analyst decision on a joined case row; 'open' when the query did not join."""
         try:
             value = row["status"]
         except (IndexError, KeyError, TypeError):
@@ -491,7 +475,6 @@ class Store:
         return [self._row_to_summary(r) for r in rows], int(total)
 
     def update_campaign_id(self, email_id: str, campaign_id: str | None) -> None:
-        """Move an email into (or out of) a campaign."""
         with self._tx() as conn:
             conn.execute("UPDATE emails SET campaign_id = ? WHERE id = ?", (campaign_id, email_id))
             row = conn.execute("SELECT result_json FROM emails WHERE id = ?", (email_id,)).fetchone()
@@ -526,13 +509,11 @@ class Store:
         return [by_id[i] for i in ids if i in by_id]
 
     def get_case_status(self, email_id: str) -> CaseStatus:
-        """Current analyst decision on a case ('open' when none was recorded)."""
         with self._lock:
             row = self._conn.execute("SELECT status FROM case_status WHERE email_id = ?", (email_id,)).fetchone()
         return self._row_status(row) if row is not None else DEFAULT_CASE_STATUS
 
     def set_case_status(self, email_id: str, status: str, actor: str = "") -> bool:
-        """Record the analyst decision on a case; False when the case does not exist."""
         status = (status or DEFAULT_CASE_STATUS).strip().lower()
         if status not in CASE_STATUSES:
             raise ValueError(f"unknown case status {status!r}; expected one of {', '.join(CASE_STATUSES)}")
@@ -569,7 +550,6 @@ class Store:
         return result
 
     def find_indicators_by_prefix(self, prefix: str, exclude_email_id: str = "") -> dict[str, list[str]]:
-        """email_id -> that email's indicators beginning with ``prefix``."""
         prefix = prefix or ""
         if not prefix:
             return {}
@@ -657,7 +637,6 @@ class Store:
         )
 
     def verify_chain(self) -> tuple[bool, str]:
-        """Recompute every link; returns (valid, head_hash)."""
         with self._lock:
             rows = self._conn.execute("SELECT * FROM custody ORDER BY seq ASC").fetchall()
         prev_hash = GENESIS_HASH

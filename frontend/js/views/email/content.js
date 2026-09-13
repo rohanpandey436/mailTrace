@@ -1,5 +1,3 @@
-// @ts-check
-/** "How it tries to trick you": pressure tactics, BEC patterns, SHAP and LIME. */
 import { api } from "../../api.js";
 import { percent, signed } from "../../format.js";
 import { useAsync } from "../../hooks.js";
@@ -7,26 +5,16 @@ import { BEC_PATTERN, categoryOf } from "../../labels.js";
 import { Fragment, html } from "../../react.js";
 import { bar, chip, section } from "../../ui/primitives.js";
 
-/** @typedef {import('../../types.js').AnalysisResult} AnalysisResult */
-/** @typedef {import('../../types.js').BecPattern} BecPattern */
-/** @typedef {import('../../types.js').NlpAnalysis} NlpAnalysis */
-/** @typedef {import('../../types.js').TokenWeight} TokenWeight */
-
 const MAX_TERMS = 8;
 const MAX_EVIDENCE = 5;
 const MAX_TOP_TERMS = 6;
 const MAX_WEIGHTS = 8;
-/** Below this SHAP magnitudes are treated as equal, so a flat explanation still draws. */
 const MIN_WEIGHT_SCALE = 0.01;
 const URGENT_ABOVE = 0.5;
 const PATTERN_HIGH = 0.75;
 const PATTERN_MEDIUM = 0.5;
 
-/**
- * @param {{ nlp: NlpAnalysis }} props
- */
 function PressureTactics({ nlp }) {
-  /** @type {Array<[string, string[]]>} */
   const groups = [
     ["Rushing you", nlp.urgency_phrases],
     ["Scaring you", nlp.threat_terms],
@@ -59,9 +47,6 @@ function PressureTactics({ nlp }) {
   </>`;
 }
 
-/**
- * @param {{ pattern: BecPattern }} props
- */
 function PatternCard({ pattern }) {
   const tone = pattern.confidence >= PATTERN_HIGH ? "bad" : pattern.confidence >= PATTERN_MEDIUM ? "orange" : "warn";
   return html`<div class="pattern">
@@ -73,10 +58,6 @@ function PatternCard({ pattern }) {
   </div>`;
 }
 
-/**
- * Signed, diverging bars: red pushes toward the predicted category, green away.
- * @param {{ weights: TokenWeight[] }} props
- */
 function ShapChart({ weights }) {
   const shown = weights.slice(0, MAX_WEIGHTS);
   const scale = Math.max(MIN_WEIGHT_SCALE, ...shown.map((entry) => Math.abs(entry.weight)));
@@ -96,12 +77,6 @@ function ShapChart({ weights }) {
   </div>`;
 }
 
-/**
- * LIME is fitted when the case is opened, not during ingest: it costs several
- * times the rest of the analysis and changes no verdict, so the ingest pipeline
- * stays inside its budget and this arrives a moment later.
- * @param {{ emailId: string, predicted: string }} props
- */
 function LimeSection({ emailId, predicted }) {
   const { data, loading } = useAsync(() => api.getExplanation(emailId), [emailId]);
   if (loading) return html`<div class="skeleton"></div>`;
@@ -128,9 +103,6 @@ function LimeSection({ emailId, predicted }) {
   </>`;
 }
 
-/**
- * @param {{ result: AnalysisResult }} props
- */
 function ModelView({ result }) {
   const nlp = result.nlp;
   const probabilities = Object.entries(nlp.ml_probabilities).sort((a, b) => b[1] - a[1]);
@@ -166,9 +138,6 @@ function ModelView({ result }) {
   </>`;
 }
 
-/**
- * @param {{ result: AnalysisResult }} props
- */
 export function ContentTab({ result }) {
   const nlp = result.nlp;
   return html`<div class="grid grid--2">

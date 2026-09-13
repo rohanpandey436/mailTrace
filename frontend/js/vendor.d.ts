@@ -1,9 +1,3 @@
-/*
- * Ambient declarations for the two CDN libraries: only the surface the
- * dashboard uses, so ui/map.js and ui/graph.js type-check without a package
- * manager.
- */
-
 declare namespace L {
   type LatLngTuple = [number, number];
 

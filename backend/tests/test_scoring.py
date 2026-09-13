@@ -41,9 +41,9 @@ def test_risk_scale_and_breakdown(analyses):
         assert pillar in b.weights
     assert abs(sum(b.weights.values()) - 1.0) < 1e-6
     assert b.weights["auth"] == 0.20 and b.weights["text"] == 0.35 and b.weights["url"] == 0.25
-    assert b.auth >= 45   # SPF fail plus a spoofed display name and Reply-To
-    assert b.text >= 60   # credential-harvest wording
-    assert b.url >= 70    # critical lure link on a lookalike domain
+    assert b.auth >= 45
+    assert b.text >= 60
+    assert b.url >= 70
 
 
 def test_attribution(analyses):

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: MIT
 #include "mailtrace/entropy.hpp"
 
 #include <array>
@@ -26,7 +25,6 @@ double shannon_entropy(const std::uint8_t* data, std::size_t len) noexcept {
         entropy -= p * std::log2(p);
     }
 
-    // Clamp away the last ulp so callers can rely on the documented range.
     if (entropy < 0.0) {
         return 0.0;
     }
@@ -40,4 +38,4 @@ double shannon_entropy(std::string_view data) noexcept {
     return shannon_entropy(reinterpret_cast<const std::uint8_t*>(data.data()), data.size());
 }
 
-}  // namespace mailtrace
+}

@@ -1,6 +1,3 @@
-# Build artefacts of the optional mailtrace_engine extension.
-# Kept here rather than in the repo-root .gitignore so the engine directory is
-# self-contained: delete it and nothing else changes.
 build/
 dist/
 *.egg-info/

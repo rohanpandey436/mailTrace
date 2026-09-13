@@ -1,4 +1,3 @@
-"""Alert listing, acknowledgement, outbound webhooks and the live feed, which is served over both Server-Sent Events and a WebSocket."""
 from __future__ import annotations
 
 import asyncio
@@ -29,16 +28,14 @@ HEARTBEAT_SECONDS = 15.0
 POLL_SECONDS = 1.0
 SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
 
-# Stage 5B: outbound webhook alert streams.
 WEBHOOK_EVENT = "mailtrace.alert"
-WEBHOOK_TIMEOUT = 3.0          # seconds per POST: connect, write, read
-WEBHOOK_WORKERS = 4            # hard ceiling on webhook threads
-WEBHOOK_MAX_INFLIGHT = 64      # queued + running deliveries before shedding load
+WEBHOOK_TIMEOUT = 3.0
+WEBHOOK_WORKERS = 4
+WEBHOOK_MAX_INFLIGHT = 64
 WEBHOOK_USER_AGENT = f"MailTrace/{ENGINE_VERSION}"
 
 
 class Broadcaster:
-    """Fan-out of alerts to live subscribers; ``publish`` is safe from any thread."""
 
     def __init__(self) -> None:
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -46,7 +43,6 @@ class Broadcaster:
         self._lock = threading.Lock()
 
     def bind(self, loop: asyncio.AbstractEventLoop) -> None:
-        """Remember the event loop that owns the subscriber queues (called at startup)."""
         self._loop = loop
 
     def subscribe(self) -> asyncio.Queue[Alert]:
@@ -60,12 +56,10 @@ class Broadcaster:
             self._queues.discard(queue)
 
     def subscriber_count(self) -> int:
-        """Live SSE + WebSocket subscribers; a leak shows up here as a number that never falls."""
         with self._lock:
             return len(self._queues)
 
     def publish(self, alert: Alert) -> None:
-        """Deliver ``alert`` to every subscriber; dropped silently when no loop is bound."""
         loop = self._loop
         if loop is None or loop.is_closed():
             return
@@ -74,7 +68,7 @@ class Broadcaster:
         for queue in queues:
             try:
                 loop.call_soon_threadsafe(queue.put_nowait, alert)
-            except RuntimeError:  # loop closed between the check and the call
+            except RuntimeError:
                 return
 
 
@@ -82,24 +76,21 @@ broadcaster = Broadcaster()
 router = APIRouter(prefix="/api/alerts", tags=["alerts"])
 
 
-# Outbound webhooks
 _webhook_lock = threading.Lock()
 _webhook_pool: ThreadPoolExecutor | None = None
 _webhook_inflight = 0
 
 
 def case_url(email_id: str, settings: Settings) -> str:
-    """Deep link to the case in the dashboard (the UI routes on ``#/email/<id>``)."""
     host = (settings.host or "127.0.0.1").strip()
     if host in {"0.0.0.0", "::", "[::]", ""}:
-        host = "127.0.0.1"  # a wildcard bind is not an address anyone can click
+        host = "127.0.0.1"
     if ":" in host and not host.startswith("["):
-        host = f"[{host}]"  # bare IPv6 literal
+        host = f"[{host}]"
     return f"http://{host}:{settings.port}/#/email/{email_id}"
 
 
 def webhook_payload(alert: Alert, settings: Settings) -> dict[str, JsonValue]:
-    """The alert as JSON, plus the ``event`` type and a link back to the case."""
     payload: dict[str, JsonValue] = json.loads(alert.model_dump_json())
     payload["event"] = WEBHOOK_EVENT
     payload["url"] = case_url(alert.email_id, settings)
@@ -107,13 +98,12 @@ def webhook_payload(alert: Alert, settings: Settings) -> dict[str, JsonValue]:
 
 
 def deliver_webhooks(alert: Alert, settings: Settings) -> None:
-    """POST ``alert`` to every configured webhook URL.  Blocking; never raises."""
     urls = [url for url in (settings.webhook_urls or []) if url]
     if not urls:
         return
     try:
         import httpx
-    except ImportError:  # pragma: no cover - httpx is a hard dependency of the API
+    except ImportError:
         log.warning("httpx is not installed; %d alert webhook(s) not delivered", len(urls))
         return
     payload = webhook_payload(alert, settings)
@@ -123,19 +113,18 @@ def deliver_webhooks(alert: Alert, settings: Settings) -> None:
             for url in urls:
                 try:
                     response = client.post(url, json=payload, headers=headers)
-                except (httpx.HTTPError, httpx.InvalidURL) as exc:  # a dead endpoint is not our problem
+                except (httpx.HTTPError, httpx.InvalidURL) as exc:
                     log.warning("alert webhook %s failed for alert %s: %s", url, alert.id, exc)
                     continue
                 if response.status_code >= 400:
                     log.warning("alert webhook %s returned HTTP %d for alert %s", url, response.status_code, alert.id)
                 else:
                     log.info("alert %s delivered to webhook %s (HTTP %d)", alert.id, url, response.status_code)
-    except Exception:  # alerting must never break analysis
+    except Exception:
         log.warning("alert webhook delivery for alert %s failed", alert.id, exc_info=True)
 
 
 def dispatch_webhooks(alert: Alert, settings: Settings) -> None:
-    """Hand the delivery to a background thread and return immediately."""
     global _webhook_pool, _webhook_inflight
 
     if not [url for url in (settings.webhook_urls or []) if url]:
@@ -162,14 +151,13 @@ def dispatch_webhooks(alert: Alert, settings: Settings) -> None:
 
     try:
         pool.submit(run)
-    except RuntimeError:  # pool shut down between the submit and the check (app stopping)
+    except RuntimeError:
         with _webhook_lock:
             _webhook_inflight -= 1
         log.warning("alert webhook pool is shut down; alert %s not delivered", alert.id)
 
 
 def shutdown_webhooks(wait: bool = False) -> None:
-    """Release the webhook pool at shutdown; a later alert lazily creates a new one."""
     global _webhook_pool
     with _webhook_lock:
         pool, _webhook_pool = _webhook_pool, None
@@ -178,7 +166,6 @@ def shutdown_webhooks(wait: bool = False) -> None:
 
 
 def maybe_alert(result: AnalysisResult, store: Store, settings: Settings) -> Alert | None:
-    """Create, persist, broadcast and webhook an alert when the verdict reaches the threshold."""
     verdict = result.verdict
     if verdict.risk_score < settings.alert_threshold:
         return None
@@ -199,8 +186,8 @@ def maybe_alert(result: AnalysisResult, store: Store, settings: Settings) -> Ale
         ),
     )
     store.create_alert(alert)
-    broadcaster.publish(alert)          # browsers watching /api/alerts/stream
-    dispatch_webhooks(alert, settings)  # SIEM / Slack / any external system
+    broadcaster.publish(alert)
+    dispatch_webhooks(alert, settings)
     log.info("alert %s raised for email %s (%s, risk %d)", alert.id, result.id, verdict.category.value, verdict.risk_score)
     return alert
 
@@ -218,7 +205,6 @@ def list_alerts(
 
 @router.get("/stream")
 async def stream_alerts(request: Request, mask: MaskDep) -> StreamingResponse:
-    """SSE feed: ``event: alert`` per new alert, ``: ping`` heartbeat every 15 s."""
     queue = broadcaster.subscribe()
 
     async def events() -> AsyncIterator[str]:
@@ -244,7 +230,6 @@ async def stream_alerts(request: Request, mask: MaskDep) -> StreamingResponse:
 
 
 def _ws_mask(websocket: WebSocket) -> bool:
-    """Resolve ``?mask=`` for a WebSocket the way ``mask_param`` does for HTTP."""
     raw = websocket.query_params.get("mask")
     if raw is None:
         settings = getattr(getattr(websocket.app, "state", None), "settings", None)
@@ -254,7 +239,6 @@ def _ws_mask(websocket: WebSocket) -> bool:
 
 @router.websocket("/ws")
 async def alerts_websocket(websocket: WebSocket) -> None:
-    """Live alert feed over a WebSocket: one text frame of Alert JSON per alert."""
     mask = _ws_mask(websocket)
     await websocket.accept()
     queue = broadcaster.subscribe()
@@ -275,9 +259,9 @@ async def alerts_websocket(websocket: WebSocket) -> None:
                 await websocket.send_text((mask_alert(alert) if mask else alert).model_dump_json())
     except WebSocketDisconnect:
         log.debug("alert websocket closed by the client")
-    except RuntimeError:  # send/receive after the transport is already gone
+    except RuntimeError:
         log.debug("alert websocket transport closed mid-send", exc_info=True)
-    except Exception:  # a broken client must not surface as a 500
+    except Exception:
         log.warning("alert websocket failed", exc_info=True)
     finally:
         for task in (alert_task, receive_task):

@@ -1,4 +1,3 @@
-"""Domain intelligence: registration age, DNS posture, hosting fingerprint, reputation feeds and lookalike detection for every domain an email touches."""
 from __future__ import annotations
 
 import ipaddress
@@ -19,7 +18,7 @@ from ..utils.cache import cache_get, cache_set
 from .knowledge import COMMON_URL_HOSTS, DISPOSABLE_DOMAINS, FREEMAIL_DOMAINS, SUSPICIOUS_TLDS
 from .link_analyzer import is_lookalike, registrable_domain
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:
     from ..database.case_manager import Store
 
 log = logging.getLogger("mailtrace.domains")
@@ -65,7 +64,6 @@ _REFER_RE = re.compile(r"^\s*(?:whois|refer)\s*:\s*(\S+)", re.IGNORECASE | re.MU
 _WHOIS_MAX_BYTES = 64 * 1024
 
 
-# Small helpers
 def _timeout(cfg: Settings) -> float:
     try:
         return max(0.5, float(cfg.lookup_timeout))
@@ -105,13 +103,11 @@ def _parse_whois_date(value: str) -> datetime | None:
 
 
 def _text(record: Mapping[str, object], key: str) -> str:
-    """A string field of a cached JSON record; '' when absent or of another type."""
     value = record.get(key)
     return value if isinstance(value, str) else ""
 
 
 def _texts(record: Mapping[str, object], key: str) -> list[str]:
-    """A list-of-strings field of a cached JSON record; [] when absent or malformed."""
     value = record.get(key)
     return [str(item) for item in value] if isinstance(value, list) else []
 
@@ -126,7 +122,6 @@ def _from_iso(value: object) -> datetime | None:
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 
-# WHOIS
 def _whois_query(server: str, query: str, timeout: float) -> str:
     chunks: list[bytes] = []
     total = 0
@@ -165,7 +160,6 @@ def _whois_server_for(domain: str, cfg: Settings, store: Store | None) -> str:
 
 
 def whois_lookup(domain: str, cfg: Settings, store: Store | None) -> Mapping[str, object]:
-    """Registration facts for ``domain`` as a JSON-safe dict; ``{}`` on failure."""
     if not cfg.enable_network or not domain or _is_ip(domain):
         return {}
     cache_key = f"whois:{domain}"
@@ -205,9 +199,7 @@ def whois_lookup(domain: str, cfg: Settings, store: Store | None) -> Mapping[str
     return result
 
 
-# DNS
 def dns_lookup(domain: str, cfg: Settings, store: Store | None) -> Mapping[str, object]:
-    """A / MX / NS / SPF / DMARC records; ``{}`` when offline or unavailable."""
     if not cfg.enable_network or not domain or _is_ip(domain):
         return {}
     cache_key = f"dns:{domain}"
@@ -225,7 +217,7 @@ def dns_lookup(domain: str, cfg: Settings, store: Store | None) -> Mapping[str, 
     resolver.lifetime = _timeout(cfg)
     result: dict[str, JsonValue] = {"a": [], "mx": [], "ns": [], "txt_spf": "", "dmarc": "", "nxdomain": False, "queried": True}
 
-    def query(name: str, rtype: str) -> list[Any]:  # dnspython rdata is dynamically typed
+    def query(name: str, rtype: str) -> list[Any]:
         try:
             return list(resolver.resolve(name, rtype))
         except dns.resolver.NXDOMAIN:
@@ -245,7 +237,7 @@ def dns_lookup(domain: str, cfg: Settings, store: Store | None) -> Mapping[str, 
     for record in query(domain, "TXT"):
         try:
             text = "".join(s.decode("utf-8", errors="replace") if isinstance(s, bytes) else str(s) for s in record.strings)
-        except AttributeError:  # not a TXT rdata after all
+        except AttributeError:
             text = record.to_text().strip('"')
         if text.lower().startswith("v=spf1"):
             result["txt_spf"] = text[:500]
@@ -253,7 +245,7 @@ def dns_lookup(domain: str, cfg: Settings, store: Store | None) -> Mapping[str, 
     for record in query(f"_dmarc.{domain}", "TXT"):
         try:
             text = "".join(s.decode("utf-8", errors="replace") if isinstance(s, bytes) else str(s) for s in record.strings)
-        except AttributeError:  # not a TXT rdata after all
+        except AttributeError:
             text = record.to_text().strip('"')
         if text.lower().startswith("v=dmarc1"):
             result["dmarc"] = text[:500]
@@ -262,9 +254,7 @@ def dns_lookup(domain: str, cfg: Settings, store: Store | None) -> Mapping[str, 
     return result
 
 
-# Reputation
 def domain_reputation(domain: str, cfg: Settings, store: Store | None) -> list[str]:
-    """Feeds/tags that flag the domain: 'urlhaus', 'disposable', 'suspicious_tld'."""
     tags: list[str] = []
     if not domain:
         return tags
@@ -291,12 +281,11 @@ def domain_reputation(domain: str, cfg: Settings, store: Store | None) -> list[s
             if payload.get("query_status") == "ok" and payload.get("urls"):
                 remote.append("urlhaus")
         cache_set(store, cache_key, remote, cfg.cache_ttl_seconds)
-    except (httpx.HTTPError, httpx.InvalidURL, ValueError) as exc:  # transport failure or a non-JSON body
+    except (httpx.HTTPError, httpx.InvalidURL, ValueError) as exc:
         log.debug("urlhaus lookup failed for %s: %s", domain, exc)
     return tags + [t for t in remote if t not in tags]
 
 
-# Per-domain analysis
 def _finding(fid: str, severity: Severity, title: str, detail: str, evidence: dict[str, object]) -> Finding:
     return Finding(id=fid, module="domains", severity=severity, title=title, detail=detail, evidence=evidence)
 
@@ -442,11 +431,9 @@ def analyze_domain(domain: str, role: str, cfg: Settings, store: Store | None) -
     return intel
 
 
-# Target selection and batch execution
 def collect_domains(
     parsed: ParsedEmail, header_analysis: HeaderAnalysis, url_analysis: UrlAnalysis, cfg: Settings
 ) -> list[tuple[str, str]]:
-    """Ordered unique ``(registrable_domain, role)`` pairs, capped by config."""
     common = {registrable_domain(h) for h in COMMON_URL_HOSTS} | set(COMMON_URL_HOSTS)
     seen: set[str] = set()
     targets: list[tuple[str, str]] = []
@@ -473,7 +460,6 @@ def collect_domains(
 
 
 def analyze_domains(targets: list[tuple[str, str]], cfg: Settings, store: Store | None) -> list[DomainIntel]:
-    """Analyse every target concurrently, preserving order; never raises."""
     if not targets:
         return []
 
@@ -481,7 +467,7 @@ def analyze_domains(targets: list[tuple[str, str]], cfg: Settings, store: Store 
         domain, role = target
         try:
             return analyze_domain(domain, role, cfg, store)
-        except Exception:  # one domain's failure must not abort the analysis
+        except Exception:
             log.exception("domain analysis failed for %s", domain)
             return DomainIntel(domain=domain, role=role, source="unavailable")
 

@@ -1,4 +1,3 @@
-"""MailTrace data contracts."""
 from __future__ import annotations
 
 from datetime import datetime
@@ -10,7 +9,6 @@ from pydantic import BaseModel, ConfigDict, Field
 ENGINE_VERSION = "1.0.0"
 
 
-# Enumerations
 class ThreatCategory(str, Enum):
     LEGITIMATE = "Legitimate"
     SUSPICIOUS = "Suspicious"
@@ -57,9 +55,7 @@ CaseStatus = Literal["open", "quarantined", "blocked"]
 CASE_STATUSES: tuple[CaseStatus, ...] = ("open", "quarantined", "blocked")
 
 
-# Building blocks
 class Finding(BaseModel):
-    """One evidence-backed observation produced by any analyzer."""
 
     id: str = Field(description="Stable slug, e.g. 'spf_fail', 'reply_to_mismatch'")
     module: str = Field(description="headers|auth|urls|attachments|nlp|domains|geoip|scoring|intel")
@@ -107,7 +103,6 @@ class AttachmentMeta(BaseModel):
 
 
 class FuzzyDigest(BaseModel):
-    """Locality-sensitive digests of the message body."""
 
     simhash: str = Field(default="", description="64-bit Charikar SimHash over body shingles, hex")
     tlsh: str = Field(default="", description="TLSH digest when the py-tlsh package is installed and the body is long enough")
@@ -115,7 +110,6 @@ class FuzzyDigest(BaseModel):
 
 
 class ParsedEmail(BaseModel):
-    """Output of the parser: structure only, no analysis."""
 
     message_id: str = ""
     subject: str = ""
@@ -139,7 +133,6 @@ class ParsedEmail(BaseModel):
     fuzzy: FuzzyDigest = Field(default_factory=FuzzyDigest, description="SimHash / TLSH digests used for campaign clustering")
 
 
-# Header / protocol analysis
 class GeoInfo(BaseModel):
     ip: str
     country: str = ""
@@ -213,7 +206,6 @@ class HeaderAnalysis(BaseModel):
     findings: list[Finding] = Field(default_factory=list)
 
 
-# Content analysis
 class UrlInfo(BaseModel):
     url: str
     normalized: str = ""
@@ -255,21 +247,18 @@ class BecPattern(BaseModel):
 
 
 class ShapWeight(BaseModel):
-    """One token's signed contribution to the predicted class."""
 
     token: str
     weight: float = Field(description="SHAP value in log-odds units; sign carries the direction")
 
 
 class LimeWeight(BaseModel):
-    """One token's coefficient in the LIME local surrogate."""
 
     token: str
     weight: float = Field(description="Local surrogate coefficient in probability units; sign carries the direction")
 
 
 class LimeReport(BaseModel):
-    """A case's LIME explanation, built on request rather than during ingest."""
 
     email_id: str
     available: bool = False
@@ -317,7 +306,6 @@ class NlpAnalysis(BaseModel):
     findings: list[Finding] = Field(default_factory=list)
 
 
-# Domain / infrastructure intelligence
 class DomainIntel(BaseModel):
     domain: str
     role: str = Field(default="", description="sender|reply_to|return_path|url|message_id")
@@ -355,7 +343,6 @@ class InfraAnalysis(BaseModel):
     findings: list[Finding] = Field(default_factory=list)
 
 
-# Correlation, attribution, graph
 class RelatedIncident(BaseModel):
     email_id: str
     subject: str = ""
@@ -402,9 +389,7 @@ class AttributionGraph(BaseModel):
     edges: list[GraphEdge] = Field(default_factory=list)
 
 
-# Verdict
 class RiskBreakdown(BaseModel):
-    """The five terms of the Stage 4 threat score, each 0-100 before weighting."""
 
     auth: float = Field(ge=0, le=100, description="SPF, DKIM, DMARC, alignment and forged sender fields")
     text: float = Field(ge=0, le=100, description="NLP intent, BEC patterns and social-engineering language")
@@ -427,7 +412,6 @@ class Verdict(BaseModel):
     recommended_actions: list[str] = Field(default_factory=list)
 
 
-# Chain of custody / alerts / campaigns
 class CustodyEvent(BaseModel):
     seq: int
     timestamp: datetime
@@ -472,7 +456,6 @@ class Campaign(BaseModel):
     countries: list[str] = Field(default_factory=list)
 
 
-# Top-level result
 class AnalysisResult(BaseModel):
     model_config = ConfigDict(use_enum_values=False)
 
@@ -522,7 +505,6 @@ class CaseSummary(BaseModel):
 
 
 class CaseDecision(BaseModel):
-    """The analyst decision currently recorded against a case."""
 
     email_id: str
     status: CaseStatus = "open"
@@ -532,7 +514,6 @@ class CaseDecision(BaseModel):
 
 
 class Section65BCertificate(BaseModel):
-    """Statement of the particulars required by Section 65B(4) of the Indian"""
 
     statement_of_record: str = Field(description="65B(4)(a) - what the electronic record is and how it was produced")
     computer_description: str = Field(description="65B(4)(b) - the computer that produced it and its regular use")
@@ -558,7 +539,6 @@ class Section65BCertificate(BaseModel):
 
 
 class EvidenceIntegrity(TypedDict):
-    """The hashes and ledger state a report attests to."""
 
     raw_sha256: str
     raw_md5: str
@@ -571,13 +551,11 @@ class EvidenceIntegrity(TypedDict):
 
 
 class TimelineEntry(TypedDict, total=False):
-    """One row of a report's chronological timeline: a delivery hop or a custody event."""
 
     kind: str
     sequence: int
     timestamp: str | None
     summary: str
-    # Delivery hop
     from_host: str
     from_ip: str
     by_host: str
@@ -589,7 +567,6 @@ class TimelineEntry(TypedDict, total=False):
     is_private_ip: bool
     is_internal: bool
     anomalies: list[str]
-    # Custody event
     actor: str
     action: str
     detail: dict[str, object]
@@ -635,16 +612,13 @@ class RawSubmission(BaseModel):
     filename: str = "pasted.eml"
 
 
-# API response envelopes
 class AnalyzeResponse(BaseModel):
-    """``POST /api/analyze``: one result per message, plus any alerts they raised."""
 
     results: list[AnalysisResult]
     alerts: list[Alert] = Field(default_factory=list)
 
 
 class JobSummary(BaseModel):
-    """What a finished analysis job reports."""
 
     email_id: str
     filename: str
@@ -656,7 +630,6 @@ class JobSummary(BaseModel):
 
 
 class JobStatus(BaseModel):
-    """``GET /api/jobs/{job_id}``: where one queued message has got to."""
 
     job_id: str
     filename: str = Field(default="", description="Echoed from the submission; blank when the id is unknown here")
@@ -671,7 +644,6 @@ class JobStatus(BaseModel):
 
 
 class AsyncAnalyzeResponse(BaseModel):
-    """``POST /api/analyze/async``: accepted work, one job per message."""
 
     jobs: list[JobStatus]
     queue: str = Field(description="How these tasks execute; the same string /api/health reports")

@@ -1,4 +1,3 @@
-"""Optional VirusTotal file-hash reputation for attachments (TRACE + INTEL)."""
 from __future__ import annotations
 
 import hashlib
@@ -9,7 +8,7 @@ from ..config import Settings
 from ..schemas import AttachmentAnalysis, AttachmentMeta, Finding, Severity
 from .cache import cache_get, cache_set
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:
     from ..database.case_manager import Store
     from .parser import RawAttachment
 
@@ -26,7 +25,6 @@ def _timeout(cfg: Settings) -> float:
 
 
 def _parse(payload: dict[str, Any]) -> dict[str, Any]:
-    """The few fields worth keeping out of a VT v3 file report."""
     attributes = (payload.get("data") or {}).get("attributes") or {}
     stats = attributes.get("last_analysis_stats") or {}
 
@@ -51,7 +49,6 @@ def _parse(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def lookup_hash(sha256: str, cfg: Settings, store: Store | None) -> dict[str, Any] | None:
-    """VirusTotal's verdict for one SHA-256, or None when the lookup is disabled or fails."""
     digest = (sha256 or "").strip().lower()
     if not digest or not cfg.virustotal_key or not cfg.enable_network:
         return None
@@ -61,7 +58,7 @@ def lookup_hash(sha256: str, cfg: Settings, store: Store | None) -> dict[str, An
         return cached
     try:
         import httpx
-    except ImportError:  # pragma: no cover - httpx is a hard dependency of the API
+    except ImportError:
         log.debug("httpx is not installed; VirusTotal lookup skipped")
         return None
     try:
@@ -70,7 +67,7 @@ def lookup_hash(sha256: str, cfg: Settings, store: Store | None) -> dict[str, An
                 VT_FILE_URL.format(sha256=digest),
                 headers={"x-apikey": cfg.virustotal_key, "Accept": "application/json"},
             )
-    except (httpx.HTTPError, httpx.InvalidURL):  # timeout, DNS, TLS: intel is optional
+    except (httpx.HTTPError, httpx.InvalidURL):
         log.debug("VirusTotal lookup failed for %s", digest, exc_info=True)
         return None
     if response.status_code == 404:
@@ -78,7 +75,7 @@ def lookup_hash(sha256: str, cfg: Settings, store: Store | None) -> dict[str, An
     elif response.status_code == 200:
         try:
             verdict = _parse(response.json())
-        except (ValueError, TypeError, AttributeError, KeyError):  # unexpected body shape
+        except (ValueError, TypeError, AttributeError, KeyError):
             log.debug("VirusTotal returned an unreadable body for %s", digest, exc_info=True)
             return None
     else:
@@ -99,7 +96,6 @@ def _severity(malicious: int, suspicious: int) -> Severity | None:
 
 
 def _finding(meta: AttachmentMeta, verdict: dict[str, Any]) -> Finding | None:
-    """A finding for one flagged attachment; None when no engine flagged it."""
     malicious = int(verdict.get("malicious") or 0)
     suspicious = int(verdict.get("suspicious") or 0)
     severity = _severity(malicious, suspicious)
@@ -139,9 +135,8 @@ def enrich(
     cfg: Settings,
     store: Store | None = None,
 ) -> list[Finding]:
-    """Look every non-inline attachment up by hash and append any detections."""
     if not cfg.virustotal_key or not cfg.enable_network:
-        return []  # no key, no request, no latency, no finding
+        return []
     inline_hashes = {
         att.sha256 for att, raw in _pair(analysis.attachments, raw_attachments) if raw is not None and raw.is_inline
     }
@@ -167,7 +162,6 @@ def enrich(
 
 
 def _pair(metas: list[AttachmentMeta], raws: list[RawAttachment]) -> list[tuple[AttachmentMeta, Any]]:
-    """Match metadata back to the raw parts it came from, by digest."""
     by_digest: dict[str, Any] = {}
     for raw in raws or []:
         by_digest.setdefault(hashlib.sha256(raw.data or b"").hexdigest(), raw)

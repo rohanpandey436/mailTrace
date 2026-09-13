@@ -1,25 +1,3 @@
-// SPDX-License-Identifier: MIT
-//
-// pybind11 surface of the MailTrace parse engine.
-//
-// Two entry points, with different jobs:
-//
-//   dissect(raw)        Structural only.  This is what
-//                       backend/app/core/parser.py consumes: header
-//                       name/value pairs and raw body byte ranges, with the
-//                       tree shape CPython's email.feedparser would produce.
-//                       It performs no decoding at all, so the Python side can
-//                       finish the job with the standard library and get a
-//                       provably identical result to the pure-Python path.
-//
-//   parse_message(raw)  The convenience view described on the pitch deck:
-//                       bodies and attachment blobs already transfer-decoded,
-//                       with filenames, content types, SHA-256 and entropy.
-//                       Nothing in the MailTrace backend calls this; it exists
-//                       for CLI use, benchmarks and other embedders.
-//
-// Byte strings are handed back as `bytes`, never `str`.  A message is a byte
-// stream; deciding what encoding a header is in is Python's job here.
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
@@ -203,7 +181,7 @@ void flatten(const mailtrace::Node& node, std::vector<FlatPart>& out, std::size_
     return out;
 }
 
-}  // namespace
+}
 
 PYBIND11_MODULE(mailtrace_engine, m) {
     m.doc() =
@@ -213,7 +191,6 @@ PYBIND11_MODULE(mailtrace_engine, m) {
 
     m.attr("__version__") = kVersion;
     m.attr("DISSECT_SCHEMA") = kDissectSchema;
-    // "openssl" or "builtin"; see mailtrace/sha256.hpp.
     m.attr("SHA256_BACKEND") = mailtrace::sha256_backend();
 
     m.def("dissect", &dissect_binding, py::arg("raw"),

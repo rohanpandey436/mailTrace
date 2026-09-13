@@ -1,4 +1,3 @@
-"""Shared FastAPI dependencies."""
 from __future__ import annotations
 
 from typing import Annotated
@@ -10,7 +9,6 @@ from ..database.case_manager import Store
 from ..schemas import Alert, CaseSummary
 from ..utils.pii_masker import mask_email, mask_text
 
-# Actor recorded in the chain of custody when a request carries no identity.
 DEFAULT_ACTOR = "analyst"
 
 
@@ -42,7 +40,6 @@ ActorParam = Annotated[str, Query(min_length=1, max_length=64, description="Reco
 
 
 def mask_summary(summary: CaseSummary) -> CaseSummary:
-    """Case-list row with the sender address and any PII in the subject masked."""
     return summary.model_copy(
         update={
             "subject": mask_text(summary.subject),
@@ -52,7 +49,6 @@ def mask_summary(summary: CaseSummary) -> CaseSummary:
 
 
 def mask_alert(alert: Alert) -> Alert:
-    """Alert with the sender address and any PII in subject/message masked."""
     return alert.model_copy(
         update={
             "subject": mask_text(alert.subject),

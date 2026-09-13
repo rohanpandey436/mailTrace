@@ -47,7 +47,7 @@ def test_phishing_chain_origin_and_anomaly(sample, cfg):
     analysis = analyze_headers(parsed, cfg)
     assert len(analysis.hops) == 4
     assert analysis.hops[0].index == 0
-    assert analysis.hops[0].is_private_ip  # localhost injection hop
+    assert analysis.hops[0].is_private_ip
     assert analysis.originating_ip == "45.148.10.72"
     assert analysis.originating_hop_index == 1
     assert 0.5 <= analysis.origin_confidence <= 1.0
@@ -67,7 +67,7 @@ def test_bec_chain_origin_behind_loopback(sample, cfg):
     parsed, _ = parse_email(sample("bec"))
     analysis = analyze_headers(parsed, cfg)
     assert analysis.originating_ip == "185.220.101.45"
-    assert analysis.reply_to_mismatch is True  # protonmail vs acme-corp-in.com
+    assert analysis.reply_to_mismatch is True
     assert analysis.return_path_mismatch is False
 
 

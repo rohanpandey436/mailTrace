@@ -1,5 +1,3 @@
-// @ts-check
-/** Linked attacks: the campaign list, and one campaign with its merged graph. */
 import { api } from "../api.js";
 import { formatDate, plural } from "../format.js";
 import { useAsync } from "../hooks.js";
@@ -9,11 +7,6 @@ import { CasesTable } from "../ui/cases-table.js";
 import { GraphLegend, RelationshipGraph } from "../ui/graph.js";
 import { categoryChip, chip, emptyState, errorState, pageHead, riskBar, section, skeleton } from "../ui/primitives.js";
 
-/** @typedef {import('../types.js').Campaign} Campaign */
-
-/**
- * @param {{ campaign: Campaign }} props
- */
 function CampaignCard({ campaign }) {
   return html`<a class="card card--pad card--link campaign-card" href=${`#/campaigns/${encodeURIComponent(campaign.id)}`}>
     <div class="campaign-card__head">
@@ -48,9 +41,6 @@ export function CampaignsView() {
   </>`;
 }
 
-/**
- * @param {{ campaignId: string }} props
- */
 export function CampaignView({ campaignId }) {
   const { data, error, loading, reload } = useAsync(() => api.getCampaign(campaignId), [campaignId]);
   if (error) return errorState(error, reload);

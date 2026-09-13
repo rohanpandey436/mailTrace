@@ -1,4 +1,3 @@
-"""Stage 6 OUTPUT: CSV rendering for the forensic report and the case list."""
 from __future__ import annotations
 
 import csv
@@ -12,7 +11,6 @@ from ..schemas import CaseSummary, ForensicReport, GeoInfo
 FORMULA_PREFIXES: tuple[str, ...] = ("=", "+", "-", "@", "\t", "\r")
 FORMULA_GUARD = "'"
 
-# RFC 4180 line ending, which is what Excel expects.
 LINE_TERMINATOR = "\r\n"
 
 UTF8_BOM = "\ufeff"
@@ -25,12 +23,10 @@ CASE_COLUMNS: tuple[str, ...] = (
 )
 
 
-# Cell rendering
 def _text(value: Any) -> str:
-    """One cell's value as plain text, before the formula guard."""
     if value is None:
         return ""
-    if isinstance(value, bool):  # checked before int: bool is an int subclass
+    if isinstance(value, bool):
         return "yes" if value else "no"
     if isinstance(value, datetime):
         return value.isoformat()
@@ -44,7 +40,6 @@ def _text(value: Any) -> str:
 
 
 def sanitize_cell(value: Any) -> str:
-    """Render ``value`` as a cell that a spreadsheet can only treat as text."""
     text = _text(value)
     if text.startswith(FORMULA_PREFIXES):
         return FORMULA_GUARD + text
@@ -59,7 +54,6 @@ def _row(writer: Any, cells: Iterable[Any]) -> None:
     writer.writerow([sanitize_cell(cell) for cell in cells])
 
 
-# One case: header block + findings table
 def _geo_rows(geo: GeoInfo | None) -> list[tuple[str, Any]]:
     if geo is None:
         return [("IP", ""), ("Note", "No routable origin was identified in the Received chain")]
@@ -85,7 +79,6 @@ def _geo_rows(geo: GeoInfo | None) -> list[tuple[str, Any]]:
 
 
 def render_report_csv(report: ForensicReport) -> str:
-    """The forensic report as one CSV: header block, then the findings table."""
     result = report.analysis
     verdict = result.verdict
     pillars = verdict.breakdown
@@ -135,7 +128,6 @@ def render_report_csv(report: ForensicReport) -> str:
         ("Rule category", verdict.rule_category.value),
         ("ML and rules agree", verdict.dual_validation_agreement),
     ])
-    # The five terms of the Stage 4 threat score, each 0-100 before weighting.
     block("Threat score", [
         (f"{label} (weight {weights.get(key, 0.0):.2f})", round(getattr(pillars, key), 1))
         for key, label in (
@@ -183,9 +175,7 @@ def render_report_csv(report: ForensicReport) -> str:
     return buffer.getvalue()
 
 
-# The case list
 def render_case_list_csv(rows: Iterable[CaseSummary]) -> str:
-    """The case list as one row per case, in the order the store returned them."""
     buffer = io.StringIO()
     writer = _writer(buffer)
     _row(writer, CASE_COLUMNS)

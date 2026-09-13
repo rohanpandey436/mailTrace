@@ -1,4 +1,3 @@
-"""Analysis pipeline."""
 from __future__ import annotations
 
 import logging
@@ -12,7 +11,7 @@ from ..config import Settings
 from ..config import settings as default_settings
 from ..schemas import ENGINE_VERSION, AnalysisResult, AttachmentAnalysis, DomainIntel, InfraAnalysis, NlpAnalysis
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:
     from ..database.case_manager import Store
 
 log = logging.getLogger("mailtrace.pipeline")
@@ -25,7 +24,7 @@ def new_email_id() -> str:
 def _safe_result[T](fut: Future[T], default: T, name: str) -> T:
     try:
         return fut.result()
-    except Exception:  # enrichment must never abort analysis
+    except Exception:
         log.exception("enrichment stage '%s' failed; continuing with defaults", name)
         return default
 
@@ -37,7 +36,6 @@ def analyze_bytes(
     cfg: Settings | None = None,
     actor: str = "system",
 ) -> AnalysisResult:
-    """Run the full analysis on one RFC 822 message."""
     from ..utils import virustotal
     from . import (
         ai_engine,
@@ -57,13 +55,10 @@ def analyze_bytes(
     t0 = time.perf_counter()
     email_id = new_email_id()
 
-    # 1. Structure --------------------------------------------------------
     parsed, raw_attachments = parser.parse_email(raw)
 
-    # 2. Header / routing analysis (offline) ------------------------------
     header_analysis = header_analyzer.analyze_headers(parsed, cfg)
 
-    # 3. Authentication ---------------------------------------------------
     auth_result, auth_findings = auth_checker.evaluate_auth(parsed, header_analysis, cfg, raw)
     header_analysis.auth = auth_result
     header_analysis.findings.extend(auth_findings)
@@ -72,16 +67,15 @@ def analyze_bytes(
     domain_targets = domain_intel.collect_domains(parsed, header_analysis, url_analysis, cfg)
 
     def run_ai_core() -> tuple[AttachmentAnalysis, NlpAnalysis]:
-        """Engine 3A: attachment inspection (including Shannon entropy) and the"""
         atts = file_analyzer.analyze_attachments(raw_attachments, cfg)
         content = ai_engine.analyze_content(parsed, url_analysis, atts, cfg)
         virustotal.enrich(atts, raw_attachments, cfg, store)
         return atts, content
 
     with ThreadPoolExecutor(max_workers=3, thread_name_prefix="mt-engine") as pool:
-        fut_ai = pool.submit(run_ai_core)          # 3A - AI core
-        fut_infra = pool.submit(geoip_mapper.analyze_infrastructure, header_analysis, cfg, store)  # 3B - GeoIP/route
-        fut_domains = pool.submit(domain_intel.analyze_domains, domain_targets, cfg, store)      # 3C - domain intel
+        fut_ai = pool.submit(run_ai_core)
+        fut_infra = pool.submit(geoip_mapper.analyze_infrastructure, header_analysis, cfg, store)
+        fut_domains = pool.submit(domain_intel.analyze_domains, domain_targets, cfg, store)
         att_analysis, nlp_analysis = _safe_result(fut_ai, (AttachmentAnalysis(), NlpAnalysis()), "ai_core")
         infra = _safe_result(fut_infra, InfraAnalysis(), "geoip")
         domain_results: list[DomainIntel] = _safe_result(fut_domains, [], "domains")
@@ -90,12 +84,10 @@ def analyze_bytes(
         email_id, parsed, header_analysis, url_analysis, att_analysis, domain_results, infra, store, cfg
     )
 
-    # 7. Fusion -----------------------------------------------------------
     verdict, attribution, all_findings = scoring.evaluate(
         parsed, header_analysis, url_analysis, att_analysis, nlp_analysis, domain_results, infra, intel, cfg
     )
 
-    # 8. Relationship graph -----------------------------------------------
     relationship_graph = graph_builder.build_graph(
         email_id, parsed, header_analysis, url_analysis, att_analysis, domain_results, infra, intel, verdict
     )
@@ -120,7 +112,6 @@ def analyze_bytes(
         findings=all_findings,
     )
 
-    # 9. Persistence, campaign clustering, custody ------------------------
     if store is not None:
         store.record_custody(
             email_id, actor, "ingested",

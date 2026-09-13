@@ -1,4 +1,3 @@
-"""Tests for the optional C++ dissector integration (engine/, Stage 2 PARSE-C++)."""
 from __future__ import annotations
 
 import sys
@@ -14,7 +13,6 @@ _WS = b" \t\n\r\f\v"
 
 
 def _line_end(data: bytes, pos: int) -> int:
-    """End offset (terminator included) of the line beginning at ``pos``."""
     while pos < len(data):
         char = data[pos : pos + 1]
         if char == b"\n":
@@ -34,7 +32,6 @@ def _trailing_eol(line: bytes) -> int:
 
 
 def _is_header_block_line(line: bytes) -> bool:
-    """feedparser.headerRE = r'^(From |[\041-\071\073-\176]*:|[\t ])'"""
     if not line:
         return False
     if line[0:1] in (b" ", b"\t"):
@@ -119,7 +116,7 @@ def _header_parameter(header_value: bytes, name: bytes) -> bytes | None:
         equals = segment.find(b"=")
         if equals == -1:
             if segment.strip(_WS).lower() == name:
-                return b""  # bare attribute: present, but empty
+                return b""
             continue
         if segment[:equals].strip(_WS).lower() != name:
             continue
@@ -244,7 +241,7 @@ def _parse_node(region: bytes, default_type: bytes, ancestors: list[bytes], dept
     raw_content_type = _find_header(node["headers"], b"content-type")
     boundary = None if raw_content_type is None else _header_parameter(raw_content_type, b"boundary")
     if boundary is None:
-        return node  # NoBoundaryInMultipartDefect: a leaf despite the media type
+        return node
     boundary = _unquote(boundary).rstrip(_WS)
     if not boundary:
         ctx.decline("multipart boundary parameter is empty")
@@ -307,9 +304,9 @@ def _dissect(raw: bytes) -> dict:
 
 def _make_engine(dissect, version: str = "mirror-1.0.0", schema: int = 1) -> types.ModuleType:
     module = types.ModuleType("mailtrace_engine")
-    module.__version__ = version  # type: ignore[attr-defined]
-    module.DISSECT_SCHEMA = schema  # type: ignore[attr-defined]
-    module.dissect = dissect  # type: ignore[attr-defined]
+    module.__version__ = version
+    module.DISSECT_SCHEMA = schema
+    module.dissect = dissect
     return module
 
 
@@ -349,13 +346,11 @@ HOSTILE: tuple[bytes, ...] = (
 
 @pytest.fixture(autouse=True)
 def _neutral_kill_switch(monkeypatch):
-    """Keep the ambient MAILTRACE_NATIVE_ENGINE out of this module."""
     monkeypatch.delenv("MAILTRACE_NATIVE_ENGINE", raising=False)
 
 
 @pytest.fixture
 def restore_engine():
-    """Save and restore every module-level flag the activation path touches."""
     saved = (
         parser._native,
         parser.NATIVE_ENGINE,
@@ -383,7 +378,6 @@ def restore_engine():
 
 @pytest.fixture
 def mirror(restore_engine):
-    """Install the mirror engine as if the extension had been built."""
     module = _make_engine(_dissect)
     sys.modules["mailtrace_engine"] = module
     parser._activate_native_engine()
@@ -394,7 +388,7 @@ def mirror(restore_engine):
 def _comparable(raw: bytes) -> tuple:
     parsed, attachments = parser.parse_email(raw)
     payload = parsed.model_dump()
-    payload.pop("parse_ms")  # wall-clock, never equal between two runs
+    payload.pop("parse_ms")
     return payload, [(a.filename, a.content_type, a.data, a.content_id, a.is_inline) for a in attachments]
 
 
@@ -457,7 +451,6 @@ def test_hostile_input_parses_identically_with_the_engine(mirror):
 
 
 def test_mirror_tree_matches_cpython_on_samples(sample, mirror):
-    """The dissection rules themselves, checked against email.feedparser."""
     for key in ("phishing", "bec", "legit", "fraud", "ceo"):
         raw = sample(key)
         native = parser._native_message(raw)
@@ -469,7 +462,7 @@ def test_mirror_tree_matches_cpython_on_hostile_input(mirror):
     for raw in HOSTILE:
         native = parser._native_message(raw)
         if native is None:
-            continue  # declined or cross-checked away; the fallback covers it
+            continue
         assert parser._tree_signature(native) == parser._tree_signature(parser._python_message(raw)), raw[:60]
 
 
@@ -506,7 +499,6 @@ def test_garbage_tree_falls_back(sample, restore_engine):
 
 
 def test_wrong_boundary_is_cross_checked_away(restore_engine):
-    """A boundary the standard library does not agree with is rejected."""
     raw = b"Content-Type: multipart/mixed; boundary=REAL\r\n\r\n--REAL\r\nContent-Type: text/plain\r\n\r\nhi\r\n--REAL--\r\n"
 
     def lying(data: bytes) -> dict:
@@ -522,7 +514,6 @@ def test_wrong_boundary_is_cross_checked_away(restore_engine):
 
 
 def test_flattened_multipart_is_cross_checked_away(restore_engine):
-    """Calling a live multipart a leaf must be caught, not trusted."""
     raw = b"Content-Type: multipart/mixed; boundary=B\r\n\r\n--B\r\nContent-Type: text/plain\r\n\r\nhi\r\n--B--\r\n"
 
     def flattening(data: bytes) -> dict:
@@ -561,7 +552,6 @@ def test_schema_mismatch_refuses_activation(restore_engine):
 
 
 def test_self_check_rejects_a_subtly_wrong_engine(restore_engine):
-    """An engine that mangles one payload must never be switched on."""
 
     def sloppy(data: bytes) -> dict:
         tree = _dissect(data)
@@ -591,7 +581,6 @@ def test_self_check_rejects_an_engine_that_declines_everything(restore_engine):
 
 
 def test_unimportable_engine_is_simply_absent(restore_engine, monkeypatch):
-    """A missing extension must leave the parser on its Python path, quietly."""
     monkeypatch.setitem(sys.modules, "mailtrace_engine", None)
     monkeypatch.setattr(parser, "_native", None)
     parser.NATIVE_ENGINE = False
@@ -611,9 +600,9 @@ def test_self_check_fixtures_cover_the_awkward_shapes():
     assert any(not required for _, required in parser._SELF_CHECK_FIXTURES)
 
 
-try:  # pragma: no cover - depends on whether the extension was built
+try:
     import mailtrace_engine as _real_engine
-except Exception:  # noqa: BLE001
+except Exception:
     _real_engine = None
 
 requires_extension = pytest.mark.skipif(_real_engine is None, reason="mailtrace_engine is not built")
@@ -640,7 +629,6 @@ def test_extension_entropy_matches_python():
 
 @requires_extension
 def test_extension_dissection_matches_the_mirror(sample):
-    """The C++ and the transcribed algorithm must agree node for node."""
     corpus = [sample(key) for key in ("phishing", "bec", "legit", "fraud", "ceo")]
     corpus += list(HOSTILE)
     corpus += [fixture for fixture, _ in parser._SELF_CHECK_FIXTURES]
@@ -680,7 +668,6 @@ def test_extension_convenience_view(sample):
 
 
 def test_mirror_declines_the_shapes_the_engine_is_not_asked_to_handle(mirror):
-    """The decline conditions are contract, not accident."""
     declines = {
         b"From someone Mon Jan  1 00:00:00 2020\r\nSubject: mbox\r\n\r\nbody\r\n",
         b"Content-Type: message/delivery-status\r\n\r\nStatus: 5.0.0\r\n",

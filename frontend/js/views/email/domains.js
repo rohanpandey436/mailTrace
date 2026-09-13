@@ -1,21 +1,12 @@
-// @ts-check
-/** "Domains & servers": the originating computer, prior related cases, every domain. */
 import { flag, place, truncate } from "../../format.js";
 import { DOMAIN_ROLE } from "../../labels.js";
 import { Fragment, html } from "../../react.js";
 import { chip, kv, section } from "../../ui/primitives.js";
 
-/** @typedef {import('../../types.js').AnalysisResult} AnalysisResult */
-/** @typedef {import('../../types.js').DomainIntel} DomainIntel */
-
-/** A domain younger than this is one of the strongest signs of an attack. */
 const BRAND_NEW_DAYS = 90;
 const MAX_SUBJECT_CHARS = 60;
 const MAX_SHARED_INDICATORS = 3;
 
-/**
- * @param {AnalysisResult} result
- */
 function originComputer(result) {
   const infra = result.infrastructure;
   const geo = infra.origin_geo;
@@ -42,9 +33,6 @@ function originComputer(result) {
   );
 }
 
-/**
- * @param {AnalysisResult} result
- */
 function seenBefore(result) {
   const incidents = result.intel.related_incidents;
   if (incidents.length === 0) return null;
@@ -67,18 +55,12 @@ function seenBefore(result) {
   );
 }
 
-/**
- * @param {DomainIntel} domain
- */
 function age(domain) {
   if (domain.age_days === null) return domain.source === "offline" ? "not checked (offline)" : "unknown";
   if (domain.age_days < BRAND_NEW_DAYS) return html`<b class="text-bad">${domain.age_days} days — brand new</b>`;
   return `${domain.age_days} days`;
 }
 
-/**
- * @param {{ domain: DomainIntel }} props
- */
 function DomainCard({ domain }) {
   return html`<div class="card card--tight">
     <div class="domain-card__head">
@@ -104,9 +86,6 @@ function DomainCard({ domain }) {
   </div>`;
 }
 
-/**
- * @param {AnalysisResult} result
- */
 export function domainsTab(result) {
   return html`<${Fragment}>
     ${originComputer(result)} ${seenBefore(result)}

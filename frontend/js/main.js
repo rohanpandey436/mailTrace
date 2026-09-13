@@ -1,5 +1,3 @@
-// @ts-check
-/** Entry point: the app shell, the route switch, and the live alert feed. */
 import { api } from "./api.js";
 import { truncate } from "./format.js";
 import { useStore } from "./hooks.js";
@@ -15,8 +13,6 @@ import { CasesView } from "./views/cases.js";
 import { DashboardView } from "./views/dashboard.js";
 import { EmailView } from "./views/email/index.js";
 
-/** @typedef {import('./types.js').Health} Health */
-
 const MAX_TOAST_SUBJECT = 60;
 
 const NAV = [
@@ -26,17 +22,11 @@ const NAV = [
   ["alerts", "🔔", "Alerts", "#/alerts"],
 ];
 
-/**
- * @param {{ count: number }} props
- */
 function UnreadBadge({ count }) {
   if (count <= 0) return null;
   return html`<span class="chip chip--count">${count}</span>`;
 }
 
-/**
- * @param {{ route: string, unread: number }} props
- */
 function Rail({ route, unread }) {
   return html`<nav class="rail" aria-label="Main">
     <a class="rail__brand" href="#/dashboard">
@@ -52,9 +42,6 @@ function Rail({ route, unread }) {
   </nav>`;
 }
 
-/**
- * @param {{ health: Health | null }} props
- */
 function NetworkBadge({ health }) {
   if (!health) return html`<span class="chip">Server not reachable</span>`;
   return html`<span
@@ -68,9 +55,6 @@ function NetworkBadge({ health }) {
   </span>`;
 }
 
-/**
- * @param {{ health: Health | null, unread: number, onMaskChange: () => void }} props
- */
 function TopBar({ health, unread, onMaskChange }) {
   const [query, setQuery] = useState(session.listFilters.q);
   const [mask, setMask] = useState(preferences.mask);
@@ -87,7 +71,7 @@ function TopBar({ health, unread, onMaskChange }) {
     <form
       class="topbar__search"
       role="search"
-      onSubmit=${(/** @type {SubmitEvent} */ event) => {
+      onSubmit=${(event) => {
         event.preventDefault();
         session.listFilters = { ...session.listFilters, q: query.trim(), page: 0 };
         navigate("#/cases");
@@ -99,7 +83,7 @@ function TopBar({ health, unread, onMaskChange }) {
         placeholder="Search by subject, sender, IP address or domain…"
         autoComplete="off"
         aria-label="Search checked emails"
-        onChange=${(/** @type {{ target: HTMLInputElement }} */ event) => setQuery(event.target.value)}
+        onChange=${(event) => setQuery(event.target.value)}
       />
     </form>
     <div class="topbar__tools">
@@ -116,7 +100,7 @@ function TopBar({ health, unread, onMaskChange }) {
           aria-checked=${String(mask)}
           aria-label="Hide personal information"
           onClick=${toggleMask}
-          onKeyDown=${(/** @type {KeyboardEvent} */ event) => {
+          onKeyDown=${(event) => {
             if (event.key === " " || event.key === "Enter") {
               event.preventDefault();
               toggleMask();
@@ -129,9 +113,6 @@ function TopBar({ health, unread, onMaskChange }) {
   </header>`;
 }
 
-/**
- * @param {{ route: { name: string, param: string } }} props
- */
 function CurrentView({ route }) {
   switch (route.name) {
     case "cases":
@@ -150,7 +131,7 @@ function CurrentView({ route }) {
 function App() {
   const route = useRoute();
   const unread = useStore(unreadAlerts);
-  const [health, setHealth] = useState(/** @type {Health | null} */ (null));
+  const [health, setHealth] = useState((null));
   const [maskEpoch, setMaskEpoch] = useState(0);
 
   useEffect(() => {

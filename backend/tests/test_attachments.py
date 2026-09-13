@@ -58,7 +58,7 @@ def test_archive_with_executable(cfg):
 
 def test_password_protected_archive_flag(cfg):
     data = bytearray(_zip({"secret.docx": b"PK\x03\x04"}))
-    marker = data.find(b"PK\x01\x02")  # central directory entry: flags at offset 8
+    marker = data.find(b"PK\x01\x02")
     assert marker > 0
     data[marker + 8] = 0x01
     analysis = analyze_attachments([RawAttachment("secret.zip", "application/zip", bytes(data))], cfg)

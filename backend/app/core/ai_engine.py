@@ -1,4 +1,3 @@
-"""Content analysis: lexicon features, social-engineering cues, BEC pattern detection and the ML classifier (dual validation partner of the rule engine)."""
 from __future__ import annotations
 
 import logging
@@ -23,7 +22,6 @@ from .link_analyzer import registrable_domain
 
 log = logging.getLogger("mailtrace.nlp")
 
-# Lexicons (lower-case; phrases allowed; matched on word boundaries)
 URGENCY = (
     "immediately", "urgent", "urgently", "within 24 hours", "within 48 hours", "within 72 hours", "asap",
     "as soon as possible", "right away", "act now", "final notice", "last chance", "expires today",
@@ -103,7 +101,6 @@ REPLY_CUES = (
     "write back", "reply immediately", "reply asap", "confirm by replying", "share the utr", "on this email only",
     "revert to this email", "reply on my personal", "contact our claims officer", "get back to me",
 )
-# BEC sub-lexicons
 _BANK_CHANGE_TERMS = (
     "bank account", "account number", "ifsc", "swift", "iban", "beneficiary", "routing number", "sort code",
     "account details", "bank details", "banking details", "wire instructions", "remittance instructions",
@@ -175,13 +172,11 @@ _PATTERNS: dict[str, re.Pattern[str]] = {
 }
 
 
-# Text helpers
 def normalize_text(subject: str, body: str) -> str:
-    """NFKC-normalised, lower-case, whitespace-collapsed subject + body."""
     combined = f"{subject or ''}\n{body or ''}"
     combined = unicodedata.normalize("NFKC", combined)
-    combined = combined.replace("’", "'").replace("‘", "'").replace("“", '"').replace("”", '"')  # noqa: RUF001
-    combined = combined.replace("–", "-").replace("—", "-")  # noqa: RUF001 - typographic dashes are the point
+    combined = combined.replace("’", "'").replace("‘", "'").replace("“", '"').replace("”", '"')
+    combined = combined.replace("–", "-").replace("—", "-")
     combined = re.sub(r"[ \t\r\f\v\xa0]+", " ", combined)
     combined = re.sub(r" *\n *", "\n", combined)
     combined = re.sub(r"\n{2,}", "\n", combined)
@@ -189,12 +184,10 @@ def normalize_text(subject: str, body: str) -> str:
 
 
 def model_input(parsed: ParsedEmail) -> str:
-    """The exact text the classifier sees, so an explanation explains the same input."""
     return normalize_text(parsed.subject, _body_text(parsed))
 
 
 def _hits(name: str, text: str) -> list[str]:
-    """Unique lexicon phrases present in ``text``, in order of appearance."""
     seen: set[str] = set()
     found: list[str] = []
     for match in _PATTERNS[name].finditer(text):
@@ -226,7 +219,6 @@ def _body_text(parsed: ParsedEmail) -> str:
     return ""
 
 
-# BEC patterns
 def _clamp01(value: float) -> float:
     return max(0.0, min(1.0, float(value)))
 
@@ -276,7 +268,6 @@ def detect_bec_patterns(
     keyword_urls = [u for u in url_analysis.urls if u.suspicious_keywords]
     high_atts = [a for a in att_analysis.attachments if SEVERITY_ORDER[a.risk.value] >= SEVERITY_ORDER["high"]]
 
-    # 1. Payment diversion -----------------------------------------------
     bank = _hits("bank_change", text)
     change = _hits("change", text)
     explicit_pay = _hits("payment_explicit", text)
@@ -303,7 +294,6 @@ def detect_bec_patterns(
     if conf >= 0.35:
         patterns.append(BecPattern(pattern="payment_diversion", confidence=_clamp01(conf), evidence=_dedupe(evidence)))
 
-    # 2. Fake invoice ----------------------------------------------------
     invoice = _hits("invoice", text)
     due = _hits("due", text)
     conf = 0.0
@@ -331,7 +321,6 @@ def detect_bec_patterns(
     if conf >= 0.35:
         patterns.append(BecPattern(pattern="fake_invoice", confidence=_clamp01(conf), evidence=_dedupe(evidence)))
 
-    # 3. Credential harvesting -------------------------------------------
     cred = _hits("credential", text)
     cta = _hits("cta", text)
     explicit_cred = _hits("cred_explicit", text)
@@ -366,7 +355,6 @@ def detect_bec_patterns(
     if conf >= 0.35:
         patterns.append(BecPattern(pattern="credential_harvesting", confidence=_clamp01(conf), evidence=_dedupe(evidence)))
 
-    # 4. Executive impersonation -----------------------------------------
     name_signals = _display_name_signals(parsed, cfg)
     exec_phrases = _hits("exec", text)
     conf = 0.0
@@ -401,12 +389,10 @@ def _dedupe(items: list[str]) -> list[str]:
     return out[:8]
 
 
-# ML
 def _heuristic_probabilities(
     cred: int, fin: int, threat: int, reward: int, secrecy: int, authority: int, urgency: float,
     exec_conf: float, link_signal: bool, total_words: int,
 ) -> dict[str, float]:
-    """Rules-only stand-in for the classifier when scikit-learn is missing:"""
     weights = {
         "Phishing": 1.0 * cred + (2.0 if link_signal else 0.0) + 0.5 * threat,
         "Fraud-Related": 1.0 * fin + 0.7 * reward + 0.5 * secrecy,
@@ -418,7 +404,6 @@ def _heuristic_probabilities(
     return {label: round(value / total, 4) for label, value in weights.items()}
 
 
-#: How many signed token attributions are carried on the report.
 _SHAP_TOP_K = 12
 _ATTRIBUTION_METHOD = {"linear": "exact-shap-linear", "transformer": "occlusion", "unavailable": "none"}
 
@@ -426,10 +411,9 @@ _ModelOutcome = tuple[str | None, dict[str, float], list[str], list[tuple[str, f
 
 
 def _run_bundled_transformer(text: str) -> _ModelOutcome | None:
-    """The bundled DistilRoBERTa, or None so the caller uses the linear model."""
     try:
         from ..ai import transformer
-    except ImportError:  # pragma: no cover - ships with the app
+    except ImportError:
         return None
     classifier = transformer.TransformerClassifier.load()
     if classifier is None:
@@ -437,7 +421,7 @@ def _run_bundled_transformer(text: str) -> _ModelOutcome | None:
     try:
         label, probabilities = classifier.predict(text)
         attributions = transformer.occlusion_attributions(classifier, text, label, probabilities.get(label, 0.0))
-    except Exception:  # a model failure must never abort the analysis
+    except Exception:
         log.exception("the bundled transformer failed; using the linear classifier")
         return None
     top_terms = [token for token, weight in attributions if weight > 0][:8]
@@ -446,10 +430,9 @@ def _run_bundled_transformer(text: str) -> _ModelOutcome | None:
 
 
 def _run_model(text: str, cfg: Settings) -> _ModelOutcome:
-    """(label, probabilities, top terms, token attributions, model name, backend)."""
     try:
         from ..ai import model_trainer as train
-    except ImportError as exc:  # pragma: no cover - the package ships with the app
+    except ImportError as exc:
         log.warning("ML package unavailable (%s); using rule heuristics", exc)
         return None, {}, [], [], "unavailable", "unavailable"
 
@@ -465,7 +448,6 @@ def _run_model(text: str, cfg: Settings) -> _ModelOutcome:
             label, probs, attributions = outcome
             top_terms = [token for token, weight in attributions if weight > 0][:8]
             name = f"{model_id} ({train.TRANSFORMER_ATTRIBUTION} attribution)"
-            # No LIME here on purpose: 160 transformer forward passes per message.
             return label, probs, top_terms, attributions[:_SHAP_TOP_K], name, "transformer"
 
     try:
@@ -475,12 +457,11 @@ def _run_model(text: str, cfg: Settings) -> _ModelOutcome:
         return label, probs, train.explain(pipeline, text, label), weights, train.MODEL_VERSION, "linear"
     except ImportError as exc:
         log.warning("ML classifier unavailable (%s); using rule heuristics", exc)
-    except Exception:  # model failure must never abort analysis
+    except Exception:
         log.exception("ML classification failed; using rule heuristics")
     return None, {}, [], [], "unavailable", "unavailable"
 
 
-# Entry point
 def _finding(fid: str, severity: Severity, title: str, detail: str, evidence: dict[str, object]) -> Finding:
     return Finding(id=fid, module="nlp", severity=severity, title=title, detail=detail, evidence=evidence)
 

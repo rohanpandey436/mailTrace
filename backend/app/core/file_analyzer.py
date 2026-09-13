@@ -1,4 +1,3 @@
-"""Attachment risk analysis."""
 from __future__ import annotations
 
 import hashlib
@@ -69,9 +68,7 @@ _NATURALLY_COMPRESSED_MAGIC: set[str] = _ARCHIVE_MAGIC | _IMAGE_MAGIC | {"ooxml"
 _SNIFFABLE_IMAGE_EXTS: set[str] = {"png", "jpg", "jpeg", "gif"}
 
 
-# Entropy
 def shannon_entropy(data: bytes) -> float:
-    """Shannon entropy of ``data`` in bits per byte over the 256-symbol alphabet."""
     total = len(data)
     if not total:
         return 0.0
@@ -83,26 +80,23 @@ def shannon_entropy(data: bytes) -> float:
 
 
 def _image_claim_mismatch(ext: str, magic: str) -> bool:
-    """True when a file claims an image extension its content does not back up."""
     if ext in _SNIFFABLE_IMAGE_EXTS:
-        return magic not in _IMAGE_MAGIC  # includes '' - no PNG/JPEG/GIF header at all
-    if ext in _IMAGE_EXTS:  # bmp/webp/svg: the sniffer has no signature, so only a
-        return bool(magic) and magic not in _IMAGE_MAGIC  # positive foreign magic counts
+        return magic not in _IMAGE_MAGIC
+    if ext in _IMAGE_EXTS:
+        return bool(magic) and magic not in _IMAGE_MAGIC
     return False
 
 
 def _entropy_escalates(extension: str, magic: str, high_entropy: bool) -> bool:
-    """Whether high entropy is *unexplained* by the file's declared type."""
     if not high_entropy or magic in EXECUTABLE_MAGIC:
         return False
     if extension in _INCOMPRESSIBLE_EXTS:
         return True
     if extension in _ZIP_CONTAINER_DOC_EXTS:
-        return magic not in ("ooxml", "zip")  # a real OOXML/ODF file is deflated, so 8.0 is normal
+        return magic not in ("ooxml", "zip")
     return _image_claim_mismatch(extension, magic)
 
 
-# Content sniffing
 def _looks_text(sample: bytes) -> bool:
     if not sample or b"\x00" in sample:
         return False
@@ -114,12 +108,11 @@ def _is_ooxml(data: bytes) -> bool:
     try:
         with zipfile.ZipFile(io.BytesIO(data)) as archive:
             return "[Content_Types].xml" in archive.namelist()
-    except Exception:  # noqa: BLE001 - corrupt/hostile zip
+    except Exception:
         return False
 
 
 def sniff_magic(data: bytes) -> str:
-    """Identify content by magic bytes; '' when unknown."""
     if not data:
         return ""
     head = data[:16]
@@ -154,7 +147,6 @@ class _ZipReport(TypedDict):
 
 
 def _inspect_zip(data: bytes) -> _ZipReport:
-    """Member names, encryption flag, risky members and macro presence."""
     result: _ZipReport = {"members": [], "encrypted": False, "risky_members": [], "has_vba": False, "ok": False}
     try:
         with zipfile.ZipFile(io.BytesIO(data)) as archive:
@@ -170,7 +162,7 @@ def _inspect_zip(data: bytes) -> _ZipReport:
                 if RISKY_EXTENSIONS.get(ext) in ("critical", "high") and not lowered.endswith("/"):
                     result["risky_members"].append(name)
             result["ok"] = True
-    except Exception:  # a corrupt or hostile archive is data, not an error
+    except Exception:
         log.debug("zip inspection failed", exc_info=True)
     return result
 
@@ -179,11 +171,9 @@ _OLE_VBA_MARKERS = ("_VBA_PROJECT".encode("utf-16-le"), "Macros".encode("utf-16-
 
 
 def _ole_has_macros(data: bytes) -> bool:
-    """Stream names are stored UTF-16LE inside the OLE directory; the VBA"""
     return _OLE_VBA_MARKERS[0] in data or (_OLE_VBA_MARKERS[1] in data and _OLE_VBA_MARKERS[2] in data)
 
 
-# Per-attachment analysis
 def _worse(current: str, candidate: str) -> str:
     return candidate if SEVERITY_ORDER[candidate] > SEVERITY_ORDER[current] else current
 
@@ -211,14 +201,12 @@ def analyze_attachment(att: RawAttachment, cfg: Settings) -> AttachmentMeta:
     if ext and severity in ("critical", "high"):
         reasons.append(f".{ext} files can execute code or scripts when opened")
 
-    # Double extension: "invoice.pdf.exe" or "photo.jpg .scr".
     parts = collapsed.lower().replace(" ", "").split(".")
     double_extension = len(parts) >= 3 and parts[-2] in _DOCUMENT_EXTS and RISKY_EXTENSIONS.get(ext) in ("critical", "high")
     if double_extension:
         severity = _worse(severity, "high")
         reasons.append(f"Double extension disguises a .{ext} file as a .{parts[-2]} document")
 
-    # Content vs declaration ------------------------------------------------
     if magic in EXECUTABLE_MAGIC:
         severity = "critical"
         reasons.append(f"File content is an executable ({magic}) regardless of its name")
@@ -230,21 +218,19 @@ def analyze_attachment(att: RawAttachment, cfg: Settings) -> AttachmentMeta:
         severity = _worse(severity, "high")
         reasons.append(f"Declared as {declared or ('.' + ext) or 'unknown'} but the content looks like {magic}")
 
-    # Macros --------------------------------------------------------------
     if magic == "ooxml" or (ext in ("docm", "xlsm", "pptm", "dotm", "xltm", "xlam") and magic in ("ooxml", "zip")):
         if _inspect_zip(data)["has_vba"]:
             has_macros = True
     elif magic == "ole" and _ole_has_macros(data):
         has_macros = True
     if ext in ("docm", "xlsm", "pptm", "dotm", "xltm", "xlam") and not has_macros:
-        has_macros = True  # the format exists only to carry macros
+        has_macros = True
     if has_macros:
         severity = _worse(severity, "high")
         reasons.append("Document contains VBA macros")
     elif ext in MACRO_EXTENSIONS and ext in ("doc", "xls", "ppt"):
         reasons.append("Legacy Office format can carry macros; open only in Protected View")
 
-    # Archives ------------------------------------------------------------
     if is_archive and magic in ("zip", "ooxml", "") and (ext in ("zip", "jar", "apk") or magic == "zip"):
         inspection = _inspect_zip(data)
         if inspection["ok"]:
@@ -259,7 +245,6 @@ def analyze_attachment(att: RawAttachment, cfg: Settings) -> AttachmentMeta:
         severity = _worse(severity, "medium")
         reasons.append(f"{magic.upper()} container hides its contents from most mail scanners")
 
-    # HTML / HTA ------------------------------------------------------------
     if magic == "hta":
         severity = "critical"
         reasons.append("HTML Application (HTA) runs with full local privileges")
@@ -324,7 +309,6 @@ def analyze_attachment(att: RawAttachment, cfg: Settings) -> AttachmentMeta:
     )
 
 
-# Whole-message analysis
 def _finding(fid: str, severity: Severity, title: str, detail: str, evidence: dict[str, object]) -> Finding:
     return Finding(id=fid, module="attachments", severity=severity, title=title, detail=detail, evidence=evidence)
 
@@ -340,7 +324,7 @@ def analyze_attachments(raw_attachments: list[RawAttachment], cfg: Settings) -> 
         try:
             metas.append(analyze_attachment(att, cfg))
             inline_flags.append(bool(att.is_inline))
-        except Exception:  # one hostile file must not abort the analysis
+        except Exception:
             log.exception("attachment analysis failed for %r", att.filename)
     scored = [m for m, inline in zip(metas, inline_flags) if not inline]
     severe = [m for m in scored if SEVERITY_ORDER[m.risk.value] >= SEVERITY_ORDER["high"]]

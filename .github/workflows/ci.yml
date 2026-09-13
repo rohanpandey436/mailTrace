@@ -4,7 +4,6 @@ on:
   push:
   pull_request:
 
-# A new push to the same branch cancels the previous run instead of queueing.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -27,7 +26,6 @@ jobs:
       - name: Set up Python 3.13
         uses: actions/setup-python@v5
         with:
-          # 3.13 matches render.yaml's PYTHON_VERSION and the Dockerfile base.
           python-version: '3.13'
           cache: pip
           cache-dependency-path: backend/requirements-dev.txt
@@ -41,7 +39,6 @@ jobs:
         run: python -m ruff check app tests
 
       - name: Type-check
-        # Strict mode; the configuration is in pyproject.toml.
         run: python -m mypy app
 
       - name: Import every module
@@ -50,13 +47,12 @@ jobs:
           import importlib, pkgutil, sys
           import app
 
-          # "run" is the entry point script beside the package, not part of it.
           names = ["app"] + [m.name for m in pkgutil.walk_packages(app.__path__, "app.")] + ["run"]
           failures = []
           for name in names:
               try:
                   importlib.import_module(name)
-              except Exception as exc:               # noqa: BLE001 - report them all, then fail
+              except Exception as exc:
                   failures.append(f"{name}: {type(exc).__name__}: {exc}")
 
           print(f"imported {len(names) - len(failures)}/{len(names)} modules")
@@ -69,7 +65,6 @@ jobs:
         run: python -m pytest -q
 
       - name: Check the stylesheet is not stale
-        # css/app.css is Tailwind's committed output; rebuild it and compare bytes.
         working-directory: .
         run: python frontend/build_css.py --check
 
@@ -86,11 +81,9 @@ jobs:
           python-version: '3.13'
 
       - name: Install OpenSSL headers
-        # Installed explicitly rather than relying on the runner image.
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libssl-dev
 
       - name: Build the engine, requiring OpenSSL
-        # MAILTRACE_OPENSSL=1: an unusable OpenSSL fails the build instead of falling back.
         run: MAILTRACE_OPENSSL=1 pip install ./engine
 
       - name: Verify it really links libcrypto
@@ -111,7 +104,6 @@ jobs:
 
       - name: Confirm the backend actually adopts it
         working-directory: backend
-        # NATIVE_ENGINE is True only after the import-time self-check passes.
         run: |
           pip install -r requirements-dev.txt
           python -c "
@@ -144,9 +136,7 @@ jobs:
 
     env:
       MAILTRACE_REDIS_URL: redis://127.0.0.1:6379/0
-      # 0 embedded workers: a job can only complete via the worker started below.
       MAILTRACE_QUEUE_WORKERS: "0"
-      # The worker reads the same variables, so both write to one database.
       MAILTRACE_DATA_DIR: ${{ github.workspace }}/queue-data
       MAILTRACE_ENABLE_NETWORK: "false"
       MAILTRACE_ORG_DOMAINS: acme-corp.in
@@ -173,7 +163,6 @@ jobs:
           pip install -r requirements-dev.txt
 
       - name: Start a Celery worker
-        # Backgrounded rather than a service container: it must run this checkout.
         run: |
           celery -A app.tasks worker --queues=mailtrace.analysis --concurrency=1 --loglevel=info > worker.log 2>&1 &
           echo $! > worker.pid
@@ -197,7 +186,6 @@ jobs:
         run: python -m pytest tests/test_queue.py -q
 
       - name: Prove the worker did the work
-        # Asserts where the work ran, so an in-process worker cannot quietly return.
         run: |
           grep -q "mailtrace.analyze_message" worker.log             || { echo "the worker never received a task; log follows" >&2; cat worker.log >&2; exit 1; }
           echo "tasks executed by the external worker:"
@@ -233,7 +221,6 @@ jobs:
           exit 1
 
       - name: Analyse a sample through the running container
-        # Proves the image carries the frontend, samples and a working engine.
         run: |
           curl -fsS -F "files=@samples/phishing_sbi_kyc.eml"             http://127.0.0.1:8000/api/analyze -o result.json
           python -c "
@@ -247,7 +234,6 @@ jobs:
           curl -fsS http://127.0.0.1:8000/ | grep -q 'id="root"' && echo "dashboard served"
 
       - name: Confirm the image ships the OpenSSL-linked engine
-        # Read from /api/health: what the running service reports about itself.
         run: |
           python -c "
           import json

@@ -1,11 +1,3 @@
-// SPDX-License-Identifier: MIT
-//
-// FIPS 180-4 SHA-256, implemented from the specification.
-//
-// Two backends, chosen at build time by setup.py: with OpenSSL available the
-// one-shot `sha256_hex` calls EVP_Digest and `sha256_backend()` reports
-// "openssl"; otherwise the implementation below runs and reports "builtin".
-// Both are compiled and both are tested against Python's hashlib.
 #ifndef MAILTRACE_SHA256_HPP
 #define MAILTRACE_SHA256_HPP
 
@@ -17,7 +9,6 @@
 
 namespace mailtrace {
 
-/// Streaming SHA-256.  Copyable, no owning pointers, nothing to free.
 class Sha256 {
   public:
     static constexpr std::size_t kDigestSize = 32;
@@ -27,14 +18,11 @@ class Sha256 {
 
     Sha256() noexcept;
 
-    /// Absorb `len` bytes.  `data` may be null only when `len` is zero.
     void update(const std::uint8_t* data, std::size_t len) noexcept;
     void update(std::string_view data) noexcept;
 
-    /// Finish on a *copy* of the state, so the object stays usable.
     [[nodiscard]] Digest digest() const noexcept;
 
-    /// Lower-case hex rendering of `digest()`.
     [[nodiscard]] std::string hex() const;
 
     static std::string to_hex(const Digest& digest);
@@ -49,13 +37,11 @@ class Sha256 {
     std::uint64_t length_bits_{0};
 };
 
-/// Which implementation this build uses: "openssl" or "builtin".
 [[nodiscard]] const char* sha256_backend() noexcept;
 
-/// One-shot convenience wrapper: lower-case hex SHA-256 of a byte range.
 [[nodiscard]] std::string sha256_hex(const std::uint8_t* data, std::size_t len);
 [[nodiscard]] std::string sha256_hex(std::string_view data);
 
-}  // namespace mailtrace
+}
 
-#endif  // MAILTRACE_SHA256_HPP
+#endif

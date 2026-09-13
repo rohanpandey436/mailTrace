@@ -1,4 +1,3 @@
-"""Analyst decisions on a case (Stage 6)."""
 from __future__ import annotations
 
 from typing import Literal
@@ -9,7 +8,6 @@ from .errors import NotFound
 
 DecisionName = Literal["quarantine", "block"]
 
-#: decision -> (the case status it sets, the custody action it records)
 DECISIONS: dict[DecisionName, tuple[CaseStatus, str]] = {
     "quarantine": ("quarantined", "quarantine_decision"),
     "block": ("blocked", "block_decision"),
@@ -27,7 +25,6 @@ _INDICATOR_ALIASES: dict[str, str] = {
 
 
 def load_case(store: Store, email_id: str) -> AnalysisResult:
-    """The stored analysis for a case, or ``NotFound``."""
     result = store.get_analysis(email_id)
     if result is None:
         raise NotFound(f"email {email_id} not found")
@@ -43,7 +40,6 @@ def _indicator_key(indicator: str) -> str:
 
 
 def indicators(result: AnalysisResult) -> list[str]:
-    """IOCs worth handing to the system that does enforce, newest evidence first."""
     seen: set[str] = set()
     unique: list[str] = []
     for indicator in [*result.intel.indicators, *result.attribution.indicators]:
@@ -56,7 +52,6 @@ def indicators(result: AnalysisResult) -> list[str]:
 
 
 def current(store: Store, result: AnalysisResult) -> CaseDecision:
-    """The decision recorded against a case, with its ledger history."""
     chain = store.get_custody(result.id)
     return CaseDecision(
         email_id=result.id,
@@ -68,7 +63,6 @@ def current(store: Store, result: AnalysisResult) -> CaseDecision:
 
 
 def record(store: Store, email_id: str, decision: DecisionName, actor: str) -> CaseDecision:
-    """Record ``decision`` for a case and return the new decision state."""
     status, action = DECISIONS[decision]
     result = load_case(store, email_id)
     previous = store.get_case_status(email_id)

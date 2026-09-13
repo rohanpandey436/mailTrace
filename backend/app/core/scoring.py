@@ -1,4 +1,3 @@
-"""Decision brain of MailTrace: fuses every analyzer's sub-report into one Verdict."""
 from __future__ import annotations
 
 import logging
@@ -30,17 +29,14 @@ from .link_analyzer import registrable_domain
 
 log = logging.getLogger("mailtrace.scoring")
 
-# Every legitimate domain of every known brand (flattened once at import).
 BRAND_DOMAINS: frozenset[str] = frozenset(d for domains in BRANDS.values() for d in domains)
 
-# Minimum risk score a message may carry once it has been given a threat label.
 RISK_FLOORS: dict[ThreatCategory, int] = {
     ThreatCategory.PHISHING: 60,
     ThreatCategory.FRAUD: 60,
     ThreatCategory.IMPERSONATED: 45,
     ThreatCategory.SUSPICIOUS: 25,
 }
-# A "Legitimate" label is never allowed at or above this risk score.
 LEGITIMATE_RISK_CEILING = 40
 
 _ATTACK_CATEGORIES: frozenset[ThreatCategory] = frozenset(
@@ -49,20 +45,17 @@ _ATTACK_CATEGORIES: frozenset[ThreatCategory] = frozenset(
 _ROLE_LABELS: dict[str, str] = {"sender": "Sender", "reply_to": "Reply-To", "return_path": "Return-Path"}
 
 
-# Small pure helpers
 def _clamp(value: Any, low: float = 0.0, high: float = 100.0) -> float:
-    """Coerce to float and clamp; NaN, None and garbage become ``low``."""
     try:
         number = float(value)
     except (TypeError, ValueError):
         return low
-    if number != number:  # NaN
+    if number != number:
         return low
     return max(low, min(high, number))
 
 
 def _sev(value: Any) -> int:
-    """Numeric rank of a Severity (enum or plain string); unknown -> 0."""
     return SEVERITY_ORDER.get(getattr(value, "value", value), 0)
 
 
@@ -72,7 +65,6 @@ def _short(text: str, limit: int = 80) -> str:
 
 
 def _quote(items: Iterable[str], limit: int = 3) -> str:
-    """'a', 'b', 'c' (+2 more) -- empty string when nothing to show."""
     values = [str(v).strip() for v in items if str(v).strip()]
     shown = ", ".join(f"'{v}'" for v in values[:limit])
     extra = len(values) - limit
@@ -106,7 +98,6 @@ def _org_domains(cfg: Settings) -> set[str]:
 
 
 def _is_protected_domain(domain: str, cfg: Settings) -> bool:
-    """True when the domain belongs to the protected organisation or a known brand."""
     return bool(domain) and (domain in _org_domains(cfg) or domain in BRAND_DOMAINS)
 
 
@@ -118,7 +109,6 @@ def _as_category(value: Any) -> ThreatCategory:
 
 
 def _ml_prob(probs: dict[str, float] | None, category: Any) -> float:
-    """Probability the classifier assigned to ``category``; 0 when unknown."""
     if not probs:
         return 0.0
     cat = _as_category(category)
@@ -129,7 +119,6 @@ def _ml_prob(probs: dict[str, float] | None, category: Any) -> float:
 
 
 def _bec_confidence(nlp: NlpAnalysis, pattern: str) -> tuple[float, list[str]]:
-    """Highest confidence recorded for a BEC pattern and its evidence phrases."""
     best = 0.0
     evidence: list[str] = []
     for item in nlp.bec_patterns:
@@ -157,9 +146,7 @@ def _describe_url(url: UrlInfo) -> str:
     return f"{url.host or _short(url.url, 60)} [{url.risk.value}{reason}]"
 
 
-# Severity bands
 def severity_for(score: float, has_findings: bool = True) -> Severity:
-    """<25 LOW, <50 MEDIUM, <75 HIGH, else CRITICAL; a zero score with no"""
     value = _clamp(score)
     if value <= 0 and not has_findings:
         return Severity.INFO
@@ -172,7 +159,6 @@ def severity_for(score: float, has_findings: bool = True) -> Severity:
     return Severity.CRITICAL
 
 
-# Component scores (0-100)
 def _authentication_score(auth: AuthResult, sender_domain: str, cfg: Settings) -> float:
     spf, dkim, dmarc = auth.spf.lower(), auth.dkim.lower(), auth.dmarc.lower()
     score = 0.0
@@ -205,7 +191,6 @@ def _authentication_score(auth: AuthResult, sender_domain: str, cfg: Settings) -
 
 
 def _text_score(nlp: NlpAnalysis) -> float:
-    """Text term: what the classifier and the language analysis concluded about"""
     max_bec = max((_clamp(p.confidence, 0.0, 1.0) for p in nlp.bec_patterns), default=0.0)
     return _clamp(100 * (0.7 * _clamp(nlp.score, 0.0, 1.0) + 0.3 * max_bec))
 
@@ -214,7 +199,6 @@ URL_MODEL_ALPHA = 0.5
 
 
 def _deterministic_url_score(urls: UrlAnalysis, domain_intel: list[DomainIntel]) -> float:
-    """The rule-only URL term, unchanged: the risk carried by the links"""
     score = 100 * _clamp(urls.score, 0.0, 1.0)
     for d in domain_intel:
         if d.lookalike_of:
@@ -234,14 +218,12 @@ def _deterministic_url_score(urls: UrlAnalysis, domain_intel: list[DomainIntel])
 
 
 def _url_score(urls: UrlAnalysis, domain_intel: list[DomainIntel], url_model: Any = None) -> float:
-    """URL term: deterministic rules, optionally lifted by the XGBoost model."""
     floor = _deterministic_url_score(urls, domain_intel)
     probability = _clamp(getattr(url_model, "max_probability", 0.0), 0.0, 1.0) if url_model is not None else 0.0
     return _clamp(max(floor, floor + (100.0 - floor) * URL_MODEL_ALPHA * probability))
 
 
 def _entropy_score(atts: AttachmentAnalysis) -> float:
-    """Entropy term: attachment payload risk, which now includes the Shannon"""
     score = 100 * _clamp(atts.score, 0.0, 1.0)
     for a in atts.attachments:
         if a.high_entropy and _sev(a.risk) >= SEVERITY_ORDER["high"]:
@@ -250,7 +232,6 @@ def _entropy_score(atts: AttachmentAnalysis) -> float:
 
 
 def _identity_forgery_score(header_analysis: HeaderAnalysis) -> float:
-    """Forged sender fields, scored with the authentication pillar because they"""
     score = 0.0
     if header_analysis.display_name_spoof:
         score += 45
@@ -264,7 +245,6 @@ def _identity_forgery_score(header_analysis: HeaderAnalysis) -> float:
 
 
 def _auth_pillar(auth: AuthResult, header_analysis: HeaderAnalysis, sender_domain: str, cfg: Settings) -> float:
-    """Auth term: SPF, DKIM, DMARC, alignment and forged sender fields."""
     return _clamp(_authentication_score(auth, sender_domain, cfg) + _identity_forgery_score(header_analysis))
 
 
@@ -279,16 +259,15 @@ _ROUTING_ANOMALIES: dict[str, float] = {
 
 
 def _network_score(header_analysis: HeaderAnalysis, infra: InfraAnalysis, intel: ThreatIntel) -> float:
-    """Network term: where it came from and how it travelled."""
     infra_part = 100 * _clamp(infra.score, 0.0, 1.0)
     seen: set[str] = set()
     for hop in header_analysis.hops:
         seen.update(hop.anomalies)
     routing_part = sum(weight for name, weight in _ROUTING_ANOMALIES.items() if name in seen)
     if header_analysis.hops and not any(h.from_ip and not h.is_private_ip for h in header_analysis.hops):
-        routing_part += 20  # the true origin is hidden behind private addressing
+        routing_part += 20
     if not header_analysis.hops:
-        routing_part += 25  # no delivery record at all
+        routing_part += 25
     if header_analysis.originating_ip and header_analysis.origin_confidence < 0.5:
         routing_part += 10
     intel_part = 0.0
@@ -328,7 +307,6 @@ def component_scores(
     sender_domain: str = "",
     url_model: Any = None,
 ) -> RiskBreakdown:
-    """Per-family 0-100 scores plus the normalised weights used to combine them."""
     domain_intel = list(domain_intel or [])
     if not sender_domain:
         sender_domain = next((d.domain.lower() for d in domain_intel if d.role == "sender"), "")
@@ -355,11 +333,9 @@ def _breakdown_line(breakdown: RiskBreakdown, risk: int) -> str:
     return f"Weighted risk {risk}/100 = {parts}."
 
 
-# Rule policy
 def _pressure_cues(
     parsed: ParsedEmail, header_analysis: HeaderAnalysis, nlp: NlpAnalysis, sender_domain: str, sender_free: bool
 ) -> list[str]:
-    """Signals that turn a financial topic into a fraud lure."""
     cues: list[str] = []
     if header_analysis.reply_to_mismatch:
         reply_domains = _unique(_registrable(r.domain) for r in parsed.reply_to if r.domain)
@@ -384,7 +360,6 @@ def rule_classify(
     risk_score: int,
     cfg: Settings,
 ) -> tuple[ThreatCategory, list[str]]:
-    """Deterministic first-match policy.  Rules are evaluated in the fixed"""
     auth = header_analysis.auth
     sender_domain = _registrable(parsed.sender.domain)
     sender_free = _is_freemail(sender_domain)
@@ -404,7 +379,6 @@ def rule_classify(
     medium_urls = [u for u in url_analysis.urls if _sev(u.risk) >= SEVERITY_ORDER["medium"]]
     critical_atts = [a for a in att_analysis.attachments if _sev(a.risk) >= SEVERITY_ORDER["critical"]]
 
-    # 1. Fraud-Related -------------------------------------------------------
     why: list[str] = []
     credential_dominant = cred_conf >= 0.5 and cred_conf >= max(payment_conf, invoice_conf)
     if payment_conf >= 0.5 and not credential_dominant:
@@ -430,7 +404,6 @@ def rule_classify(
     if why:
         return ThreatCategory.FRAUD, why
 
-    # 2. Phishing -------------------------------------------------------------
     why = []
     if cred_conf >= 0.5:
         why.append(
@@ -454,7 +427,6 @@ def rule_classify(
     if why:
         return ThreatCategory.PHISHING, why
 
-    # 3. Impersonated ---------------------------------------------------------
     why = []
     if header_analysis.display_name_spoof:
         name = parsed.sender.display_name or parsed.sender.raw or "(empty)"
@@ -476,7 +448,6 @@ def rule_classify(
     if why:
         return ThreatCategory.IMPERSONATED, why
 
-    # 4. Suspicious -----------------------------------------------------------
     why = []
     if risk_score >= 25:
         why.append(f"Weighted risk score {risk_score}/100 is at or above the suspicious threshold of 25")
@@ -488,21 +459,18 @@ def rule_classify(
     if why:
         return ThreatCategory.SUSPICIOUS, why
 
-    # 5. Legitimate -----------------------------------------------------------
     return ThreatCategory.LEGITIMATE, [
         f"No policy rule matched: SPF {spf}, DKIM {dkim}, DMARC {dmarc}; {len(url_analysis.urls)} link(s), "
         f"{len(att_analysis.attachments)} attachment(s), {len(nlp_analysis.bec_patterns)} BEC pattern(s); risk {risk_score}/100"
     ]
 
 
-# Dual validation
 def fuse_category(
     rule_cat: ThreatCategory,
     ml_cat: ThreatCategory,
     ml_probs: dict[str, float] | None,
     risk_score: int,
 ) -> tuple[ThreatCategory, float, bool]:
-    """The rule engine decides; the ML model modulates confidence."""
     rule_cat = _as_category(rule_cat)
     ml_cat = _as_category(ml_cat)
     agreement = rule_cat == ml_cat
@@ -516,7 +484,6 @@ def fuse_category(
     return rule_cat, _clamp(confidence, 0.0, 1.0), agreement
 
 
-# Attribution
 def _attribution_indicators(
     parsed: ParsedEmail,
     header_analysis: HeaderAnalysis,
@@ -563,7 +530,6 @@ def attribute_source(
     findings: list[Finding],
     cfg: Settings,
 ) -> Attribution:
-    """Explain the most plausible origin of the message."""
     category = _as_category(category)
     domain_intel = list(domain_intel or [])
     auth = header_analysis.auth
@@ -666,7 +632,6 @@ def attribute_source(
     )
 
 
-# Recommended actions
 def recommended_actions(
     category: ThreatCategory,
     findings: list[Finding],
@@ -676,7 +641,6 @@ def recommended_actions(
     att_analysis: AttachmentAnalysis,
     attribution: Attribution | None = None,
 ) -> list[str]:
-    """Concrete analyst playbook for the verdict, naming the actual IOCs."""
     category = _as_category(category)
     finding_ids = {f.id for f in findings}
     sender = parsed.sender.address or "the sender address"
@@ -694,7 +658,6 @@ def recommended_actions(
             actions.append("No action required: the message shows no threat indicators and can be delivered normally.")
         return actions
 
-    # Never block a whole free-mail provider because of one abusive mailbox.
     block_scope = sender if (_is_freemail(sender_domain) or not sender_domain) else f"{sender} and the domain {sender_domain}"
     block = f"Block {block_scope} at the mail gateway and purge copies of this message from user mailboxes."
 
@@ -758,9 +721,7 @@ def recommended_actions(
     return _unique(actions)[:10]
 
 
-# Findings merge
 def collect_findings(*finding_lists: Iterable[Finding] | None) -> list[Finding]:
-    """Merge finding lists, dedupe by (module, id) keeping the first, and sort"""
     seen: set[tuple[str, str]] = set()
     merged: list[Finding] = []
     for group in finding_lists:
@@ -776,21 +737,19 @@ def collect_findings(*finding_lists: Iterable[Finding] | None) -> list[Finding]:
     return merged
 
 
-# Optional XGBoost URL model
 def _score_urls_with_model(
     url_analysis: UrlAnalysis, domain_intel: list[DomainIntel], cfg: Settings
 ) -> tuple[Any, Finding | None]:
-    """(outcome, finding) from the XGBoost URL model, or ``(None, None)``."""
     if not url_analysis.urls or not getattr(cfg, "url_model_enabled", True):
         return None, None
     try:
         from ..ai import url_model as url_ml
-    except ImportError:  # the package ships with the app; a partial install still must not break the verdict
+    except ImportError:
         log.debug("URL model package unavailable", exc_info=True)
         return None, None
     try:
         outcome = url_ml.score_urls(url_analysis.urls, domain_intel, cfg)
-    except Exception:  # a model must never break the verdict
+    except Exception:
         log.exception("URL model scoring failed; the URL pillar stays rule-only")
         return None, None
     if outcome is None:
@@ -820,7 +779,6 @@ def _score_urls_with_model(
     return outcome, finding
 
 
-# Entry point
 def evaluate(
     parsed: ParsedEmail,
     header_analysis: HeaderAnalysis,
@@ -832,7 +790,6 @@ def evaluate(
     intel: ThreatIntel,
     cfg: Settings,
 ) -> tuple[Verdict, Attribution, list[Finding]]:
-    """Produce the Verdict, the Attribution and the merged finding list."""
     domain_intel = list(domain_intel or [])
     findings = collect_findings(
         header_analysis.findings,

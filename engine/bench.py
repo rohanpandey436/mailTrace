@@ -1,15 +1,3 @@
-"""
-Measure the native dissector against the pure-Python parser.
-
-Run it from anywhere:
-
-    python engine/bench.py                    # all samples/, 200 iterations each
-    python engine/bench.py path/to/mail.eml -n 1000
-
-Without the extension built it still runs and reports the Python baseline, so
-the pitch deck's "MIME dissection < 5 ms" claim can be checked either way.
-Nothing here is part of the service.
-"""
 from __future__ import annotations
 
 import argparse
@@ -24,12 +12,11 @@ SAMPLES = HERE.parent / "samples"
 if str(BACKEND) not in sys.path:
     sys.path.insert(0, str(BACKEND))
 
-from app.core import parser  # noqa: E402
+from app.core import parser
 
 
 def timed(function, raw: bytes, iterations: int) -> tuple[float, float]:
-    """Median and best milliseconds per call."""
-    function(raw)  # warm caches
+    function(raw)
     timings = []
     for _ in range(iterations):
         start = time.perf_counter()

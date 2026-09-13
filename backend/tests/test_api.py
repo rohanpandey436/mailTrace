@@ -77,7 +77,6 @@ def test_reports_custody_and_alerts(client, sample):
     assert [a["email_id"] for a in alerts] == [phishing["id"], result["id"]]
     ack = client.post(f"/api/alerts/{alerts[0]['id']}/ack")
     assert ack.status_code == 200
-    # Acknowledging the phishing alert leaves the BEC one outstanding.
     assert [a["email_id"] for a in client.get("/api/alerts?unacknowledged_only=true").json()] == [result["id"]]
     assert client.post("/api/alerts/nope/ack").status_code == 404
 

@@ -1,5 +1,3 @@
-
-/* Card and section */
 .card {
   background: var(--color-card);
   border: 1px solid var(--color-line);
@@ -63,7 +61,6 @@
   color: var(--color-muted);
 }
 
-/* Chip */
 .chip {
   display: inline-flex;
   align-items: center;
@@ -93,7 +90,6 @@
   opacity: 0.6;
 }
 
-/* Button */
 .btn {
   display: inline-flex;
   align-items: center;
@@ -139,7 +135,6 @@
   padding-inline: 0.75rem;
 }
 
-/* Form controls */
 .input {
   width: 100%;
   padding: 0.5rem 0.75rem;
@@ -181,7 +176,6 @@
   accent-color: var(--color-brand);
 }
 
-/* Switch */
 .switch-label {
   display: flex;
   align-items: center;
@@ -224,7 +218,6 @@
   left: 21px;
 }
 
-/* Tabs */
 .tabs {
   display: flex;
   gap: var(--space-1);
@@ -263,7 +256,6 @@
   margin-left: auto;
 }
 
-/* Table */
 .table-wrap {
   overflow-x: auto;
 }
@@ -308,7 +300,6 @@
   max-width: 380px;
 }
 
-/* Bars and gauges */
 .bar {
   height: 9px;
   border-radius: var(--radius-pill);
@@ -398,7 +389,6 @@
   font-size: 11px;
 }
 
-/* Distribution strip (category share on the home page) */
 .dist__bar {
   display: flex;
   height: 0.75rem;
@@ -434,7 +424,6 @@
   height: 0.4rem;
 }
 
-/* SHAP diverging bars */
 .shap {
   display: grid;
   grid-template-columns: 8rem 1fr 3.5rem;
@@ -479,7 +468,6 @@
   font-family: var(--font-mono);
 }
 
-/* Loading, empty and error states */
 .skeleton {
   height: 6rem;
   margin-bottom: var(--space-3);
@@ -519,7 +507,6 @@
   margin-top: var(--space-4);
 }
 
-/* Notes */
 .note {
   padding: 0.85rem 1rem;
   border-radius: 12px;
@@ -543,7 +530,6 @@
   margin-top: var(--space-2);
 }
 
-/* Key / value list */
 .kv {
   display: grid;
   grid-template-columns: 10rem 1fr;
@@ -559,7 +545,6 @@
   overflow-wrap: anywhere;
 }
 
-/* Upload drop zone */
 .dropzone {
   padding: var(--space-8);
   margin-bottom: var(--space-4);
@@ -604,7 +589,6 @@
   color: var(--color-brand);
 }
 
-/* KPI tile */
 .kpi__label {
   font-size: var(--text-xs);
   font-weight: 500;
@@ -618,7 +602,6 @@
   color: var(--tone, var(--color-ink));
 }
 
-/* Verdict and origin */
 .verdict {
   text-align: center;
 }
@@ -642,7 +625,6 @@
   font-size: var(--text-sm);
 }
 
-/* Findings list */
 .finding {
   padding: var(--space-3) var(--space-4);
 }
@@ -694,7 +676,6 @@
   margin-top: var(--space-2);
 }
 
-/* Delivery path */
 .hops {
   max-height: var(--map-height);
   margin-inline: calc(-1 * var(--space-1));
@@ -738,7 +719,6 @@
   font-size: var(--text-xs);
 }
 
-/* Message content */
 .probs {
   display: flex;
   flex-direction: column;
@@ -811,7 +791,6 @@
   overflow-y: auto;
 }
 
-/* Links and files */
 .url__anchor {
   margin-top: var(--space-1);
   font-size: var(--text-xs);
@@ -837,7 +816,6 @@
   overflow-wrap: anywhere;
 }
 
-/* Domains */
 .domain-card__head {
   display: flex;
   align-items: center;
@@ -858,12 +836,10 @@
   font-weight: 600;
 }
 
-/* Evidence log */
 .custody-status {
   margin-bottom: var(--space-3);
 }
 
-/* Graph legend */
 .legend {
   display: flex;
   flex-wrap: wrap;
@@ -881,7 +857,6 @@
   margin-left: auto;
 }
 
-/* Campaign card */
 .campaign-card {
   display: block;
   transition: border-color var(--duration);
@@ -895,7 +870,6 @@
   margin-bottom: var(--space-2);
 }
 
-/* Alert row */
 .alert-row {
   display: flex;
   align-items: center;
@@ -913,7 +887,6 @@
   font-weight: 500;
 }
 
-/* Analyst decision bar */
 .decision__title {
   display: flex;
   align-items: center;
@@ -922,7 +895,6 @@
   font-weight: 600;
 }
 
-/* Pagination */
 .pager {
   display: flex;
   align-items: center;
@@ -938,7 +910,6 @@
   gap: var(--space-2);
 }
 
-/* Status indicator in the top bar */
 .status-dot {
   display: inline-block;
   width: 0.375rem;
@@ -948,7 +919,6 @@
   background: var(--tone, var(--color-neutral));
 }
 
-/* Toasts */
 .toasts {
   position: fixed;
   right: var(--space-6);
@@ -1003,7 +973,6 @@
   }
 }
 
-/* Tooltip */
 .tooltip {
   position: fixed;
   z-index: var(--z-tooltip);

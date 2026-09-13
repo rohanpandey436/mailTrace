@@ -1,4 +1,3 @@
-"""Forensic report generation."""
 from __future__ import annotations
 
 import html
@@ -26,7 +25,7 @@ from ..schemas import (
     TimelineEntry,
 )
 
-try:  # PDF output is the only feature that needs reportlab; keep the app importable without it.
+try:
     from reportlab.lib import colors
     from reportlab.lib.enums import TA_JUSTIFY
     from reportlab.lib.pagesizes import A4
@@ -43,10 +42,10 @@ try:  # PDF output is the only feature that needs reportlab; keep the app import
     )
 
     _REPORTLAB_ERROR: BaseException | None = None
-except ImportError as exc:  # pragma: no cover - only reachable without the dependency
+except ImportError as exc:
     _REPORTLAB_ERROR = exc
 
-if TYPE_CHECKING:  # pragma: no cover - annotations only
+if TYPE_CHECKING:
     from reportlab.platypus import Flowable
 
 log = logging.getLogger("mailtrace.reporting")
@@ -57,7 +56,7 @@ _MEDIUM = SEVERITY_ORDER[Severity.MEDIUM.value]
 
 
 class PdfUnavailable(RuntimeError):
-    """Raised by :func:`render_pdf` when the optional reportlab dependency is missing."""
+    pass
 
 _SOURCE_LABELS: dict[str, str] = {
     "spoofed_domain": "spoofed sender domain: the visible From address was forged without control of that domain",
@@ -154,14 +153,11 @@ thead{display:table-header-group}
 """
 
 
-# Plain-text helpers
 def _clean(text: object) -> str:
-    """Collapse whitespace so a value never breaks the one-sentence-per-line summary."""
     return " ".join(str(text).split()) if text else ""
 
 
 def _val(value: object) -> str:
-    """String form of a value; enum members yield their value, never 'Severity.HIGH'."""
     if isinstance(value, Enum):
         return str(value.value)
     return "" if value is None else str(value)
@@ -273,7 +269,6 @@ def _fmt_size(size: int) -> str:
     return f"{size / (1024 * 1024):.2f} MB"
 
 
-# Executive summary
 def _summary_message(result: AnalysisResult) -> str:
     email = result.email
     subject = _clean(email.subject) or "(no subject)"
@@ -459,7 +454,6 @@ def _summary_campaign(result: AnalysisResult) -> str:
 
 
 def render_text_summary(result: AnalysisResult) -> str:
-    """Return an eight-line plain-English executive summary, one sentence per line."""
     lines = (
         _summary_message(result),
         _summary_verdict(result),
@@ -473,7 +467,6 @@ def render_text_summary(result: AnalysisResult) -> str:
     return "\n".join(_clean(line) for line in lines)
 
 
-# Report assembly
 def _key_indicators(result: AnalysisResult) -> list[str]:
     email = result.email
     items: list[str] = []
@@ -631,7 +624,6 @@ def _first_event(custody: CustodyChain, action: str) -> CustodyEvent | None:
 
 
 def _runtime_description() -> str:
-    """The host and interpreter that produced this output, as reported by itself."""
     implementation = sys.implementation.name or "python"
     return f"{platform.platform()} running {implementation} {platform.python_version()}"
 
@@ -748,7 +740,6 @@ def build_section_65b(
     generated_at: datetime,
     masked: bool,
 ) -> Section65BCertificate:
-    """Statement of the Section 65B(4) particulars for one analysed message."""
     ingested = _first_event(custody, "ingested")
     ingested_at = ingested.timestamp if ingested is not None else None
     return Section65BCertificate(
@@ -772,7 +763,6 @@ def build_report(
     masked: bool,
     generated_by: str = "system",
 ) -> ForensicReport:
-    """Assemble the forensic report for one analysis."""
     now = datetime.now(UTC)
     is_masked = masked or result.masked
     report_id = f"RPT-{result.id}-{now:%Y%m%d%H%M}"
@@ -795,7 +785,6 @@ def build_report(
     return report
 
 
-# HTML building blocks (every dynamic value is escaped here)
 def _esc(value: object) -> str:
     if value is None:
         return ""
@@ -871,7 +860,6 @@ def _bar(percent: float, css: str, label: str) -> str:
 
 
 def _table(headers: list[str], rows: list[list[str]], empty: str) -> str:
-    """Render pre-escaped cell HTML as a table; show ``empty`` when there are no rows."""
     if not rows:
         return f'<p class="muted">{_esc(empty)}</p>' if empty else ""
     head = "".join(f"<th>{_esc(header)}</th>" for header in headers)
@@ -880,7 +868,6 @@ def _table(headers: list[str], rows: list[list[str]], empty: str) -> str:
 
 
 def _kv(rows: list[tuple[str, str]]) -> str:
-    """Two-column label/value table; labels are escaped here, values are pre-escaped HTML."""
     body = "".join(f"<tr><th>{_esc(label)}</th><td>{value}</td></tr>" for label, value in rows)
     return f'<table class="kv"><tbody>{body}</tbody></table>'
 
@@ -958,7 +945,6 @@ def _geo_cell(geo: GeoInfo | None) -> str:
     return "<br>".join(bits)
 
 
-# HTML sections
 def _cover(report: ForensicReport, result: AnalysisResult) -> str:
     verdict = result.verdict
     severity = _val(verdict.severity)
@@ -1074,7 +1060,6 @@ def _signature_block(cert: Section65BCertificate) -> str:
     rows: list[str] = []
     for label, field in _SIGNATURE_FIELDS:
         value = _clean(getattr(cert, field, "")) if field else ""
-        # An unfilled particular is a ruled line for the signatory, never an em dash.
         cell = f"<td>{_esc(value)}</td>" if value else '<td class="rule"></td>'
         rows.append(f"<tr><th>{_esc(label)}</th>{cell}</tr>")
     body = "".join(rows)
@@ -1082,7 +1067,6 @@ def _signature_block(cert: Section65BCertificate) -> str:
 
 
 def _certificate_section(report: ForensicReport) -> str:
-    """The 65B(4) particulars as a legal annexure: four labelled clauses and a signature block."""
     cert = report.section_65b
     if cert is None:
         return '<p class="muted">No Section 65B certificate was generated for this report.</p>'
@@ -1625,7 +1609,6 @@ def _footer(report: ForensicReport) -> str:
 
 
 def render_html(report: ForensicReport) -> str:
-    """Render the report as one self-contained, printable HTML document (no scripts, no external assets)."""
     result = report.analysis
     sections: list[tuple[str, str, bool]] = [
         ("Executive summary", _summary_section(report), False),
@@ -1673,10 +1656,9 @@ def render_html(report: ForensicReport) -> str:
     )
 
 
-# PDF rendering (reportlab platypus)
-_PDF_MARGIN = 38.0        # points
-_PDF_FRAME_PAD = 6.0      # SimpleDocTemplate insets its frame by this much on each side
-_PDF_FOOTER_SPACE = 20.0  # extra bottom margin reserved for the page footer
+_PDF_MARGIN = 38.0
+_PDF_FRAME_PAD = 6.0
+_PDF_FOOTER_SPACE = 20.0
 
 _INK = "#1c2430"
 _INK_MUTED = "#5b6674"
@@ -1697,7 +1679,6 @@ _PDF_STYLES: dict[str, ParagraphStyle] = {}
 
 
 def _pdf_escape(value: object) -> str:
-    """Escape one dynamic value for platypus' mini-HTML parser."""
     if value is None:
         return ""
     if isinstance(value, Enum):
@@ -1707,7 +1688,6 @@ def _pdf_escape(value: object) -> str:
 
 
 def _styles() -> dict[str, ParagraphStyle]:
-    """Paragraph styles, built once on first use (they need reportlab imported)."""
     if _PDF_STYLES:
         return _PDF_STYLES
     ink = colors.HexColor(_INK)
@@ -1749,9 +1729,7 @@ def _styles() -> dict[str, ParagraphStyle]:
     return _PDF_STYLES
 
 
-# PDF flowable helpers
 def _markup(text: str, style: str = "cell") -> Flowable:
-    """Paragraph from mark-up that is already escaped (colour and bold wrappers)."""
     return Paragraph(text or "&nbsp;", _styles()[style])
 
 
@@ -1760,19 +1738,16 @@ def _para(value: object, style: str = "body") -> Flowable:
 
 
 def _cellp(value: object, style: str = "cell") -> Flowable:
-    """Table cell; an empty value renders as an em dash, never as 'None'."""
     text = _pdf_escape(value).strip()
     return _markup(text if text else _EM_DASH, style)
 
 
 def _monop(value: object) -> Flowable:
-    """Monospace cell for hashes, IPs and URLs; long values wrap inside the column."""
     text = _pdf_escape(value).strip()
     return _markup(text, "mono") if text else _markup(_EM_DASH)
 
 
 def _linesp(values: Sequence[object], style: str = "cell") -> Flowable:
-    """Several values stacked in one cell, each on its own line."""
     parts = [part for part in (_pdf_escape(value).strip() for value in values) if part]
     return _markup("<br/>".join(parts) if parts else _EM_DASH, style)
 
@@ -1806,7 +1781,6 @@ def _authp(outcome: str) -> Flowable:
 
 
 def _cw(*fractions: float) -> list[float]:
-    """Column widths from relative fractions, normalised to the printable width."""
     total = A4[0] - 2 * (_PDF_MARGIN + _PDF_FRAME_PAD)
     scale = sum(fractions) or 1.0
     return [total * fraction / scale for fraction in fractions]
@@ -1829,7 +1803,6 @@ def _grid_style(header: bool = True, kv: bool = False) -> TableStyle:
 
 
 def _pdf_table(headers: Sequence[str], rows: Sequence[Sequence[object]], fractions: Sequence[float], empty: str) -> list[Flowable]:
-    """Table of Paragraph cells; renders ``empty`` when there is nothing to show."""
     if not rows:
         return [_para(empty, "muted"), Spacer(1, 4)] if empty else []
     data: list[Sequence[object]] = [[_para(header, "th") for header in headers], *rows]
@@ -1890,7 +1863,6 @@ def _recipients_p(addrs: list[AddressInfo]) -> Flowable:
 
 
 def _geo_lines(geo: GeoInfo | None) -> list[str]:
-    """Location, provider, ASN and network tags for one IP, one string per line."""
     if geo is None:
         return []
     if geo.is_private:
@@ -1914,7 +1886,6 @@ def _geo_lines(geo: GeoInfo | None) -> list[str]:
     return bits or [geo.source or "unavailable"]
 
 
-# PDF sections (one function per section, mirroring the HTML report)
 def _pdf_cover(report: ForensicReport, result: AnalysisResult) -> list[Flowable]:
     verdict = result.verdict
     severity = _val(verdict.severity) or Severity.INFO.value
@@ -2088,7 +2059,6 @@ def _pdf_signature_block(cert: Section65BCertificate) -> list[Flowable]:
         ("RIGHTPADDING", (0, 0), (-1, -1), 8),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
     ]
-    # An unfilled particular gets a ruled line for the signatory, not an em dash.
     commands.extend(("LINEBELOW", (1, index), (1, index), 0.8, colors.HexColor(_INK)) for index in ruled)
     table.setStyle(TableStyle(commands))
     return [table, Spacer(1, 6)]
@@ -2670,7 +2640,6 @@ def _pdf_appendix(result: AnalysisResult) -> list[Flowable]:
 
 
 def _pdf_sections(report: ForensicReport) -> list[tuple[str, list[Flowable], bool]]:
-    """(title, flowables, start-on-a-new-page) in the same order as the HTML report."""
     result = report.analysis
     return [
         ("Executive summary", _pdf_summary(report), False),
@@ -2699,10 +2668,8 @@ def _pdf_sections(report: ForensicReport) -> list[tuple[str, list[Flowable], boo
 
 
 def _numbered_canvas(footer_text: str) -> type[Canvas]:
-    """Canvas that stamps 'Page n of m' in the footer once the total is known."""
 
-    # reportlab ships no type information, so its Canvas is Any to the checker.
-    class _NumberedCanvas(Canvas):  # type: ignore[misc]
+    class _NumberedCanvas(Canvas):
         def __init__(self, *args: object, **kwargs: object) -> None:
             super().__init__(*args, **kwargs)
             self._page_states: list[dict[str, object]] = []
@@ -2720,7 +2687,6 @@ def _numbered_canvas(footer_text: str) -> type[Canvas]:
             Canvas.save(self)
 
         def _stamp(self, total: int) -> None:
-            # Aligned with the frame, so the rule sits exactly under the content.
             left = _PDF_MARGIN + _PDF_FRAME_PAD
             right = self._pagesize[0] - _PDF_MARGIN - _PDF_FRAME_PAD
             self.saveState()
@@ -2737,8 +2703,7 @@ def _numbered_canvas(footer_text: str) -> type[Canvas]:
 
 
 def render_pdf(report: ForensicReport) -> bytes:
-    """Render the report as a paginated A4 PDF (same sections as the HTML)."""
-    if _REPORTLAB_ERROR is not None:  # pragma: no cover - only without the dependency
+    if _REPORTLAB_ERROR is not None:
         raise PdfUnavailable(
             "PDF report generation requires the 'reportlab' package, which is not installed"
         ) from _REPORTLAB_ERROR

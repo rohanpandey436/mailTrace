@@ -57,7 +57,6 @@ _CAMPAIGN_EDITS = [
 
 
 def test_simhash_threshold_calibration(sample, cfg):
-    """Rewritten bodies must stay inside the threshold, unrelated ones outside."""
     import re
 
     from app.core.parser import hamming_distance, parse_email, simhash_hex
@@ -87,5 +86,4 @@ def test_simhash_threshold_calibration(sample, cfg):
             closest_unrelated = min(closest_unrelated, distance)
             assert distance > threshold, f"{a} and {b} are unrelated but only {distance} apart"
 
-    # The threshold must sit strictly inside the gap, with room on both sides.
     assert worst_rewrite <= threshold < closest_unrelated

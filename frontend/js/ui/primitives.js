@@ -1,72 +1,37 @@
-// @ts-check
-/** Presentational pieces shared by every view. Each returns markup and holds no state. */
 import { clampPercent } from "../format.js";
 import { categoryOf, severityOf } from "../labels.js";
 import { Fragment, html } from "../react.js";
 
-/** @typedef {import('../labels.js').Tone} Tone */
-
 const GAUGE_ARC_LENGTH = Math.PI * 80;
 
-/**
- * @param {unknown} text
- * @param {Tone} [tone]
- * @param {{ mono?: boolean, title?: string, key?: string | number }} [options] `key` when chips are mapped from a list
- */
 export function chip(text, tone = "neutral", { mono = false, title = "", key = undefined } = {}) {
   return html`<span key=${key} class="chip tone-${tone}${mono ? " chip--mono" : ""}" title=${title || undefined}>${text}</span>`;
 }
 
-/**
- * The threat category as a coloured chip.
- * @param {string | null | undefined} category
- */
 export function categoryChip(category) {
   const label = categoryOf(category);
   return chip(label.label, label.tone);
 }
 
-/**
- * @param {string | null | undefined} severity
- */
 export function severityChip(severity) {
   const label = severityOf(severity);
   return chip(label.label, label.tone);
 }
 
-/**
- * A pass / fail / unknown check with its raw value, e.g. "✓ Allowed to send pass".
- * @param {string} label
- * @param {string} value
- * @param {boolean | null} outcome
- * @param {string} why shown on hover
- */
 export function check(label, value, outcome, why) {
   const tone = outcome === true ? "ok" : outcome === false ? "bad" : "neutral";
   const mark = outcome === true ? "✓" : outcome === false ? "✕" : "–";
   return html`<span class="chip tone-${tone}" title=${why}>${mark} ${label} <span class="chip__value">${value}</span></span>`;
 }
 
-/**
- * @param {number} value
- * @param {Tone} tone
- */
 export function bar(value, tone) {
   return html`<div class="bar tone-${tone}"><div class="bar__fill" style=${{ "--value": String(clampPercent(value)) }}></div></div>`;
 }
 
-/**
- * @param {number} score
- * @param {string} severity
- */
 export function riskBar(score, severity) {
   return html`<div class="risk">${bar(score, severityOf(severity).tone)}<span class="risk__score">${score}</span></div>`;
 }
 
-/**
- * @param {number} score
- * @param {string} severity
- */
 export function gauge(score, severity) {
   const filled = (GAUGE_ARC_LENGTH * clampPercent(score)) / 100;
   return html`<svg class="gauge tone-${severityOf(severity).tone}" viewBox="0 0 200 120" role="img" aria-label=${`Risk ${score} out of 100`}>
@@ -77,12 +42,6 @@ export function gauge(score, severity) {
   </svg>`;
 }
 
-/**
- * A titled card.
- * @param {string} title
- * @param {unknown} body
- * @param {{ aside?: unknown, note?: string }} [options] `aside` sits right of the title, `note` explains the section
- */
 export function section(title, body, { aside = null, note = "" } = {}) {
   return html`<section class="card card--pad section">
     <div class="section__head"><h3 class="section__title">${title}</h3>${aside}</div>
@@ -91,27 +50,14 @@ export function section(title, body, { aside = null, note = "" } = {}) {
   </section>`;
 }
 
-/**
- * @param {string} title
- * @param {string} intro
- */
 export function pageHead(title, intro) {
   return html`<div class="page-head"><h1 class="page-title">${title}</h1><p class="page-intro">${intro}</p></div>`;
 }
 
-/**
- * @param {string} label
- * @param {number | null | undefined} value
- * @param {Tone} tone
- */
 export function kpi(label, value, tone) {
   return html`<div class="card card--tight kpi tone-${tone}"><div class="kpi__label">${label}</div><div class="kpi__value">${value ?? 0}</div></div>`;
 }
 
-/**
- * An empty value renders as a dash rather than a blank row.
- * @param {Array<[string, unknown]>} pairs
- */
 export function kv(pairs) {
   return html`<dl class="kv">${pairs.map(
     ([key, value], index) =>
@@ -122,25 +68,14 @@ export function kv(pairs) {
   )}</dl>`;
 }
 
-/**
- * @param {number} [count]
- */
 export function skeleton(count = 3) {
   return html`${Array.from({ length: count }, (_, index) => html`<div key=${index} class="skeleton"></div>`)}`;
 }
 
-/**
- * @param {string} title
- * @param {unknown} [hint]
- */
 export function emptyState(title, hint = "") {
   return html`<div class="card empty"><div class="empty__title">${title}</div><div class="hint empty__hint">${hint}</div></div>`;
 }
 
-/**
- * @param {string} message
- * @param {() => void} [onRetry]
- */
 export function errorState(message, onRetry) {
   return html`<div class="card empty">
     <div class="empty__title">Could not load this page</div>

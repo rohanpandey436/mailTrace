@@ -1,14 +1,4 @@
-/*
- * Ambient declarations for the React, ReactDOM and htm UMD bundles.
- *
- * There is no package manager here, so `@types/react` is not available and this
- * declares the surface the dashboard actually uses. It is deliberately narrow:
- * every hook and API used by js/ is here, and nothing else, so an unsupported
- * call is a type error rather than a silent `any`.
- */
-
 declare namespace ReactNS {
-  /** Anything React can render. */
   type Node = Element | string | number | boolean | null | undefined | Node[];
 
   interface Element {

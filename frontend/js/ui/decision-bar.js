@@ -1,4 +1,3 @@
-// @ts-check
 import { api, errorMessage, urls } from "../api.js";
 import { formatDate, plural } from "../format.js";
 import { DECISION } from "../labels.js";
@@ -6,10 +5,6 @@ import { html, useEffect, useState } from "../react.js";
 import { chip } from "./primitives.js";
 import { toast } from "./toast.js";
 
-/** @typedef {import('../types.js').CaseDecision} CaseDecision */
-/** @typedef {import('../api.js').DecisionAction} DecisionAction */
-
-/** @type {Array<{ action: DecisionAction, label: string, hint: string }>} */
 const ACTIONS = [
   {
     action: "quarantine",
@@ -23,11 +18,8 @@ const ACTIONS = [
   },
 ];
 
-/**
- * @param {{ emailId: string }} props
- */
 export function DecisionBar({ emailId }) {
-  const [decision, setDecision] = useState(/** @type {CaseDecision | null} */ (null));
+  const [decision, setDecision] = useState((null));
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -38,7 +30,6 @@ export function DecisionBar({ emailId }) {
         if (!cancelled) setDecision(current);
       })
       .catch(() => {
-        // A case the server cannot report a decision for simply shows no bar.
       });
     return () => {
       cancelled = true;
@@ -50,7 +41,6 @@ export function DecisionBar({ emailId }) {
   const state = DECISION[decision.status] ?? DECISION.open;
   const last = decision.history[decision.history.length - 1];
 
-  /** @param {DecisionAction} action */
   async function record(action) {
     setBusy(true);
     try {

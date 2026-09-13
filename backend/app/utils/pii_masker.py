@@ -1,4 +1,3 @@
-"""Configurable PII masking."""
 from __future__ import annotations
 
 import hashlib
@@ -31,7 +30,6 @@ def _luhn_ok(digits: str) -> bool:
 
 
 def mask_email(addr: str) -> str:
-    """'rohan.pandey@acme-corp.in' -> 'r***y@acme-corp.in'; domain is kept."""
     addr = addr or ""
     if "@" not in addr:
         return addr
@@ -46,7 +44,6 @@ def mask_email(addr: str) -> str:
 
 
 def mask_name(name: str) -> str:
-    """'Rohan Pandey' -> 'R. P.'; keeps role/brand words in parentheses out."""
     name = (name or "").strip().strip('"')
     if not name:
         return ""
@@ -84,16 +81,13 @@ def _mask_segment(text: str) -> str:
 
 
 def mask_text(text: Any) -> Any:
-    """Mask PII in a string; non-strings are returned untouched."""
     if not isinstance(text, str) or not text:
         return text
-    # Protect long hex tokens (hashes, ids) from the digit-based patterns.
     pieces = HEX_RE.split(text)
     return "".join(piece if index % 2 else _mask_segment(piece) for index, piece in enumerate(pieces))
 
 
 def mask_any(value: Any) -> Any:
-    """Recursively mask every string inside dicts/lists/tuples."""
     if isinstance(value, str):
         return mask_text(value)
     if isinstance(value, dict):
@@ -126,7 +120,6 @@ def _address_node_id(node_id: str) -> str:
 
 
 def mask_result(result: AnalysisResult) -> AnalysisResult:
-    """Deep-copied, PII-masked view of an analysis (``masked=True``)."""
     masked = result.model_copy(deep=True)
     email = masked.email
     email.sender = mask_address(email.sender)
@@ -197,7 +190,6 @@ def mask_result(result: AnalysisResult) -> AnalysisResult:
 
 
 def mask_report_fields(report: ForensicReport) -> ForensicReport:
-    """Mask the report-level prose; the embedded analysis must already be masked."""
     masked = report.model_copy(deep=True)
     masked.executive_summary = mask_text(masked.executive_summary)
     masked.key_indicators = [mask_text(i) for i in masked.key_indicators]

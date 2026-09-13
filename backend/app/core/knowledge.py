@@ -1,7 +1,5 @@
-"""Shared reference data used by several analyzers (single source of truth so that headers, domains, urls and nlp modules never disagree about what a brand,"""
 from __future__ import annotations
 
-# brand keyword -> legitimate registrable domains.  Keys are lowercase, no spaces.
 BRANDS: dict[str, list[str]] = {
     "microsoft": ["microsoft.com", "outlook.com", "office.com", "live.com", "hotmail.com", "microsoftonline.com",
                   "office365.com", "msn.com", "azure.com", "windows.com", "bing.com", "xbox.com", "onmicrosoft.com",
@@ -76,7 +74,6 @@ BRANDS: dict[str, list[str]] = {
     "zomato": ["zomato.com"],
 }
 
-# Words that appear in display names of executive impersonation attempts.
 EXEC_TITLES: list[str] = [
     "ceo", "cfo", "coo", "cto", "cio", "chairman", "chairperson", "president",
     "managing director", "director", "founder", "vice president", "vp",
@@ -106,7 +103,6 @@ URL_SHORTENERS: set[str] = {
     "s.id", "v.gd", "clck.ru", "urlz.fr", "shorte.st", "adf.ly", "qr.ae", "bitly.com",
 }
 
-# TLDs with disproportionate abuse in phishing telemetry.
 SUSPICIOUS_TLDS: set[str] = {
     "zip", "mov", "xyz", "top", "tk", "ml", "ga", "cf", "gq", "buzz", "club", "icu",
     "cam", "rest", "monster", "cyou", "quest", "work", "click", "link", "surf", "fit",
@@ -116,7 +112,6 @@ SUSPICIOUS_TLDS: set[str] = {
     "shop", "store", "vip", "sbs", "lol", "bond", "cfd", "one",
 }
 
-# Extension -> severity for attachments.
 RISKY_EXTENSIONS: dict[str, str] = {
     "exe": "critical", "scr": "critical", "pif": "critical", "com": "critical", "bat": "critical",
     "cmd": "critical", "msi": "critical", "msp": "critical", "cpl": "critical", "dll": "critical",
@@ -137,7 +132,6 @@ ARCHIVE_EXTENSIONS: set[str] = {"zip", "rar", "7z", "gz", "tar", "bz2", "xz", "a
 MACRO_EXTENSIONS: set[str] = {"docm", "xlsm", "pptm", "dotm", "xltm", "xlam", "doc", "xls", "ppt"}
 EXECUTABLE_MAGIC: set[str] = {"pe", "elf", "macho", "msi", "script", "hta", "lnk"}
 
-# DNS-based blocklists (IPv4, reversed-octet lookups).
 DNSBL_ZONES: list[str] = [
     "zen.spamhaus.org",
     "bl.spamcop.net",
@@ -147,7 +141,6 @@ DNSBL_ZONES: list[str] = [
     "psbl.surriel.com",
 ]
 
-# URL hosts that appear in almost every email and must not bind campaigns.
 COMMON_URL_HOSTS: set[str] = {
     "google.com", "www.google.com", "w3.org", "www.w3.org", "schema.org", "schemas.microsoft.com",
     "fonts.googleapis.com", "fonts.gstatic.com", "youtube.com", "www.youtube.com", "facebook.com",
@@ -157,7 +150,6 @@ COMMON_URL_HOSTS: set[str] = {
     "sendgrid.net", "gstatic.com", "googleusercontent.com", "cloudfront.net", "wikipedia.org",
 }
 
-# Unicode confusables -> ASCII (used by homoglyph detection).
 HOMOGLYPHS: dict[str, str] = {
     "а": "a", "ą": "a", "ä": "a", "à": "a", "á": "a", "â": "a", "ã": "a", "å": "a", "ā": "a",
     "ḃ": "b", "ƅ": "b",
@@ -187,14 +179,12 @@ HOMOGLYPHS: dict[str, str] = {
     "1": "l", "3": "e", "5": "s", "7": "t", "8": "b", "9": "g", "@": "a", "$": "s",
 }
 
-# Typosquat substitutions that look alike in Latin script even without Unicode.
 ASCII_CONFUSABLES: dict[str, list[str]] = {
     "l": ["1", "i", "|"], "i": ["1", "l", "j"], "o": ["0", "q"], "0": ["o"],
     "rn": ["m"], "m": ["rn", "nn"], "vv": ["w"], "w": ["vv"], "cl": ["d"], "d": ["cl"],
     "e": ["3"], "a": ["4", "@"], "s": ["5", "$"], "t": ["7"], "b": ["8"], "g": ["9", "q"],
 }
 
-# Keywords that make a URL path/host suspicious when combined with a non-brand domain.
 URL_SUSPICIOUS_KEYWORDS: list[str] = [
     "login", "log-in", "signin", "sign-in", "verify", "verification", "secure", "security",
     "account", "update", "confirm", "password", "credential", "auth", "authenticate",

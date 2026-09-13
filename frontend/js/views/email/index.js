@@ -1,5 +1,3 @@
-// @ts-check
-/** One checked email: the verdict, who really sent it, the sender checks, the origin, and the tabs. */
 import { api, urls } from "../../api.js";
 import { flag, formatDate, percent, place } from "../../format.js";
 import { useAsync } from "../../hooks.js";
@@ -16,11 +14,6 @@ import { findingsTab } from "./findings.js";
 import { linksTab } from "./links.js";
 import { TraceTab } from "./trace.js";
 
-/** @typedef {import('../../types.js').AnalysisResult} AnalysisResult */
-/** @typedef {import('../../types.js').AuthResult} AuthResult */
-/** @typedef {import('../../state.js').EmailTab} EmailTab */
-
-/** @type {Array<[EmailTab, string]>} */
 const TABS = [
   ["findings", "What we found"],
   ["trace", "Where it came from"],
@@ -28,8 +21,6 @@ const TABS = [
   ["links", "Links & files"],
   ["domains", "Domains & servers"],
 ];
-/** Shown only with the advanced view switched on. */
-/** @type {Array<[EmailTab, string]>} */
 const ADVANCED_TABS = [
   ["graph", "Connections"],
   ["custody", "Evidence log"],
@@ -37,18 +28,11 @@ const ADVANCED_TABS = [
 const DEFAULT_TAB = "findings";
 const MAX_REASONS = 2;
 
-/**
- * @param {EmailTab} tab
- */
 function isAdvanced(tab) {
   return ADVANCED_TABS.some(([name]) => name === tab);
 }
 
-/**
- * @param {{ auth: AuthResult }} props
- */
 function SenderChecks({ auth }) {
-  /** @param {string} value @param {string[]} failures */
   const outcome = (value, failures) => (value === "pass" ? true : failures.includes(value) ? false : null);
   return html`<div class="checks">
     ${check("Allowed to send", auth.spf, outcome(auth.spf, ["fail", "softfail"]), "SPF: is this server permitted to send mail for that domain?")}
@@ -57,9 +41,6 @@ function SenderChecks({ auth }) {
   </div>`;
 }
 
-/**
- * @param {{ result: AnalysisResult }} props
- */
 function VerdictCards({ result }) {
   const { verdict, attribution, headers } = result;
   const category = categoryOf(verdict.category);
@@ -97,9 +78,6 @@ function VerdictCards({ result }) {
   </div>`;
 }
 
-/**
- * @param {{ result: AnalysisResult }} props
- */
 function OriginStrip({ result }) {
   const { headers, infrastructure: infra } = result;
   const geo = infra.origin_geo;
@@ -117,9 +95,6 @@ function OriginStrip({ result }) {
   </div>`;
 }
 
-/**
- * @param {{ result: AnalysisResult, tab: EmailTab }} props
- */
 function TabPanel({ result, tab }) {
   switch (tab) {
     case "trace":
@@ -141,15 +116,11 @@ function TabPanel({ result, tab }) {
   }
 }
 
-/**
- * @param {{ emailId: string }} props
- */
 export function EmailView({ emailId }) {
   const { data: result, error, loading, reload } = useAsync(() => api.getEmail(emailId), [emailId]);
   const [advanced, setAdvanced] = useState(preferences.advanced);
   const [tab, setTab] = useState(() => (isAdvanced(session.emailTab) && !preferences.advanced ? DEFAULT_TAB : session.emailTab));
 
-  /** @param {EmailTab} next */
   const choose = (next) => {
     session.emailTab = next;
     setTab(next);
@@ -167,7 +138,6 @@ export function EmailView({ emailId }) {
 
   const { email } = result;
   const noHeaders = result.headers.hops.length === 0;
-  /** @param {Array<[EmailTab, string]>} tabs */
   const tabButtons = (tabs) =>
     tabs.map(
       ([name, label]) => html`<button
@@ -230,7 +200,7 @@ export function EmailView({ emailId }) {
           tabIndex=${0}
           aria-checked=${String(advanced)}
           onClick=${toggleAdvanced}
-          onKeyDown=${(/** @type {KeyboardEvent} */ event) => {
+          onKeyDown=${(event) => {
             if (event.key === " " || event.key === "Enter") {
               event.preventDefault();
               toggleAdvanced();

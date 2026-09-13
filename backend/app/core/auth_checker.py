@@ -1,4 +1,3 @@
-"""SPF / DKIM / DMARC evaluation."""
 from __future__ import annotations
 
 import ipaddress
@@ -37,9 +36,7 @@ _SPF_MX_LIMIT = 10
 _SPF_NESTING_LIMIT = 10
 
 
-# Small text helpers
 def _strip_comments(text: str) -> str:
-    """Remove (possibly nested) parenthesised comments and collapse whitespace."""
     kept: list[str] = []
     depth = 0
     for ch in text:
@@ -54,7 +51,6 @@ def _strip_comments(text: str) -> str:
 
 
 def _split_top_level(text: str, separator: str = ";") -> list[str]:
-    """Split on ``separator`` occurrences that are outside parenthesised comments."""
     parts: list[str] = []
     depth = 0
     start = 0
@@ -76,7 +72,6 @@ def _unquote(value: str) -> str:
 
 
 def _domain_part(value: str) -> str:
-    """Domain of an address or bare domain property value, lower-cased."""
     value = _unquote(value)
     if "@" in value:
         value = value.rsplit("@", 1)[1]
@@ -113,9 +108,7 @@ def _aligned(domain: str, sender_rd: str) -> bool | None:
     return registrable_domain(domain) == sender_rd
 
 
-# Header parsing
 def parse_authentication_results(headers: list[HeaderField]) -> dict[str, Any]:
-    """Extract receiver verdicts from Authentication-Results, ARC-Authentication-"""
     spf: tuple[str, str] = ("", "")
     dkim: tuple[str, str, str] = ("", "", "")
     dmarc: tuple[str, str] = ("", "")
@@ -161,7 +154,6 @@ def parse_authentication_results(headers: list[HeaderField]) -> dict[str, Any]:
 
 
 def _parse_tags(value: str) -> dict[str, str]:
-    """DKIM tag=value list; whitespace inside values (folded b=/h=) is removed."""
     tags: dict[str, str] = {}
     for part in value.split(";"):
         if "=" not in part:
@@ -174,7 +166,6 @@ def _parse_tags(value: str) -> dict[str, str]:
 
 
 def parse_dkim_signature(headers: list[HeaderField]) -> dict[str, str]:
-    """``{'d', 's', 'a', 'h'}`` of the first DKIM-Signature header, ``{}`` if none."""
     for field in headers:
         if field.name.lower() != "dkim-signature":
             continue
@@ -188,17 +179,15 @@ def parse_dkim_signature(headers: list[HeaderField]) -> dict[str, str]:
     return {}
 
 
-# Live SPF (simplified RFC 7208)
 class _SpfPermError(Exception):
-    """Record is unusable (syntax, loops, lookup limit)."""
+    pass
 
 
 class _SpfTempError(Exception):
-    """DNS failed transiently."""
+    pass
 
 
 class _SpfEvaluator:
-    """``check_host`` for one client address; DNS is bounded by the caller's resolver."""
 
     def __init__(
         self,
@@ -218,19 +207,17 @@ class _SpfEvaluator:
         self.lookups = 0
         self.stack: list[str] = []
 
-    # -- DNS ---------------------------------------------------------------
     def _count(self, what: str) -> None:
         self.lookups += 1
         if self.lookups > _SPF_LOOKUP_LIMIT:
             raise _SpfPermError(f"more than {_SPF_LOOKUP_LIMIT} DNS-querying terms ({what})")
 
     def _query(self, name: str, rdtype: str) -> list[str]:
-        """Resolve ``name``; [] when the name/record does not exist."""
         try:
             answers = self.resolver.resolve(name, rdtype)
         except self.no_record_errors:
             return []
-        except Exception as exc:  # timeouts, SERVFAIL, resolver errors
+        except Exception as exc:
             raise _SpfTempError(f"{rdtype} lookup of {name} failed: {exc.__class__.__name__}") from exc
         if rdtype == "TXT":
             return [b"".join(rdata.strings).decode("utf-8", errors="replace") for rdata in answers]
@@ -239,7 +226,6 @@ class _SpfEvaluator:
         return [str(rdata.address) for rdata in answers]
 
     def _spf_record(self, domain: str) -> tuple[str, str]:
-        """(record, status) with status ``ok`` | ``none`` | ``permerror``."""
         cache_key = f"spf:{domain}"
         cached = cache_get(self.store, cache_key)
         if isinstance(cached, dict):
@@ -257,7 +243,6 @@ class _SpfEvaluator:
         cache_set(self.store, cache_key, {"record": result[0], "status": result[1]}, self.cfg.cache_ttl_seconds)
         return result
 
-    # -- Evaluation ----------------------------------------------------------
     def check_host(self, domain: str) -> str:
         domain = domain.lower().rstrip(".")
         if domain in self.stack:
@@ -280,7 +265,7 @@ class _SpfEvaluator:
                     redirect = term[len("redirect="):]
                     continue
                 if "=" in term:
-                    continue  # exp= and unknown modifiers carry no policy
+                    continue
                 qualifier = "+"
                 if term[0] in _SPF_QUALIFIERS:
                     qualifier, term = term[0], term[1:]
@@ -341,7 +326,6 @@ class _SpfEvaluator:
         return network.version == self.addr.version and self.addr in network
 
     def _prefix_length(self, cidr: str) -> int | None:
-        """Prefix length for this address family from ``24``, ``24//64`` or ``/64``."""
         if not cidr:
             return None
         v4_part, _, v6_part = cidr.partition("/")
@@ -373,7 +357,6 @@ class _SpfEvaluator:
 
 
 def live_spf(ip: str, domain: str, cfg: Settings, store: Any = None) -> tuple[str, list[str]]:
-    """Evaluate SPF for ``ip`` sending on behalf of ``domain``."""
     domain = (domain or "").strip().lower().rstrip(".")
     if not cfg.enable_network:
         return "unverifiable", ["network enrichment disabled; SPF not evaluated"]
@@ -407,7 +390,7 @@ def live_spf(ip: str, domain: str, cfg: Settings, store: Any = None) -> tuple[st
     except _SpfTempError as exc:
         notes.append(f"temperror: {exc}")
         result = "temperror"
-    except dns.exception.DNSException as exc:  # resolver configuration or an unexpected DNS failure
+    except dns.exception.DNSException as exc:
         log.debug("SPF evaluation for %s/%s failed: %s", ip, domain, exc)
         notes.append(f"temperror: {exc.__class__.__name__}")
         result = "temperror"
@@ -416,14 +399,12 @@ def live_spf(ip: str, domain: str, cfg: Settings, store: Any = None) -> tuple[st
     return result, notes
 
 
-# Live DKIM
 def live_dkim(raw: bytes, cfg: Settings) -> tuple[str, str, str, list[str]]:
-    """Verify the first DKIM signature of ``raw`` with dkimpy."""
     notes: list[str] = []
     try:
         message = BytesParser(policy=email_policy.compat32).parsebytes(raw, headersonly=True)
         fields = [HeaderField(name=str(name), value=str(value)) for name, value in message.items()]
-    except Exception as exc:  # noqa: BLE001 - unparseable input
+    except Exception as exc:
         return "unverifiable", "", "", [f"could not parse message headers: {exc.__class__.__name__}"]
     signature = parse_dkim_signature(fields)
     if not signature:
@@ -441,7 +422,6 @@ def live_dkim(raw: bytes, cfg: Settings) -> tuple[str, str, str, list[str]]:
     key_found = False
 
     def dnsfunc(name: Any, timeout: float = cfg.lookup_timeout) -> bytes | None:
-        """dkimpy key lookup honouring cfg.lookup_timeout instead of dkimpy's default."""
         nonlocal key_found
         label = name.decode("ascii", errors="ignore") if isinstance(name, bytes) else str(name)
         try:
@@ -449,7 +429,7 @@ def live_dkim(raw: bytes, cfg: Settings) -> tuple[str, str, str, list[str]]:
             resolver.timeout = cfg.lookup_timeout
             resolver.lifetime = cfg.lookup_timeout
             answers = resolver.resolve(label, "TXT")
-        except dns.exception.DNSException as exc:  # NXDOMAIN, timeout, resolver errors
+        except dns.exception.DNSException as exc:
             notes.append(f"key lookup {label} failed: {exc.__class__.__name__}")
             return None
         for rdata in answers:
@@ -459,7 +439,7 @@ def live_dkim(raw: bytes, cfg: Settings) -> tuple[str, str, str, list[str]]:
 
     try:
         verified = bool(dkim.verify(raw, dnsfunc=dnsfunc))
-    except Exception as exc:  # noqa: BLE001 - dkim.DKIMException and friends
+    except Exception as exc:
         notes.append(f"verification error: {exc.__class__.__name__}: {exc}")
         return "unverifiable", d_domain, selector, notes
     if verified:
@@ -472,9 +452,7 @@ def live_dkim(raw: bytes, cfg: Settings) -> tuple[str, str, str, list[str]]:
     return "unverifiable", d_domain, selector, notes
 
 
-# Live DMARC
 def live_dmarc(domain: str, cfg: Settings, store: Any = None) -> tuple[str, str]:
-    """``(policy, record)`` of the DMARC record for ``domain`` (falling back to"""
     domain = (domain or "").strip().lower().rstrip(".")
     if not cfg.enable_network or not domain or not _DOMAIN_RE.match(domain):
         return "", ""
@@ -505,7 +483,7 @@ def live_dmarc(domain: str, cfg: Settings, store: Any = None) -> tuple[str, str]
                     break
             if record:
                 break
-    except Exception as exc:  # noqa: BLE001 - timeouts, resolver errors, missing library
+    except Exception as exc:
         log.debug("DMARC lookup for %s failed: %s", domain, exc)
         return "", ""
     policy_match = re.search(r"(?:^|;)\s*p\s*=\s*([a-z]+)", record, re.IGNORECASE)
@@ -514,9 +492,7 @@ def live_dmarc(domain: str, cfg: Settings, store: Any = None) -> tuple[str, str]
     return policy, record
 
 
-# Evaluation
 def _boundary_hop(header_analysis: HeaderAnalysis, cfg: Settings) -> Hop | None:
-    """Latest hop whose source is a public, non-organisation, non-trusted"""
     for hop in reversed(header_analysis.hops):
         if (
             hop.from_ip and not hop.is_private_ip
@@ -537,7 +513,6 @@ def evaluate_auth(
     cfg: Settings,
     raw: bytes | None = None,
 ) -> tuple[AuthResult, list[Finding]]:
-    """Combine receiver-recorded and live SPF/DKIM/DMARC verdicts into an"""
     notes: list[str] = []
     recorded = parse_authentication_results(parsed.headers)
     ar_spf, ar_spf_domain = recorded["spf"]
@@ -558,7 +533,6 @@ def evaluate_auth(
     if not cfg.enable_network:
         notes.append("network enrichment disabled: verdicts derived from Authentication-Results headers only")
 
-    # SPF -------------------------------------------------------------------
     live_spf_result = ""
     if cfg.enable_network and spf_domain and boundary_ip:
         live_spf_result, spf_notes = live_spf(boundary_ip, spf_domain, cfg)
@@ -577,7 +551,6 @@ def evaluate_auth(
         spf, spf_source = "none", ("offline" if not cfg.enable_network else "none")
     spf_aligned = _aligned(spf_domain, sender_rd)
 
-    # DKIM ------------------------------------------------------------------
     sig_domain = signature.get("d", "")
     sig_selector = signature.get("s", "")
     live_dkim_result = ""
@@ -609,7 +582,6 @@ def evaluate_auth(
         dkim, dkim_source = "none", "none"
     dkim_aligned = _aligned(dkim_domain, sender_rd)
 
-    # DMARC -----------------------------------------------------------------
     live_policy, live_record = "", ""
     if cfg.enable_network and sender_domain:
         live_policy, live_record = live_dmarc(sender_domain, cfg, None)
@@ -643,7 +615,6 @@ def evaluate_auth(
         notes=notes,
     )
 
-    # Findings --------------------------------------------------------------
     findings: list[Finding] = []
     spf_where = f"{boundary_ip} " if boundary_ip else ""
     if spf == "pass":

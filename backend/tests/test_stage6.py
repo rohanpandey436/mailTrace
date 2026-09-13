@@ -1,4 +1,3 @@
-"""Stage 6 OUTPUT + ACT: CSV reports, the WebSocket alert feed beside the unchanged SSE one, the optional VirusTotal hash lookup and the quick-bar"""
 from __future__ import annotations
 
 import asyncio
@@ -15,7 +14,6 @@ from app.schemas import Alert, AttachmentAnalysis, AttachmentMeta, Severity, Thr
 from app.utils import csv_exporter as csvexport
 from app.utils import virustotal
 
-# A subject that is a live formula in Excel, LibreOffice and Google Sheets.
 EVIL_SUBJECT = '=HYPERLINK("http://evil.test","Click me")'
 EVIL_MESSAGE = (
     b"From: \"=cmd|'/c calc'!A0\" <evil@attacker.test>\r\n"
@@ -92,8 +90,8 @@ def test_report_csv_has_header_block_and_findings_table(client, sample):
     assert response.headers["content-type"].startswith("text/csv")
     assert response.headers["content-disposition"].endswith('.csv"')
     body = response.text
-    assert body.startswith(csvexport.UTF8_BOM)       # Excel reads it as UTF-8
-    assert "\r\n" in body                            # RFC 4180 line endings
+    assert body.startswith(csvexport.UTF8_BOM)
+    assert "\r\n" in body
 
     rows = _rows(body)
     fields = {(row[0], row[1]): row[2] for row in rows if len(row) == 3}
@@ -102,11 +100,9 @@ def test_report_csv_has_header_block_and_findings_table(client, sample):
     assert int(fields[("Verdict", "Risk score (0-100)")]) == result["verdict"]["risk_score"]
     assert fields[("Evidence", "Raw SHA-256")] == result["email"]["raw_sha256"]
     assert fields[("Evidence", "Custody chain valid")] == "yes"
-    # All five threat-score pillars, each carrying the weight that was applied.
     pillars = [key[1] for key in fields if key[0] == "Threat score"]
     for name in ("Authentication", "Text / intent", "URLs", "Network", "Entropy"):
         assert any(p.startswith(name + " (weight ") for p in pillars), name
-    # Origin block and the IOC list.
     assert ("Origin", "IP") in fields
     assert [row[2] for row in rows if row and row[0] == "IOC"]
 
@@ -122,7 +118,7 @@ def test_report_csv_respects_mask(client, sample):
     assert "alerts@sbi-kyc-update.xyz" in unmasked
     assert "alerts@sbi-kyc-update.xyz" not in masked
     assert "a***s@sbi-kyc-update.xyz" in masked
-    assert "sbi-kyc-update.xyz" in masked          # the domain is an indicator, so it stays
+    assert "sbi-kyc-update.xyz" in masked
     fields = {(r[0], r[1]): r[2] for r in _rows(masked) if len(r) == 3}
     assert fields[("Report", "PII masked")] == "yes"
 
@@ -143,7 +139,6 @@ def test_report_csv_neutralises_formula_cells(client):
     assert fields[("Case", "Subject")] == "'" + EVIL_SUBJECT
     assert fields[("Case", "From display name")].startswith("'=cmd|")
     assert fields[("Case", "File name")] == "'+evil.eml"
-    # Nothing anywhere in the file can still be read as a formula.
     for row in rows:
         for cell in row:
             assert not cell.startswith(("=", "+", "@", "\t", "\r"))
@@ -194,7 +189,6 @@ def test_case_list_csv_masks_and_guards_cells(client):
 
 
 def test_case_list_csv_route_is_not_shadowed_by_the_case_detail_route(client):
-    # "/api/emails/{email_id}" would happily match the literal "export.csv".
     assert client.get("/api/emails/export.csv").headers["content-type"].startswith("text/csv")
     assert client.get("/api/emails/export.csv").status_code == 200
 
@@ -222,7 +216,6 @@ def test_quarantine_and_block_record_a_decision(client, sample):
     assert [e["action"] for e in blocked["history"]] == ["quarantine_decision", "block_decision"]
     assert blocked["history"][1]["detail"]["previous_status"] == "quarantined"
 
-    # The decision survives a re-read and the ledger is still verifiable.
     assert client.get(f"/api/emails/{email_id}/decision").json()["status"] == "blocked"
     assert client.get("/api/custody/verify").json()["valid"] is True
 
@@ -259,7 +252,6 @@ def test_alert_websocket_streams_the_same_alert_json(client, sample):
     assert payload["email_id"] == result["id"]
     assert payload["category"] == "Phishing"
     assert payload["sender"] == "alerts@sbi-kyc-update.xyz"
-    # The stored alert and the streamed one are the same record.
     assert payload["id"] == client.get("/api/alerts").json()[0]["id"]
 
 
@@ -269,7 +261,7 @@ def test_alert_websocket_honours_mask_and_releases_its_queue(client):
         alerts_api.broadcaster.publish(_alert())
         payload = websocket.receive_json()
     assert payload["sender"] == "a***r@evil.example"
-    assert alerts_api.broadcaster.subscriber_count() == before  # no leaked queue
+    assert alerts_api.broadcaster.subscriber_count() == before
 
 
 def test_several_websocket_clients_all_receive_the_alert(client):
@@ -283,7 +275,6 @@ def test_several_websocket_clients_all_receive_the_alert(client):
 
 
 def test_both_live_transports_are_registered(client):
-    """Adding the WebSocket did not displace the SSE route."""
     paths = client.get("/openapi.json").json()["paths"]
     assert "/api/alerts/stream" in paths
     assert "/api/emails/export.csv" in paths
@@ -295,7 +286,6 @@ def test_both_live_transports_are_registered(client):
 
 @pytest.mark.parametrize("mask", [False, True])
 def test_sse_stream_still_emits_alerts(mask):
-    """Drive the SSE endpoint's generator directly."""
 
     class _Request:
         def __init__(self) -> None:
@@ -303,7 +293,7 @@ def test_sse_stream_still_emits_alerts(mask):
 
         async def is_disconnected(self) -> bool:
             self.checks += 1
-            return self.checks > 3   # let it produce the preamble and one alert
+            return self.checks > 3
 
     async def run() -> tuple[object, list[str]]:
         alerts_api.broadcaster.bind(asyncio.get_running_loop())
@@ -326,9 +316,8 @@ def _meta(name: str, digest: str, size: int = 1024) -> AttachmentMeta:
 
 
 def test_virustotal_is_inert_without_a_key(cfg, monkeypatch):
-    """No key means no request, no latency and no change to the findings."""
 
-    def explode(*args, **kwargs):  # pragma: no cover - must never run
+    def explode(*args, **kwargs):
         raise AssertionError("VirusTotal must not be contacted without a key")
 
     monkeypatch.setattr(virustotal, "lookup_hash", explode)
@@ -368,7 +357,7 @@ def test_virustotal_adds_a_finding_when_engines_flag_the_file(cfg, monkeypatch):
     assert "42 of 70" in finding.detail and "trojan.emotet" in finding.detail
     assert "the file itself was not uploaded" in finding.detail
     assert finding.evidence["sha256"] == "a" * 64
-    assert analysis.findings[0] is finding      # leads the attachment section
+    assert analysis.findings[0] is finding
     assert analysis.score == 1.0
 
 
@@ -393,8 +382,8 @@ def test_virustotal_skips_inline_parts_and_caps_the_request_budget(cfg, monkeypa
     ]
     analysis = AttachmentAnalysis(attachments=attachments)
     virustotal.enrich(analysis, [RawAttachment("logo.png", "image/png", logo, is_inline=True)], cfg, None)
-    assert logo_digest not in asked                               # inline part skipped
-    assert len(asked) == virustotal.MAX_LOOKUPS_PER_MESSAGE       # rate-limit budget respected
+    assert logo_digest not in asked
+    assert len(asked) == virustotal.MAX_LOOKUPS_PER_MESSAGE
 
 
 def test_virustotal_severity_ladder():
@@ -416,5 +405,4 @@ def test_virustotal_parses_a_v3_file_report():
         "found": True, "malicious": 5, "suspicious": 1, "engines": 68,
         "threat_label": "trojan.agent/generic", "type_description": "Win32 EXE", "reputation": None,
     }
-    # A body with nothing recognisable must degrade, not raise.
     assert virustotal._parse({})["engines"] == 0

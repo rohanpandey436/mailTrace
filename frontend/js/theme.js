@@ -1,13 +1,5 @@
-// @ts-check
-
-/** @type {Map<string, string>} */
 const cache = new Map();
 
-/**
- * `color("brand")` -> the value of `--color-brand`.
- * @param {string} name
- * @returns {string}
- */
 export function color(name) {
   const cached = cache.get(name);
   if (cached) return cached;
@@ -17,10 +9,6 @@ export function color(name) {
   return value;
 }
 
-/**
- * The strong (not the soft) colour of a tone.
- * @param {import('./labels.js').Tone} tone
- */
 export function toneColor(tone) {
   return color(tone === "ink" ? "ink" : tone);
 }

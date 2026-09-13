@@ -1,4 +1,3 @@
-"""Download the MaxMind GeoLite2-City database at build time."""
 from __future__ import annotations
 
 import io
@@ -9,13 +8,11 @@ from pathlib import Path
 
 EDITION = "GeoLite2-City"
 URL = "https://download.maxmind.com/app/geoip_download"
-#: Beside the database file, so MAILTRACE_MAXMIND_DB can point straight at it.
 DESTINATION = Path(__file__).resolve().parent.parent / "data" / f"{EDITION}.mmdb"
 TIMEOUT_SECONDS = 120
 
 
 def fetch(key: str, destination: Path = DESTINATION) -> Path | None:
-    """Download and unpack the database; None when it could not be fetched."""
     import httpx
 
     params = {"edition_id": EDITION, "license_key": key, "suffix": "tar.gz"}
@@ -32,7 +29,6 @@ def fetch(key: str, destination: Path = DESTINATION) -> Path | None:
         print(f"GeoLite2 download returned HTTP {response.status_code}; using ip-api.com", file=sys.stderr)
         return None
 
-    # The archive is a single dated directory holding the .mmdb and its licence.
     try:
         with tarfile.open(fileobj=io.BytesIO(response.content), mode="r:gz") as archive:
             member = next((m for m in archive.getmembers() if m.name.endswith(".mmdb")), None)

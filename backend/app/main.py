@@ -1,4 +1,3 @@
-"""FastAPI application factory."""
 from __future__ import annotations
 
 import asyncio
@@ -28,7 +27,6 @@ log = logging.getLogger("mailtrace.main")
 
 
 def _warm_model(cfg: Settings) -> None:
-    """Load or train the classifier in a daemon thread; failure only costs the ML signal."""
 
     def run() -> None:
         try:
@@ -36,24 +34,23 @@ def _warm_model(cfg: Settings) -> None:
 
             train.load_or_train(cfg)
             log.info("ML classifier ready (%s)", cfg.model_path)
-        except Exception as exc:  # noqa: BLE001 - the rule engine works without the model
+        except Exception as exc:
             log.warning("ML classifier unavailable, continuing with rule-based analysis: %s", exc)
 
     threading.Thread(target=run, name="mt-ml-warmup", daemon=True).start()
 
 
 async def _http_error(request: Request, exc: Exception) -> JSONResponse:
-    assert isinstance(exc, StarletteHTTPException)  # registered for this type only
+    assert isinstance(exc, StarletteHTTPException)
     return JSONResponse(status_code=exc.status_code, content={"error": str(exc.detail)}, headers=exc.headers)
 
 
 async def _not_found(request: Request, exc: Exception) -> JSONResponse:
-    """A domain-layer ``NotFound`` is a 404 in the API's uniform error shape."""
     return JSONResponse(status_code=404, content={"error": str(exc)})
 
 
 async def _validation_error(request: Request, exc: Exception) -> JSONResponse:
-    assert isinstance(exc, RequestValidationError)  # registered for this type only
+    assert isinstance(exc, RequestValidationError)
     problems = "; ".join(
         f"{'.'.join(str(part) for part in error.get('loc', ())) or 'request'}: {error.get('msg', 'invalid value')}"
         for error in exc.errors()[:5]
@@ -81,7 +78,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             app.state.store = Store(cfg.db_path, cfg.evidence_dir, database_url=cfg.database_url)
         alerts.broadcaster.bind(asyncio.get_running_loop())
         tasks.bind_store(app.state.store, cfg)
-        # The module-level Celery app was built from the environment; injected Settings take over here.
         tasks.configure(cfg)
         tasks.start_embedded_worker(cfg)
         _warm_model(cfg)
@@ -133,7 +129,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return HealthStatus(
             network=cfg.enable_network,
             pii_mask_default=cfg.pii_mask_default,
-            # Stage 5C: an auditor (and the UI) can see which mode is running.
             zero_persistence=cfg.zero_persistence,
             webhooks=len(cfg.webhook_urls),
             database=store.backend if store is not None else "sqlite",
@@ -152,7 +147,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
 
 def _mount_dashboard(app: FastAPI, static_dir: Path) -> None:
-    """Serve the dashboard (index.html with its css/ and js/) at the site root."""
     page = static_dir / "index.html"
     if page.is_file():
         app.mount("/", StaticFiles(directory=static_dir, html=True), name="dashboard")

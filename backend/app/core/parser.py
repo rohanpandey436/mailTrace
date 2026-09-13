@@ -1,4 +1,3 @@
-"""RFC 822 / MIME parsing into the structure the analyzers consume."""
 from __future__ import annotations
 
 import email
@@ -30,10 +29,9 @@ _MAX_PARTS = 500
 _OCTET_STREAM = "application/octet-stream"
 
 def _lenient[T](call: Callable[[], T], default: T) -> T:
-    """Run one standard-library call against hostile input; on any failure, ``default``."""
     try:
         return call()
-    except Exception:  # noqa: BLE001 - see the docstring
+    except Exception:
         return default
 
 
@@ -47,7 +45,6 @@ def _header(part: Message, name: str) -> str:
 
 @dataclass
 class RawAttachment:
-    """Attachment bytes handed to the attachment analyzer (never persisted)."""
 
     filename: str
     content_type: str
@@ -60,7 +57,6 @@ _NATIVE_SCHEMA = 1
 
 
 class _NativeNode(TypedDict, total=False):
-    """One node of the tree ``mailtrace_engine.dissect`` returns (schema 1)."""
 
     kind: str
     headers: list[tuple[bytes, bytes]]
@@ -71,7 +67,6 @@ class _NativeNode(TypedDict, total=False):
 
 
 class _NativeEngine(Protocol):
-    """What this module needs from the ``mailtrace_engine`` extension module."""
 
     __version__: str
     DISSECT_SCHEMA: int
@@ -80,11 +75,8 @@ class _NativeEngine(Protocol):
 
 
 NATIVE_ENGINE: bool = False
-#: ``mailtrace_engine.__version__``, or "" when the extension is not in use.
 NATIVE_ENGINE_VERSION: str = ""
-#: Human-readable explanation of the above, for logs and ``/api/health``.
 NATIVE_ENGINE_STATUS: str = "not installed"
-#: Which SHA-256 the engine links: "openssl" or "builtin". Digests are identical.
 NATIVE_ENGINE_SHA256: str = ""
 
 _native: _NativeEngine | None = None
@@ -93,7 +85,7 @@ _native_stats: dict[str, int] = {"native": 0, "python": 0, "declined": 0}
 
 
 class _NativeMismatch(Exception):
-    """The native dissection disagrees with the standard library's own reading"""
+    pass
 
 
 def _native_enabled_by_env() -> bool:
@@ -101,12 +93,10 @@ def _native_enabled_by_env() -> bool:
 
 
 def _ascii(value: bytes) -> str:
-    """Engine bytes -> the exact ``str`` CPython's ``BytesParser`` would hold."""
     return bytes(value).decode("ascii", "surrogateescape")
 
 
 def _trim_last_message(msg: Message) -> None:
-    """Apply RFC 2046's "the newline before a boundary belongs to the boundary"."""
     target = msg
     while target.get_content_maintype() == "message":
         payload = target.get_payload()
@@ -115,18 +105,17 @@ def _trim_last_message(msg: Message) -> None:
         target = payload[0]
     if target.get_content_maintype() == "multipart":
         return
-    payload = target._payload  # type: ignore[attr-defined]
+    payload = vars(target)["_payload"]
     if not isinstance(payload, str) or not payload:
         return
     if payload.endswith("\r\n"):
-        target._payload = payload[:-2]  # type: ignore[attr-defined]
+        vars(target)["_payload"] = payload[:-2]
     elif payload[-1] in "\r\n":
-        target._payload = payload[:-1]  # type: ignore[attr-defined]
+        vars(target)["_payload"] = payload[:-1]
 
 
 def _build_message(node: _NativeNode, default_type: str) -> Message:
-    """Rebuild one ``Message`` from an engine node, verifying as we go."""
-    msg = Message()  # policy=compat32, matching email.message_from_bytes below
+    msg = Message()
     if default_type != "text/plain":
         msg.set_default_type(default_type)
     for name, value in node["headers"]:
@@ -165,13 +154,12 @@ def _build_message(node: _NativeNode, default_type: str) -> Message:
 
 
 def _native_message(raw: bytes) -> Message | None:
-    """Parse with the C++ engine, or return None to ask for the Python parser."""
     engine = _native
     if engine is None:
         return None
     try:
         tree = engine.dissect(raw)
-    except Exception:  # a broken extension must never break parsing
+    except Exception:
         log.warning("native engine raised while dissecting; using the Python parser", exc_info=True)
         return None
     try:
@@ -181,13 +169,12 @@ def _native_message(raw: bytes) -> Message | None:
     except _NativeMismatch as exc:
         log.warning("native engine disagreed with the standard library (%s); using the Python parser", exc)
         return None
-    except Exception:  # malformed node dict, wrong types, anything
+    except Exception:
         log.warning("native engine returned an unusable tree; using the Python parser", exc_info=True)
         return None
 
 
 def _tree_signature(msg: Message | None) -> object:
-    """Everything about a parsed message that ``parse_email`` can observe."""
     if msg is None:
         return None
     payload = msg.get_payload()
@@ -254,7 +241,6 @@ _SELF_CHECK_FIXTURES: tuple[tuple[bytes, bool], ...] = (
         b"truncated body with no closing boundary\n",
         True,
     ),
-    # Malformed shapes the engine is expected to hand back rather than handle.
     (b"Content-Type: multipart/mixed; boundary=MISSING\r\n\r\nno boundary ever appears\r\n", False),
     (b"From someone Mon Jan  1 00:00:00 2020\r\nSubject: mbox\r\n\r\nbody\r\n", False),
     (b"Content-Type: message/delivery-status\r\n\r\nStatus: 5.0.0\r\n", False),
@@ -262,7 +248,6 @@ _SELF_CHECK_FIXTURES: tuple[tuple[bytes, bool], ...] = (
 
 
 def _activate_native_engine() -> None:
-    """Import the extension and let it run only if it earns the right to."""
     global _native, NATIVE_ENGINE, NATIVE_ENGINE_VERSION, NATIVE_ENGINE_STATUS
     global NATIVE_ENGINE_SHA256
 
@@ -270,11 +255,11 @@ def _activate_native_engine() -> None:
         NATIVE_ENGINE_STATUS = "disabled by MAILTRACE_NATIVE_ENGINE"
         return
     try:
-        import mailtrace_engine  # optional extension, imported on purpose
+        import mailtrace_engine
     except ImportError:
         NATIVE_ENGINE_STATUS = "not installed (pure-Python parser in use)"
         return
-    except Exception:  # ABI mismatch, missing runtime DLL, ...
+    except Exception:
         log.warning("mailtrace_engine present but not loadable; using the Python parser", exc_info=True)
         NATIVE_ENGINE_STATUS = "present but not loadable"
         return
@@ -296,7 +281,7 @@ def _activate_native_engine() -> None:
                 continue
             if _tree_signature(native) != _tree_signature(_python_message(fixture)):
                 raise _NativeMismatch(f"engine produced a different tree for self-check fixture {index}")
-    except Exception as exc:  # noqa: BLE001 - any failure means "do not use it"
+    except Exception as exc:
         _native = None
         NATIVE_ENGINE_STATUS = f"self-check failed: {exc}"
         log.warning("mailtrace_engine %s failed its self-check (%s); using the Python parser", version, exc)
@@ -305,7 +290,6 @@ def _activate_native_engine() -> None:
     NATIVE_ENGINE = True
     NATIVE_ENGINE_VERSION = version
     NATIVE_ENGINE_STATUS = "active"
-    # Older engines have no SHA256_BACKEND attribute; they use the built-in code.
     NATIVE_ENGINE_SHA256 = str(getattr(mailtrace_engine, "SHA256_BACKEND", "builtin"))
     log.info(
         "mailtrace_engine %s active for Stage 2 MIME dissection (SHA-256: %s)",
@@ -315,7 +299,6 @@ def _activate_native_engine() -> None:
 
 
 def engine_status() -> dict[str, object]:
-    """Which parser is running, and how often each has been used."""
     return {
         "native_engine": NATIVE_ENGINE,
         "native_engine_version": NATIVE_ENGINE_VERSION,
@@ -327,13 +310,11 @@ def engine_status() -> dict[str, object]:
     }
 
 
-# Header helpers
 def _unfold(value: str) -> str:
     return " ".join(_FOLD_RE.sub(" ", value).split())
 
 
 def decode_header_value(value: object) -> str:
-    """Unfold and RFC 2047-decode a header value, tolerating broken input."""
     if value is None:
         return ""
     text = _unfold(str(value))
@@ -342,7 +323,6 @@ def decode_header_value(value: object) -> str:
     decoded = _lenient(lambda: _unfold(str(make_header(decode_header(text)))), "")
     if decoded:
         return decoded
-    # An unknown charset or undecodable bytes: decode each encoded word by hand.
     chunks: list[tuple[bytes | str, str | None]] = _lenient(lambda: decode_header(text), [])
     if not chunks:
         return text
@@ -378,7 +358,6 @@ def _address_from_pair(name: str, addr: str, raw: str) -> AddressInfo:
 
 
 def parse_address(value: str) -> AddressInfo:
-    """Parse a single mailbox ('Name <a@b>', 'a@b', '<a@b>'); tolerant of junk."""
     raw = decode_header_value(value or "").strip()
     if not raw:
         return AddressInfo()
@@ -387,7 +366,6 @@ def parse_address(value: str) -> AddressInfo:
 
 
 def parse_address_list(value: str) -> list[AddressInfo]:
-    """Parse a comma-separated address list; falls back to scanning for"""
     raw = decode_header_value(value or "").strip()
     if not raw:
         return []
@@ -424,7 +402,6 @@ def _parse_date(value: str) -> datetime | None:
     return parsed.astimezone(UTC)
 
 
-# HTML -> text
 _BLOCK_TAGS = {
     "p", "div", "br", "li", "tr", "h1", "h2", "h3", "h4", "h5", "h6", "table", "ul", "ol",
     "blockquote", "section", "article", "header", "footer", "pre", "hr", "dd", "dt",
@@ -461,7 +438,6 @@ class _TextExtractor(HTMLParser):
 
 
 def html_to_text(html: str) -> str:
-    """Visible text of an HTML document: scripts/styles dropped, block"""
     if not html:
         return ""
     extractor = _TextExtractor()
@@ -470,29 +446,26 @@ def html_to_text(html: str) -> str:
         extractor.feed(html)
         extractor.close()
 
-    _lenient(feed, None)  # malformed markup stops the parser; keep whatever came before it
+    _lenient(feed, None)
     text = "".join(extractor.chunks)
-    text = re.sub(r"[ \t\r\f\v ]+", " ", text)  # noqa: RUF001 - the class holds U+00A0 on purpose
+    text = re.sub(r"[ \t\r\f\v ]+", " ", text)
     text = re.sub(r" *\n *", "\n", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
 
 
-# MIME walking
 def _python_message(raw: bytes) -> Message | None:
-    """The reference parser: CPython's ``email`` package, unchanged."""
     try:
         return email.message_from_bytes(raw, policy=policy.compat32)
-    except Exception:  # hostile input; retried below with a sanitised copy
+    except Exception:
         log.warning("message_from_bytes failed; retrying with a sanitised copy", exc_info=True)
     try:
         return email.message_from_string(raw.decode("utf-8", errors="replace"), policy=policy.compat32)
-    except Exception:  # noqa: BLE001
+    except Exception:
         return None
 
 
 def _parse_message(raw: bytes) -> Message | None:
-    """Native dissection when it is available and confident, Python otherwise."""
     if NATIVE_ENGINE:
         msg = _native_message(raw)
         if msg is not None:
@@ -504,7 +477,6 @@ def _parse_message(raw: bytes) -> Message | None:
 
 
 def _iter_parts(part: Message, depth: int = 0) -> Iterator[tuple[str, Message]]:
-    """Yield ('rfc822', part) for embedded messages and ('leaf', part) for"""
     if depth > _MAX_DEPTH:
         return
     ctype = _content_type(part)
@@ -566,7 +538,6 @@ def _decode_text(part: Message, issues: list[str], label: str) -> str:
             return data.decode(encoding, errors="strict").replace("\r\n", "\n")
         except (LookupError, UnicodeError):
             continue
-    # Neither the declared charset nor UTF-8 fits: keep the text, note the defect.
     try:
         text = data.decode(charset or "cp1252", errors="replace")
     except LookupError:
@@ -597,12 +568,10 @@ def _basic_meta(att: RawAttachment) -> AttachmentMeta:
 _WORD_RE = re.compile(r"\w+", re.UNICODE)
 _SHINGLE_SIZE = 3
 _TLSH_MIN_BYTES = 50
-# Larger than any sane threshold, so an uncomparable pair never clusters.
 _TLSH_UNCOMPARABLE = 1_000_000
 
 
 def _shingles(text: str, size: int = _SHINGLE_SIZE) -> Counter[str]:
-    """Word n-shingles of the normalised body, with their repeat counts."""
     words = _WORD_RE.findall((text or "").lower())
     if not words:
         return Counter()
@@ -612,7 +581,6 @@ def _shingles(text: str, size: int = _SHINGLE_SIZE) -> Counter[str]:
 
 
 def simhash(text: str, bits: int = 64) -> int:
-    """Charikar SimHash of ``text`` as a ``bits``-wide integer."""
     if bits <= 0 or bits % 8 or bits > 512:
         raise ValueError("bits must be a multiple of 8 between 8 and 512 (blake2b's maximum)")
     counts = _shingles(text)
@@ -633,12 +601,10 @@ def simhash(text: str, bits: int = 64) -> int:
 
 
 def simhash_hex(text: str, bits: int = 64) -> str:
-    """``simhash`` rendered as a fixed-width lower-case hex string."""
     return format(simhash(text, bits), f"0{max(1, bits // 4)}x")
 
 
 def hamming_distance(a_hex: str, b_hex: str) -> int:
-    """Number of differing bits between two hex digests of the same width."""
     a_hex = (a_hex or "").strip().lower()
     b_hex = (b_hex or "").strip().lower()
     width = 4 * max(len(a_hex), len(b_hex), 16)
@@ -651,37 +617,31 @@ def hamming_distance(a_hex: str, b_hex: str) -> int:
 
 
 def tlsh_digest(data: bytes) -> str:
-    """TLSH digest of ``data``, or "" when one cannot be produced."""
     if not data or len(data) < _TLSH_MIN_BYTES:
         return ""
     try:
-        import tlsh  # optional dependency, imported lazily on purpose
-    except (ImportError, OSError):  # absent, or a broken / ABI-mismatched build
+        import tlsh
+    except (ImportError, OSError):
         return ""
-    # Some builds raise instead of answering "TNULL" for low-variation input.
     digest = str(_lenient(lambda: tlsh.hash(bytes(data)), "") or "").strip()
     return "" if digest.upper() in {"", "TNULL", "NULL"} else digest
 
 
 def tlsh_diff(a_digest: str, b_digest: str) -> int:
-    """TLSH distance between two digests (0 = identical, higher = further)."""
     a_digest = (a_digest or "").strip()
     b_digest = (b_digest or "").strip()
     if not a_digest or not b_digest:
         return _TLSH_UNCOMPARABLE
     try:
-        import tlsh  # optional dependency, imported lazily on purpose
+        import tlsh
     except (ImportError, OSError):
         return _TLSH_UNCOMPARABLE
-    # A malformed digest from an older engine version is "infinitely far", not an error.
     return _lenient(lambda: int(tlsh.diff(a_digest, b_digest)), _TLSH_UNCOMPARABLE)
 
 
-# Entry point
 def _finalise(
     parsed: ParsedEmail, attachments: list[RawAttachment], started: float
 ) -> tuple[ParsedEmail, list[RawAttachment]]:
-    """Attach the body digests and stamp the elapsed parse time."""
     try:
         body = parsed.text_body or html_to_text(parsed.html_body)
         parsed.fuzzy = FuzzyDigest(
@@ -689,7 +649,7 @@ def _finalise(
             tlsh=tlsh_digest(body.encode("utf-8", errors="replace")) if body else "",
             body_length=len(body),
         )
-    except Exception:  # parse_email must never raise
+    except Exception:
         log.exception("fuzzy digest computation failed; continuing without one")
         parsed.charset_issues.append("body digest could not be computed")
     parsed.parse_ms = round((time.perf_counter() - started) * 1000, 3)
@@ -697,7 +657,6 @@ def _finalise(
 
 
 def parse_email(raw: bytes) -> tuple[ParsedEmail, list[RawAttachment]]:
-    """Parse one message.  Returns the structural view plus attachment bytes."""
     started = time.perf_counter()
     raw = bytes(raw or b"")
     parsed = ParsedEmail(
@@ -713,12 +672,11 @@ def parse_email(raw: bytes) -> tuple[ParsedEmail, list[RawAttachment]]:
         parsed.charset_issues.append("message could not be parsed")
         return _finalise(parsed, [], started)
 
-    # Headers ------------------------------------------------------------
     headers: list[HeaderField] = []
     try:
         for name, value in msg.items():
             headers.append(HeaderField(name=str(name), value=decode_header_value(value)))
-    except Exception:  # parse_email must never raise
+    except Exception:
         log.warning("header iteration failed", exc_info=True)
     parsed.headers = headers
     parsed.message_id = _first_header(msg, "Message-ID").strip().strip("<>").strip()
@@ -733,7 +691,6 @@ def parse_email(raw: bytes) -> tuple[ParsedEmail, list[RawAttachment]]:
     if not headers:
         parsed.charset_issues.append("no headers found")
 
-    # Bodies and attachments ----------------------------------------------
     text_parts: list[str] = []
     html_parts: list[str] = []
     raw_attachments: list[RawAttachment] = []
@@ -772,7 +729,6 @@ def parse_email(raw: bytes) -> tuple[ParsedEmail, list[RawAttachment]]:
     if not parsed.text_body and parsed.html_body:
         parsed.text_body = html_to_text(parsed.html_body)
     if not parsed.text_body and not parsed.html_body and not raw_attachments and not msg.is_multipart():
-        # Non-MIME message whose Content-Type could not be interpreted.
         parsed.text_body = _decode_text(msg, issues, "body")
     parsed.attachments = [_basic_meta(att) for att in raw_attachments]
     return _finalise(parsed, raw_attachments, started)

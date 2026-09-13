@@ -1,16 +1,3 @@
-// @ts-check
-
-/** @typedef {import('./types.js').ThreatCategory} ThreatCategory */
-/** @typedef {import('./types.js').Severity} Severity */
-/** @typedef {import('./types.js').SourceType} SourceType */
-/** @typedef {import('./types.js').CaseStatus} CaseStatus */
-/** @typedef {import('./types.js').NodeType} NodeType */
-/** @typedef {import('./types.js').BecPatternName} BecPatternName */
-/** @typedef {'ok' | 'warn' | 'bad' | 'info' | 'purple' | 'teal' | 'orange' | 'brand' | 'neutral' | 'ink'} Tone */
-
-/** @typedef {{ label: string, blurb: string, tone: Tone }} CategoryLabel */
-
-/** @type {Record<ThreatCategory, CategoryLabel>} */
 export const CATEGORY = {
   Legitimate: { label: "Looks genuine", blurb: "Nothing suspicious found.", tone: "ok" },
   Suspicious: { label: "Suspicious", blurb: "Some warning signs. Treat with care.", tone: "warn" },
@@ -19,10 +6,8 @@ export const CATEGORY = {
   "Fraud-Related": { label: "Money fraud", blurb: "Trying to get money transferred or fees paid.", tone: "orange" },
 };
 
-/** @type {CategoryLabel} */
 const UNKNOWN_CATEGORY = { label: "Unknown", blurb: "", tone: "neutral" };
 
-/** @type {Record<Severity, { label: string, tone: Tone }>} */
 export const SEVERITY = {
   info: { label: "info", tone: "neutral" },
   low: { label: "low", tone: "ok" },
@@ -31,7 +16,6 @@ export const SEVERITY = {
   critical: { label: "critical", tone: "bad" },
 };
 
-/** @type {Record<SourceType, { title: string, detail: string }>} */
 export const SOURCE_TYPE = {
   spoofed_domain: {
     title: "The real domain was faked",
@@ -56,7 +40,6 @@ export const SOURCE_TYPE = {
   },
 };
 
-/** @type {Record<string, string>} */
 export const MODULE = {
   headers: "Email headers",
   auth: "Sender checks",
@@ -69,7 +52,6 @@ export const MODULE = {
   scoring: "Scoring",
 };
 
-/** @type {Record<BecPatternName, string>} */
 export const BEC_PATTERN = {
   payment_diversion: "Payment redirected to a new bank account",
   fake_invoice: "Fake or pressured invoice",
@@ -77,7 +59,6 @@ export const BEC_PATTERN = {
   executive_impersonation: "Pretending to be a boss",
 };
 
-/** @type {Record<string, string>} */
 export const CUSTODY_ACTION = {
   ingested: "email received",
   analyzed: "analysed",
@@ -88,18 +69,12 @@ export const CUSTODY_ACTION = {
   block_decision: "marked for blocking",
 };
 
-/**
- * Analyst decisions.  These describe a decision *recorded in MailTrace*,
- * never an action taken in a mail system - the wording says so on purpose.
- * @type {Record<CaseStatus, { label: string, tone: Tone }>}
- */
 export const DECISION = {
   open: { label: "No decision recorded", tone: "neutral" },
   quarantined: { label: "Marked for quarantine", tone: "warn" },
   blocked: { label: "Marked for blocking", tone: "bad" },
 };
 
-/** @type {Record<string, string>} */
 export const DOMAIN_ROLE = {
   sender: "the sender",
   reply_to: "replies go here",
@@ -108,7 +83,6 @@ export const DOMAIN_ROLE = {
   message_id: "message id",
 };
 
-/** @type {Record<NodeType, { label: string, tone: Tone }>} */
 export const NODE_TYPE = {
   email: { label: "this email", tone: "brand" },
   address: { label: "email address", tone: "teal" },
@@ -120,8 +94,7 @@ export const NODE_TYPE = {
   campaign: { label: "attack group", tone: "ink" },
 };
 
-/** The five Stage 4 pillars, in the order the deck lists them. */
-export const PILLARS = /** @type {const} */ ([
+export const PILLARS = ([
   ["auth", "Sender checks (Auth)"],
   ["text", "Wording of the message (Text)"],
   ["url", "Links and domains (URL)"],
@@ -129,28 +102,16 @@ export const PILLARS = /** @type {const} */ ([
   ["entropy", "Attached files (Entropy)"],
 ]);
 
-/**
- * @param {string | null | undefined} category
- * @returns {CategoryLabel}
- */
 export function categoryOf(category) {
-  if (category && category in CATEGORY) return CATEGORY[/** @type {ThreatCategory} */ (category)];
+  if (category && category in CATEGORY) return CATEGORY[(category)];
   return category ? { ...UNKNOWN_CATEGORY, label: category } : UNKNOWN_CATEGORY;
 }
 
-/**
- * @param {string | null | undefined} severity
- */
 export function severityOf(severity) {
-  if (severity && severity in SEVERITY) return SEVERITY[/** @type {Severity} */ (severity)];
+  if (severity && severity in SEVERITY) return SEVERITY[(severity)];
   return SEVERITY.info;
 }
 
-/**
- * The tone for a 0-100 score: the same thresholds the severity scale uses.
- * @param {number} score
- * @returns {Tone}
- */
 export function toneForScore(score) {
   if (score >= 75) return "bad";
   if (score >= 50) return "orange";
@@ -158,10 +119,6 @@ export function toneForScore(score) {
   return "ok";
 }
 
-/**
- * @param {number} score
- * @returns {Severity}
- */
 export function severityForScore(score) {
   if (score >= 75) return "critical";
   if (score >= 50) return "high";

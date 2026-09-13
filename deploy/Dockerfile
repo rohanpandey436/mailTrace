@@ -1,4 +1,3 @@
-
 FROM python:3.13-slim AS builder
 
 ENV PIP_NO_CACHE_DIR=1 \
@@ -27,13 +26,11 @@ COPY --from=builder /opt/venv /opt/venv
 
 RUN python -c "import hashlib, mailtrace_engine as e; assert e.SHA256_BACKEND == 'openssl', e.SHA256_BACKEND; assert e.sha256(b'mailtrace') == hashlib.sha256(b'mailtrace').hexdigest(); print('engine loads in runtime image,', e.SHA256_BACKEND, 'SHA-256')"
 
-# uid/gid are pinned so a bind-mounted data directory has predictable ownership.
 RUN groupadd --gid 10001 mailtrace \
     && useradd --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin mailtrace
 
 WORKDIR /app
 
-# Source last: dependencies above change rarely, these files change every commit.
 COPY --chown=10001:10001 backend/ /app/backend/
 COPY --chown=10001:10001 frontend/ /app/frontend/
 COPY --chown=10001:10001 samples/ /app/samples/

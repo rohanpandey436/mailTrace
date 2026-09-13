@@ -1,4 +1,3 @@
-"""IP geolocation and infrastructure intelligence."""
 from __future__ import annotations
 
 import ipaddress
@@ -21,7 +20,7 @@ from ..schemas import Finding, GeoInfo, HeaderAnalysis, Hop, InfraAnalysis, Seve
 from ..utils.cache import cache_get, cache_set
 from .knowledge import DNSBL_ZONES
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:
     from ..database.case_manager import Store
 
 log = logging.getLogger("mailtrace.geoip")
@@ -35,12 +34,10 @@ TOR_EXIT_LIST_URL = "https://check.torproject.org/torbulkexitlist"
 ABUSEIPDB_URL = "https://api.abuseipdb.com/api/v2/check"
 HTTP_HEADERS: dict[str, str] = {"User-Agent": "MailTrace/1.0"}
 TOR_LIST_TTL_SECONDS = 3600
-TOR_RETRY_SECONDS = 300  # back-off before re-trying a failed exit-list download
+TOR_RETRY_SECONDS = 300
 
-# GeoInfo.source values proving the lookup layer actually answered for the IP.
 _RESOLVED_SOURCES = {"ip-api", "maxmind", "cache"}
 
-# RFC 6598 shared address space (CGNAT) is not covered by ipaddress.is_private.
 _SHARED_ADDRESS_SPACE = ipaddress.ip_network("100.64.0.0/10")
 _DNSBL_ANSWER_SPACE = ipaddress.ip_network("127.0.0.0/8")
 _DNSBL_ERROR_SPACE = ipaddress.ip_network("127.255.255.0/24")
@@ -60,12 +57,10 @@ _HOSTING_RE = re.compile(
 )
 _TLS_HINT_RE = re.compile(r"\bTLS|\bSSL|version=TLS|cipher=", re.IGNORECASE)
 _AUTH_HINT_RE = re.compile(r"\bESMTPS?A\b|authenticat", re.IGNORECASE)
-# Dynamic / residential PTR naming (deliberately excludes "static").
 _RESIDENTIAL_RDNS_RE = re.compile(
     r"dsl|dyn|pool|ppp|cable|dhcp|broadband|customer|cust-|res-|resid|dialup|dial-up|fib(?:er|re)|mobile|wireless",
     re.IGNORECASE,
 )
-# Auto-generated PTR names that carry no operator identity.
 _GENERIC_RDNS_RE = re.compile(
     r"(?:^|[.-])(?:ip|host|static|node|vps|srv|server|vm|ec2)-?\d|"
     r"unknown|no-?rdns|unassigned|localhost|in-addr\.arpa",
@@ -92,22 +87,17 @@ _MAIL_SERVICE_EGRESS: tuple[tuple[str, tuple[str, ...]], ...] = (
 )
 
 _TOR_LOCK = threading.Lock()
-_tor_memo: tuple[float, set[str]] = (0.0, set())  # (monotonic expiry, exit IPs)
+_tor_memo: tuple[float, set[str]] = (0.0, set())
 
-#: Cap on the PTR wait; a PTR that exists answers in milliseconds.
 _RDNS_TIMEOUT_SECONDS = 1.5
-#: A timed-out PTR lookup is remembered briefly; it is not a "no PTR" answer.
 _RDNS_TIMEOUT_TTL_SECONDS = 300
 
 _MAXMIND_LOCK = threading.Lock()
 _maxmind_readers: dict[str, Any] = {}
-# Configured database path -> sibling ASN database path ('' = none alongside).
 _maxmind_asn_siblings: dict[str, str] = {}
 
 
-# Small utilities
 def _parse_ip(value: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
-    """Parse an IP literal as written in headers ('[1.2.3.4]', '[IPv6:::1]');"""
     text = (value or "").strip().strip("[]")
     if text.lower().startswith("ipv6:"):
         text = text[5:]
@@ -155,14 +145,13 @@ def _http_get(
     params: dict[str, str] | None = None,
     headers: dict[str, str] | None = None,
 ) -> httpx.Response | None:
-    """One bounded GET; None on any transport error."""
     merged = dict(HTTP_HEADERS)
     if headers:
         merged.update(headers)
     try:
         with httpx.Client(timeout=_timeout(cfg), headers=merged, follow_redirects=True) as client:
             return client.get(url, params=params)
-    except (httpx.HTTPError, httpx.InvalidURL):  # timeouts, DNS failures, TLS errors, ...
+    except (httpx.HTTPError, httpx.InvalidURL):
         log.debug("GET %s failed", url, exc_info=True)
         return None
 
@@ -172,21 +161,18 @@ def _private_geo(ip: str) -> GeoInfo:
 
 
 def _registrable(host: str) -> str:
-    """Registrable domain of a host name; '' for empty, 'unknown' and IP literals."""
     text = host.strip().strip("[]").rstrip(".").lower()
     if not text or text == "unknown" or _parse_ip(text) is not None:
         return ""
     try:
-        from .link_analyzer import registrable_domain  # sibling module; degrade to a heuristic if unavailable
+        from .link_analyzer import registrable_domain
 
         return registrable_domain(text)
     except ImportError:
         return ".".join(text.split(".")[-2:])
 
 
-# Public lookups
 def is_public_ip(ip: str) -> bool:
-    """True for globally routable unicast addresses (IPv4 or IPv6)."""
     addr = _parse_ip(ip)
     if addr is None or addr in _SHARED_ADDRESS_SPACE:
         return False
@@ -201,17 +187,16 @@ def is_public_ip(ip: str) -> bool:
 
 
 def reverse_dns(ip: str, cfg: Settings) -> str | None:
-    """Reverse (PTR) name of an IP, lowercase."""
     ip = _normalize_ip(ip)
     if not ip or not cfg.enable_network:
         return ""
     executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="mt-rdns")
     try:
         host = executor.submit(socket.gethostbyaddr, ip).result(timeout=_rdns_timeout(cfg))[0]
-    except TimeoutError:  # inconclusive: the resolver never answered
+    except TimeoutError:
         log.debug("reverse DNS for %s timed out", ip)
         return None
-    except OSError:  # herror/gaierror: the resolver answered, there is no PTR
+    except OSError:
         log.debug("reverse DNS for %s: no PTR record", ip)
         return ""
     finally:
@@ -221,13 +206,11 @@ def reverse_dns(ip: str, cfg: Settings) -> str | None:
 
 
 def _rdns_timeout(cfg: Settings) -> float:
-    """The PTR wait: the cap above, or the lookup budget when that is smaller."""
     budget = _timeout(cfg)
     return min(_RDNS_TIMEOUT_SECONDS, budget) if budget > 0 else _RDNS_TIMEOUT_SECONDS
 
 
 def _split_as(value: Any) -> tuple[str, str]:
-    """'AS15169 Google LLC' -> ('AS15169', 'Google LLC')."""
     text = _text(value)
     match = _AS_RE.match(text)
     if match is None:
@@ -256,30 +239,27 @@ def _geo_from_ip_api(ip: str, payload: dict[str, Any]) -> GeoInfo:
     )
 
 
-# MaxMind GeoLite2 (local database, preferred source)
 def _db_key(path: str) -> str:
-    """Cache key for a database path: absolute, case-folded on Windows."""
     try:
         return os.path.normcase(os.path.abspath(os.path.expanduser(path)))
-    except (TypeError, ValueError, OSError):  # exotic path (null bytes, bad surrogate)
+    except (TypeError, ValueError, OSError):
         return path
 
 
 def _maxmind_reader(path: str) -> Any:
-    """The process-wide reader for one .mmdb file, opened at most once."""
     key = _db_key(path)
     with _MAXMIND_LOCK:
         if key in _maxmind_readers:
             return _maxmind_readers[key]
         reader: Any = None
         try:
-            import maxminddb  # lazy: an absent package only disables this source
-        except (ImportError, OSError):  # absent, or a broken C extension
+            import maxminddb
+        except (ImportError, OSError):
             log.warning("maxminddb is not installed; using ip-api.com (pip install maxminddb)")
         else:
             try:
                 reader = maxminddb.open_database(path)
-            except (OSError, ValueError, RuntimeError) as exc:  # missing file, permissions, InvalidDatabaseError
+            except (OSError, ValueError, RuntimeError) as exc:
                 log.warning("MaxMind database %s is unusable (%s); using ip-api.com", path, exc)
                 reader = None
             else:
@@ -290,9 +270,8 @@ def _maxmind_reader(path: str) -> Any:
 
 
 def _asn_sibling_path(path: str) -> str:
-    """An ASN database sitting next to the configured one; '' when there is none."""
     key = _db_key(path)
-    with _MAXMIND_LOCK:  # released before opening anything: the lock is not reentrant
+    with _MAXMIND_LOCK:
         cached = _maxmind_asn_siblings.get(key)
     if cached is not None:
         return cached
@@ -302,7 +281,7 @@ def _asn_sibling_path(path: str) -> str:
             if "asn" in candidate.name.lower() and _db_key(str(candidate)) != key:
                 sibling = str(candidate)
                 break
-    except OSError:  # unreadable directory
+    except OSError:
         sibling = ""
     with _MAXMIND_LOCK:
         _maxmind_asn_siblings[key] = sibling
@@ -310,19 +289,17 @@ def _asn_sibling_path(path: str) -> str:
 
 
 def _maxmind_get(reader: Any, ip: str) -> dict[str, Any]:
-    """One record from an open reader; {} when absent or unreadable."""
     if reader is None:
         return {}
     try:
         record = reader.get(ip)
-    except (ValueError, OSError, RuntimeError):  # unsupported address family, closed reader, InvalidDatabaseError
+    except (ValueError, OSError, RuntimeError):
         log.debug("MaxMind lookup for %s failed", ip, exc_info=True)
         return {}
     return record if isinstance(record, dict) else {}
 
 
 def _mm_name(node: Any) -> str:
-    """English display name of a GeoLite2 node ({'names': {'en': 'London'}})."""
     if not isinstance(node, dict):
         return ""
     names = node.get("names")
@@ -332,12 +309,10 @@ def _mm_name(node: Any) -> str:
 
 
 def _is_asn_record(record: dict[str, Any]) -> bool:
-    """True for a GeoLite2-ASN record, which carries no place information."""
     return "autonomous_system_number" in record or "autonomous_system_organization" in record
 
 
 def _apply_asn_record(geo: GeoInfo, record: dict[str, Any]) -> None:
-    """AS number and network owner; 'AS15169' matches the ip-api spelling."""
     number = record.get("autonomous_system_number")
     if isinstance(number, int) and not isinstance(number, bool):
         geo.asn = f"AS{number}"
@@ -347,14 +322,12 @@ def _apply_asn_record(geo: GeoInfo, record: dict[str, Any]) -> None:
 
 
 def _apply_city_record(geo: GeoInfo, record: dict[str, Any]) -> None:
-    """Place fields of a GeoLite2-City (or -Country) record."""
     country = record.get("country") or record.get("registered_country")
     if isinstance(country, dict):
         geo.country = _mm_name(country)
         geo.country_code = _text(country.get("iso_code")).upper()
     subdivisions = record.get("subdivisions")
     if isinstance(subdivisions, list) and subdivisions:
-        # Ordered broadest first; the first entry is ip-api's "regionName".
         first = subdivisions[0]
         geo.region = _mm_name(first) or (_text(first.get("iso_code")) if isinstance(first, dict) else "")
     geo.city = _mm_name(record.get("city"))
@@ -368,7 +341,6 @@ _PROBE_IP = "8.8.8.8"
 
 
 def geoip_status(cfg: Settings) -> str:
-    """Where geolocation will actually come from, established by trying it."""
     path = _text(getattr(cfg, "maxmind_db", ""))
     if not path:
         return "ip-api.com (no MaxMind database configured)"
@@ -382,7 +354,6 @@ def geoip_status(cfg: Settings) -> str:
 
 
 def maxmind_lookup(ip: str, cfg: Settings) -> GeoInfo | None:
-    """Geolocate one IP from the local GeoLite2 database at ``cfg.maxmind_db``."""
     path = _text(getattr(cfg, "maxmind_db", ""))
     if not path:
         return None
@@ -404,12 +375,11 @@ def maxmind_lookup(ip: str, cfg: Settings) -> GeoInfo | None:
             if asn_record:
                 _apply_asn_record(geo, asn_record)
     if not (geo.country_code or geo.country or geo.city or geo.asn or geo.org or geo.lat is not None):
-        return None  # an empty record must not mask the ip-api fallback
+        return None
     return geo
 
 
 def geolocate(ip: str, cfg: Settings, store: Store | None) -> GeoInfo:
-    """Geolocate one IP: the local MaxMind database first when ``cfg.maxmind_db``"""
     normalized = _normalize_ip(ip)
     if not normalized:
         return GeoInfo(ip=_text(ip), source="unavailable")
@@ -424,7 +394,7 @@ def geolocate(ip: str, cfg: Settings, store: Store | None) -> GeoInfo:
     if isinstance(cached, dict):
         try:
             geo = GeoInfo.model_validate(cached)
-        except ValidationError:  # corrupt cache entry: fall through to a live lookup
+        except ValidationError:
             log.debug("ignoring malformed cache entry %s", key)
         else:
             geo.source = "cache"
@@ -468,11 +438,10 @@ def _download_tor_exit_list(cfg: Settings) -> set[str]:
 
 
 def tor_exit_ips(cfg: Settings, store: Store | None) -> set[str]:
-    """Current Tor exit addresses: module memo -> Store cache (``tor:list``, 1 h)"""
     global _tor_memo
     if not cfg.enable_network:
         return set()
-    with _TOR_LOCK:  # one download even when several IPs are enriched concurrently
+    with _TOR_LOCK:
         expires, exits = _tor_memo
         now = time.monotonic()
         if now < expires:
@@ -497,7 +466,6 @@ def _dnsbl_hit(answer_text: str) -> bool:
 
 
 def dnsbl_check(ip: str, cfg: Settings, store: Store | None) -> list[str]:
-    """Zones of knowledge.DNSBL_ZONES that list this IPv4 address (cached as"""
     ip = _normalize_ip(ip)
     if not ip or ":" in ip or not is_public_ip(ip) or not cfg.enable_network or not DNSBL_ZONES:
         return []
@@ -507,13 +475,13 @@ def dnsbl_check(ip: str, cfg: Settings, store: Store | None) -> list[str]:
         return [str(zone) for zone in cached]
     try:
         import dns.exception
-        import dns.resolver  # dnspython; lazy so a missing package only disables DNSBL checks
+        import dns.resolver
     except ImportError:
         log.debug("DNSBL checks unavailable: dnspython is not installed")
         return []
     try:
         resolver = dns.resolver.Resolver(configure=True)
-    except dns.exception.DNSException:  # no usable resolver configuration on this host
+    except dns.exception.DNSException:
         log.debug("DNSBL checks unavailable", exc_info=True)
         return []
     lifetime = _timeout(cfg)
@@ -524,7 +492,7 @@ def dnsbl_check(ip: str, cfg: Settings, store: Store | None) -> list[str]:
     def listed_in(zone: str) -> bool:
         try:
             answer = resolver.resolve(f"{reversed_octets}.{zone}", "A", lifetime=lifetime)
-        except dns.exception.DNSException:  # NXDOMAIN (not listed), timeout, SERVFAIL, ...
+        except dns.exception.DNSException:
             return False
         return any(_dnsbl_hit(rdata.to_text()) for rdata in answer)
 
@@ -536,7 +504,6 @@ def dnsbl_check(ip: str, cfg: Settings, store: Store | None) -> list[str]:
 
 
 def abuseipdb_check(ip: str, cfg: Settings, store: Store | None) -> int | None:
-    """AbuseIPDB abuse-confidence score (0-100) when ``cfg.abuseipdb_key`` is"""
     ip = _normalize_ip(ip)
     if not ip or not cfg.abuseipdb_key or not cfg.enable_network or not is_public_ip(ip):
         return None
@@ -554,7 +521,7 @@ def abuseipdb_check(ip: str, cfg: Settings, store: Store | None) -> int | None:
         return None
     try:
         score = int(response.json()["data"]["abuseConfidenceScore"])
-    except (ValueError, KeyError, TypeError):  # non-JSON body or unexpected shape
+    except (ValueError, KeyError, TypeError):
         return None
     score = max(0, min(100, score))
     cache_set(store, key, score, cfg.cache_ttl_seconds)
@@ -562,13 +529,12 @@ def abuseipdb_check(ip: str, cfg: Settings, store: Store | None) -> int | None:
 
 
 def _cached_reverse_dns(ip: str, cfg: Settings, store: Store | None) -> str:
-    """PTR name through the Store cache."""
     key = f"rdns:{ip}"
     cached = cache_get(store, key)
-    if isinstance(cached, str):  # "" is a real cached answer: this IP has no PTR
+    if isinstance(cached, str):
         return cached
     host = reverse_dns(ip, cfg)
-    if host is None:  # timed out
+    if host is None:
         cache_set(store, key, "", _RDNS_TIMEOUT_TTL_SECONDS)
         return ""
     cache_set(store, key, host, cfg.cache_ttl_seconds)
@@ -576,11 +542,10 @@ def _cached_reverse_dns(ip: str, cfg: Settings, store: Store | None) -> str:
 
 
 def enrich_ip(ip: str, cfg: Settings, store: Store | None, full: bool) -> GeoInfo:
-    """geolocate + reverse DNS + Tor check; ``full`` adds DNSBL and AbuseIPDB"""
     geo = geolocate(ip, cfg, store)
     if geo.is_private or not is_public_ip(geo.ip):
         return geo
-    if not geo.reverse_dns and cfg.enable_network:  # ip-api's "reverse" field saves the PTR lookup
+    if not geo.reverse_dns and cfg.enable_network:
         geo.reverse_dns = _cached_reverse_dns(geo.ip, cfg, store)
     geo.is_tor_exit = geo.ip in tor_exit_ips(cfg, store) or bool(_TOR_RDNS_RE.search(geo.reverse_dns))
     if full:
@@ -589,9 +554,7 @@ def enrich_ip(ip: str, cfg: Settings, store: Store | None, full: bool) -> GeoInf
     return geo
 
 
-# Infrastructure analysis
 def _public_ips_in_order(header_analysis: HeaderAnalysis, origin: str) -> list[str]:
-    """Unique public IPs worth enriching: origin first, then the hops in"""
     candidates = [origin, *(hop.from_ip for hop in header_analysis.hops), header_analysis.x_originating_ip]
     ordered: list[str] = []
     for candidate in candidates:
@@ -610,7 +573,7 @@ def _enrich_many(targets: list[str], origin: str, cfg: Settings, store: Store | 
         for ip, future in futures.items():
             try:
                 results[ip] = future.result()
-            except Exception:  # one failed lookup must not sink the others
+            except Exception:
                 log.exception("enrichment of %s failed", ip)
                 results[ip] = GeoInfo(ip=ip, source="unavailable")
     return results
@@ -630,7 +593,6 @@ def _is_mail_service_egress(geo: GeoInfo) -> bool:
 
 
 def _plain_smtp_hop(hop: Hop) -> bool:
-    """Handed over as plain (E)SMTP: no TLS and no SMTP AUTH."""
     if "no_tls" in hop.anomalies:
         return True
     tokens = hop.protocol.upper().split()
@@ -639,7 +601,6 @@ def _plain_smtp_hop(hop: Hop) -> bool:
 
 
 def _generic_rdns(rdns: str, ip: str) -> bool:
-    """Auto-generated PTR (embeds the address, 'host-12', 'static-...') or a residential pool name."""
     name = rdns.lower()
     octets = ip.split(".")
     if len(octets) == 4:
@@ -650,14 +611,12 @@ def _generic_rdns(rdns: str, ip: str) -> bool:
 
 
 def _anonymous_host(geo: GeoInfo) -> bool:
-    """No usable reverse DNS.  A missing PTR only counts once ip-api actually"""
     if geo.reverse_dns:
         return _generic_rdns(geo.reverse_dns, geo.ip)
     return geo.source in _RESOLVED_SOURCES
 
 
 def _open_relay_hops(hops: list[Hop]) -> list[Hop]:
-    """Public, non-internal hops that accepted the message over plain SMTP from"""
     suspects: list[Hop] = []
     for hop in hops:
         geo = hop.geo
@@ -682,12 +641,11 @@ def _residential_origin(geo: GeoInfo) -> bool:
 
 
 def _delivered_direct_to_mx(hops: list[Hop], origin_index: int | None) -> bool:
-    """From the origin hop onward every receiving server is on the recipient"""
     if origin_index is None or not 0 <= origin_index < len(hops):
         return False
     origin_hop = hops[origin_index]
     if _AUTH_HINT_RE.search(origin_hop.raw) or _AUTH_HINT_RE.search(origin_hop.protocol):
-        return False  # authenticated submission = a real account at a mail provider
+        return False
     final_domain = _registrable(hops[-1].by_host)
     for hop in hops[origin_index:]:
         by_domain = _registrable(hop.by_host)
@@ -724,7 +682,6 @@ def _botnet_indicators(header_analysis: HeaderAnalysis, origin_geo: GeoInfo | No
     return indicators
 
 
-# Findings
 def _finding(fid: str, severity: Severity, title: str, detail: str, evidence: dict[str, Any]) -> Finding:
     return Finding(id=fid, module=MODULE, severity=severity, title=title, detail=detail, evidence=evidence)
 
@@ -834,9 +791,7 @@ def _trail_finding(hops: list[Hop]) -> Finding | None:
     )
 
 
-# Entry point
 def analyze_infrastructure(header_analysis: HeaderAnalysis, cfg: Settings, store: Store | None) -> InfraAnalysis:
-    """Enrich the public IPs of the Received chain (``hop.geo`` is set in"""
     hops = header_analysis.hops
     origin = _normalize_ip(header_analysis.originating_ip)
     public_ips = _public_ips_in_order(header_analysis, origin)
@@ -848,7 +803,6 @@ def analyze_infrastructure(header_analysis: HeaderAnalysis, cfg: Settings, store
             hop.geo = enriched[ip]
         elif ip and not is_public_ip(ip):
             hop.geo = _private_geo(ip)
-        # a public hop beyond the lookup budget keeps geo=None
 
     origin_geo: GeoInfo | None = None
     if origin in enriched:
@@ -856,7 +810,6 @@ def analyze_infrastructure(header_analysis: HeaderAnalysis, cfg: Settings, store
     elif origin and not is_public_ip(origin):
         origin_geo = _private_geo(origin)
 
-    # Flags -----------------------------------------------------------------
     tor_exit = origin_geo is not None and origin_geo.is_tor_exit
     vpn_match = _VPN_RE.search(_provider_text(origin_geo)) if origin_geo is not None else None
     vpn_or_proxy = (
@@ -878,7 +831,6 @@ def analyze_infrastructure(header_analysis: HeaderAnalysis, cfg: Settings, store
     botnet = _botnet_indicators(header_analysis, origin_geo)
     private_only = (origin_geo is not None and origin_geo.is_private) or (bool(hops) and not public_ips)
 
-    # Score: the strongest signal plus 0.1 for every additional one ---------
     signals: list[float] = []
     if tor_exit:
         signals.append(0.9)
@@ -896,7 +848,6 @@ def analyze_infrastructure(header_analysis: HeaderAnalysis, cfg: Settings, store
         signals.append(0.1)
     score = _clamp(max(signals) + 0.1 * (len(signals) - 1)) if signals else 0.0
 
-    # Findings --------------------------------------------------------------
     findings: list[Finding] = []
     if origin_geo is not None:
         provider = origin_geo.isp or origin_geo.org or "unknown provider"

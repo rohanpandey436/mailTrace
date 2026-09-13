@@ -1,4 +1,3 @@
-"""Shared fixtures: offline settings, a temporary store, sample loader and a session-wide set of fully analysed samples (no network, no persistence)."""
 from __future__ import annotations
 
 import sys
@@ -10,9 +9,9 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app.config import Settings  # noqa: E402
+from app.config import Settings
 
-SAMPLES = ROOT.parent / "samples"   # mailtrace/samples, beside the backend
+SAMPLES = ROOT.parent / "samples"
 SAMPLE_FILES = {
     "phishing": "phishing_sbi_kyc.eml",
     "bec": "bec_payment_diversion.eml",
@@ -67,7 +66,6 @@ def session_cfg(tmp_path_factory: pytest.TempPathFactory) -> Settings:
 
 @pytest.fixture(scope="session")
 def analyses(session_cfg: Settings) -> dict:
-    """Every sample analysed once, offline, without a store."""
     from app.core import pipeline
 
     results = {}

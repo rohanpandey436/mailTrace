@@ -8,7 +8,6 @@
 @import "tailwindcss/utilities.css" layer(utilities);
 @import "./vendor.css";
 
-/* Class names live in JS template literals under js/ and in index.html. */
 @source "../index.html";
 @source "../js/**/*.js";
 
@@ -29,7 +28,6 @@
   --color-brand-soft: #fff4ed;
   --color-brand-tint: #fff9f5;
 
-  /* Semantic tones. Each has a strong value (text, strokes) and a soft one (fills). */
   --color-ok: #15803d;
   --color-ok-soft: #ecfdf3;
   --color-warn: #b45309;
@@ -47,7 +45,6 @@
   --color-neutral: #697586;
   --color-neutral-soft: #f1f3f7;
 
-  /* Callout notes */
   --color-note-warn-bg: #fffbeb;
   --color-note-warn-line: #fde68a;
   --color-note-warn-ink: #78350f;
@@ -55,7 +52,6 @@
   --color-note-info-line: #c7dbff;
   --color-note-info-ink: #1e3a8a;
 
-  /* Type */
   --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
   --text-2xs: 0.68rem;
@@ -77,13 +73,11 @@
   --shadow-lg: 0 12px 28px rgba(16, 24, 40, 0.12);
 }
 
-/* Tokens with no Tailwind namespace: plain variables the stylesheets read. */
 :root {
   color-scheme: light;
 
   --leading: 1.55;
 
-  /* Space, on a 4px scale */
   --space-1: 0.25rem;
   --space-2: 0.5rem;
   --space-3: 0.75rem;
@@ -93,16 +87,13 @@
   --space-8: 2rem;
   --space-10: 2.5rem;
 
-  /* Elevation and focus */
   --ring-brand: 0 0 0 3px rgba(217, 72, 15, 0.12);
 
-  /* Stacking order */
   --z-topbar: 30;
   --z-rail: 40;
   --z-toast: 50;
   --z-tooltip: 60;
 
-  /* Fixed sizes */
   --rail-width: 15rem;
   --content-max: 1360px;
   --map-height: 400px;
@@ -114,7 +105,6 @@
 }
 
 @layer base {
-  /* Preflight removes list markers; every list this dashboard renders is prose. */
   ul {
     list-style: disc;
   }

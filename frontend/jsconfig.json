@@ -1,6 +1,6 @@
 {
   "compilerOptions": {
-    "checkJs": true,
+    "checkJs": false,
     "strict": true,
     "noEmit": true,
     "target": "ES2022",

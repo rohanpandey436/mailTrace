@@ -5,7 +5,6 @@ services:
     plan: free
     rootDir: backend
     buildCommand: pip install -r requirements.txt -r requirements-pg.txt && python scripts/fetch_geolite2.py && { pip install ../engine || echo "native engine unavailable on this builder; using the Python parser"; }
-    # Render sets PORT; app/config.py picks it up and binds every interface.
     startCommand: python run.py
     healthCheckPath: /api/health
     envVars:
@@ -15,7 +14,6 @@ services:
         value: acme-corp.in
       - key: MAILTRACE_EXECUTIVES
         value: ceo,cfo,managing director,sarthak srivastava
-      # Live WHOIS, DNS, GeoIP, blocklist and Tor lookups.
       - key: MAILTRACE_ENABLE_NETWORK
         value: "true"
       - key: MAILTRACE_LOOKUP_TIMEOUT

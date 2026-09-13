@@ -1,4 +1,3 @@
-"""The DistilRoBERTa backend, served by ONNX Runtime."""
 from __future__ import annotations
 
 import json
@@ -7,15 +6,13 @@ import threading
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:  # pragma: no cover - annotations only; both are imported lazily
+if TYPE_CHECKING:
     import numpy as np
     from numpy.typing import NDArray
 
 log = logging.getLogger("mailtrace.ml.transformer")
 
-#: Where ``transformer_trainer`` writes, and where the service looks by default.
 BUNDLED = Path(__file__).resolve().parent / "distilroberta-onnx"
-#: Must match ``transformer_trainer.MAX_TOKENS``; the graph is exported for it.
 MAX_TOKENS = 192
 _MODEL_FILENAMES = ("model_quantized.onnx", "model.onnx")
 
@@ -32,7 +29,6 @@ def _softmax(logits: NDArray[np.float32]) -> NDArray[np.float64]:
 
 
 class TransformerClassifier:
-    """A fine-tuned DistilRoBERTa reading through onnxruntime."""
 
     __slots__ = ("_inputs", "_session", "_tokenizer", "directory", "labels")
 
@@ -41,11 +37,10 @@ class TransformerClassifier:
         self._tokenizer = tokenizer
         self.labels = labels
         self.directory = directory
-        self._inputs = {value.name for value in session.get_inputs()}  # type: ignore[attr-defined]
+        self._inputs = {value.name for value in session.get_inputs()}
 
     @classmethod
     def load(cls, directory: Path = BUNDLED) -> TransformerClassifier | None:
-        """The bundled model, or None when it is absent or unusable."""
         directory = Path(directory)
         cached = _loaded.get(str(directory))
         if cached is not None or str(directory) in _loaded:
@@ -73,7 +68,7 @@ class TransformerClassifier:
             tokenizer.enable_padding(length=MAX_TOKENS)
             labels = json.loads((directory / "labels.json").read_text(encoding="utf-8"))
             session = ort.InferenceSession(str(graph), providers=["CPUExecutionProvider"])
-        except Exception:  # a broken model must not stop startup
+        except Exception:
             log.warning("the DistilRoBERTa graph at %s could not be loaded", directory, exc_info=True)
             return None
         if not isinstance(labels, list) or not labels:
@@ -83,28 +78,25 @@ class TransformerClassifier:
         return cls(session, tokenizer, [str(label) for label in labels], directory)
 
     def predict(self, text: str) -> tuple[str, dict[str, float]]:
-        """``(label, {label: probability})`` for one message."""
         import numpy as np
 
-        encoded = self._tokenizer.encode(text or "")  # type: ignore[attr-defined]
+        encoded = self._tokenizer.encode(text or "")
         feed = {"input_ids": np.asarray([encoded.ids], dtype=np.int64)}
         if "attention_mask" in self._inputs:
             feed["attention_mask"] = np.asarray([encoded.attention_mask], dtype=np.int64)
-        logits = self._session.run(None, feed)[0]  # type: ignore[attr-defined]
+        logits = self._session.run(None, feed)[0]
         probabilities = _softmax(np.asarray(logits))[0]
         scores = {label: float(probabilities[index]) for index, label in enumerate(self.labels)}
         return max(scores.items(), key=lambda item: item[1])[0], scores
 
 
 OCCLUSION_TOKENS = 40
-#: Named wherever these surface: they are ablation deltas, not Shapley values.
 ATTRIBUTION_METHOD = "occlusion"
 
 
 def occlusion_attributions(
     classifier: TransformerClassifier, text: str, label: str, base_probability: float
 ) -> list[tuple[str, float]]:
-    """How far p(label) falls when each token is removed, strongest first."""
     tokens = (text or "").split()
     head = tokens[:OCCLUSION_TOKENS]
     if not head:
@@ -120,5 +112,4 @@ def occlusion_attributions(
 
 
 def available(directory: Path = BUNDLED) -> bool:
-    """Whether a usable model is present, without forcing a full load path."""
     return TransformerClassifier.load(directory) is not None

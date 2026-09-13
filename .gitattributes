@@ -2,7 +2,6 @@
 
 *.eml -text
 
-# Model artefacts and databases are binary; a byte changed is a file broken.
 *.onnx binary
 *.mmdb binary
 *.joblib binary

@@ -1,5 +1,3 @@
-// @ts-check
-/** "Evidence log": the hash-linked chain of custody, and the ledger check. */
 import { api, errorMessage } from "../../api.js";
 import { formatDate, truncate } from "../../format.js";
 import { useAsync } from "../../hooks.js";
@@ -8,15 +6,9 @@ import { html } from "../../react.js";
 import { chip, errorState, section, skeleton } from "../../ui/primitives.js";
 import { toast } from "../../ui/toast.js";
 
-/** @typedef {import('../../types.js').AnalysisResult} AnalysisResult */
-/** @typedef {import('../../types.js').CustodyEvent} CustodyEvent */
-
 const HASH_PREVIEW_CHARS = 16;
 const FINGERPRINT_PREVIEW_CHARS = 32;
 
-/**
- * @param {{ event: CustodyEvent }} props
- */
 function EventRow({ event }) {
   return html`<tr>
     <td class="mono">${event.seq}</td>
@@ -27,9 +19,6 @@ function EventRow({ event }) {
   </tr>`;
 }
 
-/**
- * @param {{ result: AnalysisResult }} props
- */
 export function CustodyTab({ result }) {
   const { data, error, loading, reload } = useAsync(() => api.getCustody(result.id), [result.id]);
 

@@ -1,4 +1,3 @@
-"""Text classifier: training, caching, prediction and token-level explanation."""
 from __future__ import annotations
 
 import argparse
@@ -16,7 +15,7 @@ from typing import TYPE_CHECKING
 from ..config import Settings
 from ..config import settings as default_settings
 
-if TYPE_CHECKING:  # pragma: no cover - annotations only; numpy and scikit-learn are imported lazily at runtime
+if TYPE_CHECKING:
     import numpy as np
     from numpy.typing import ArrayLike, NDArray
     from sklearn.feature_extraction.text import TfidfVectorizer
@@ -30,14 +29,12 @@ log = logging.getLogger("mailtrace.ml")
 LABELS: list[str] = ["Legitimate", "Suspicious", "Impersonated", "Phishing", "Fraud-Related"]
 MODEL_VERSION = "tfidf-logreg-2"
 
-#: Attribute holding the SHAP baseline E[x] (word block) on a loaded pipeline.
 EXPECTED_ATTR = "expected_features_"
 
 _lock = threading.Lock()
 _models: dict[str, Pipeline] = {}
 
 
-# Corpus
 def compose_text(subject: str, body: str) -> str:
     return f"{(subject or '').strip()}\n{(body or '').strip()}".strip()
 
@@ -50,7 +47,6 @@ def corpus_sha256(path: Path) -> str:
 
 
 def load_corpus(path: Path) -> tuple[list[str], list[str]]:
-    """Read ``[{"subject","body","label"}, ...]``; invalid rows are skipped."""
     raw = json.loads(Path(path).read_text(encoding="utf-8"))
     texts: list[str] = []
     labels: list[str] = []
@@ -85,7 +81,6 @@ def load_csv(path: Path, subject_col: str, body_col: str, text_col: str, label_c
     return texts, labels
 
 
-# Model
 def build_pipeline() -> Pipeline:
     from sklearn.feature_extraction.text import TfidfVectorizer
     from sklearn.linear_model import LogisticRegression
@@ -100,12 +95,10 @@ def build_pipeline() -> Pipeline:
 
 
 def _word_vectorizer(pipeline: Pipeline) -> TfidfVectorizer:
-    """The word/bigram TF-IDF block of the FeatureUnion (first block, so its"""
     return dict(pipeline.named_steps["features"].transformer_list)["word"]
 
 
 def expected_features(pipeline: Pipeline, texts: Sequence[str]) -> NDArray[np.float64]:
-    """Mean feature vector E[x] over ``texts``, full FeatureUnion width, dense."""
     import numpy as np
 
     matrix = pipeline.named_steps["features"].transform(list(texts))
@@ -113,18 +106,16 @@ def expected_features(pipeline: Pipeline, texts: Sequence[str]) -> NDArray[np.fl
 
 
 def attach_expected(pipeline: Pipeline, expected: ArrayLike | None) -> None:
-    """Hang the SHAP baseline off the fitted pipeline so ``shap_values`` can"""
     import numpy as np
 
     try:
         value = None if expected is None else np.asarray(expected, dtype=np.float64).ravel()
         setattr(pipeline, EXPECTED_ATTR, value)
-    except (TypeError, ValueError):  # the baseline is an optimisation, never fatal
+    except (TypeError, ValueError):
         log.debug("could not attach expected features", exc_info=True)
 
 
 def _bundle_expected(bundle: Mapping[str, object]) -> NDArray[np.float64] | None:
-    """The persisted SHAP baseline, if the (untyped, pickled) bundle carries one."""
     import numpy as np
 
     value = bundle.get("expected_features")
@@ -132,12 +123,11 @@ def _bundle_expected(bundle: Mapping[str, object]) -> NDArray[np.float64] | None
 
 
 def _bundle(pipeline: Pipeline, texts: list[str], corpus_hash: str) -> dict[str, object]:
-    """Serialisable bundle: the fitted pipeline plus the word-block SHAP baseline."""
     word_expected = None
     try:
         n_word = len(_word_vectorizer(pipeline).get_feature_names_out())
         word_expected = expected_features(pipeline, texts)[:n_word]
-    except (TypeError, ValueError, AttributeError):  # a bundle without a baseline still predicts
+    except (TypeError, ValueError, AttributeError):
         log.warning("could not compute expected features; SHAP values will fall back to a zero baseline", exc_info=True)
     return {
         "pipeline": pipeline,
@@ -150,7 +140,6 @@ def _bundle(pipeline: Pipeline, texts: list[str], corpus_hash: str) -> dict[str,
 
 
 def train(corpus_path: Path, model_path: Path) -> Pipeline:
-    """Fit on the corpus, persist the bundle, return the fitted pipeline."""
     import joblib
 
     texts, labels = load_corpus(corpus_path)
@@ -172,7 +161,7 @@ def _load_bundle(model_path: Path, expected_hash: str) -> Pipeline | None:
         return None
     try:
         bundle = joblib.load(model_path)
-    except Exception:  # noqa: BLE001 - corrupt/incompatible cache -> retrain
+    except Exception:
         log.warning("cached model at %s could not be loaded; retraining", model_path)
         return None
     if not isinstance(bundle, dict) or bundle.get("version") != MODEL_VERSION:
@@ -186,7 +175,6 @@ def _load_bundle(model_path: Path, expected_hash: str) -> Pipeline | None:
 
 
 def load_or_train(cfg: Settings | None = None) -> Pipeline:
-    """Return the process-wide fitted pipeline, training it once if needed."""
     cfg = cfg or default_settings
     key = str(cfg.model_path)
     with _lock:
@@ -202,7 +190,6 @@ def load_or_train(cfg: Settings | None = None) -> Pipeline:
 
 
 def predict(pipeline: Pipeline, text: str) -> tuple[str, dict[str, float]]:
-    """(label, {label: probability}) with every known label present."""
     probabilities = pipeline.predict_proba([text or ""])[0]
     classes = [str(c) for c in pipeline.classes_]
     probs = dict.fromkeys(LABELS, 0.0)
@@ -212,9 +199,7 @@ def predict(pipeline: Pipeline, text: str) -> tuple[str, dict[str, float]]:
     return label, probs
 
 
-# Exact SHAP for the linear model
 def _class_weights(classifier: LogisticRegression, label: str) -> tuple[NDArray[np.float64], float]:
-    """(coefficient row, intercept) of the decision function for ``label``."""
     classes = [str(c) for c in classifier.classes_]
     if label not in classes:
         raise ValueError(f"unknown class {label!r}")
@@ -226,7 +211,6 @@ def _class_weights(classifier: LogisticRegression, label: str) -> tuple[NDArray[
 
 
 def _baseline(pipeline: Pipeline, width: int, expected: ArrayLike | None = None) -> NDArray[np.float64]:
-    """E[x] as a dense vector of ``width``, from the argument, the pipeline"""
     import numpy as np
 
     if expected is None:
@@ -246,7 +230,6 @@ def _baseline(pipeline: Pipeline, width: int, expected: ArrayLike | None = None)
 def _word_contributions(
     pipeline: Pipeline, text: str, label: str, expected: ArrayLike | None = None
 ) -> list[tuple[str, float]]:
-    """Signed SHAP value of every word/bigram feature *present* in ``text``,"""
     classifier = pipeline.named_steps["clf"]
     vectorizer = _word_vectorizer(pipeline)
     coefficients, _ = _class_weights(classifier, label)
@@ -267,20 +250,18 @@ def _word_contributions(
 def shap_values(
     pipeline: Pipeline, text: str, label: str, top_k: int = 10, expected: ArrayLike | None = None
 ) -> list[tuple[str, float]]:
-    """Exact per-token SHAP values ``phi_i = w_i * (x_i - E[x_i])`` for ``label``."""
     try:
         contributions = _word_contributions(pipeline, text, label, expected)
-    except Exception:  # explanation must never break analysis
+    except Exception:
         log.debug("shap_values failed", exc_info=True)
         return []
     return contributions if top_k <= 0 else contributions[:top_k]
 
 
 def explain(pipeline: Pipeline, text: str, label: str, top_k: int = 8) -> list[str]:
-    """Word/bigram features that pushed ``text`` toward ``label`` the most."""
     try:
         contributions = _word_contributions(pipeline, text, label)
-    except Exception:  # explanation is best effort
+    except Exception:
         log.debug("explain failed", exc_info=True)
         return []
     positive = [token for token, phi in contributions if phi > 0]
@@ -294,7 +275,6 @@ def additivity_check(
     texts: Sequence[str] | None = None,
     expected_full: ArrayLike | None = None,
 ) -> dict[str, float]:
-    """Numerically verify ``decision == base_value + sum(phi)`` over ALL features."""
     import numpy as np
 
     if expected_full is None:
@@ -312,7 +292,7 @@ def additivity_check(
     scores = pipeline.decision_function([text or ""])
     classes = [str(c) for c in classifier.classes_]
     raw = np.asarray(scores)
-    if raw.ndim == 1:  # binary: one column scoring classes_[1]
+    if raw.ndim == 1:
         decision = float(raw[0]) * (1.0 if classes.index(label) == 1 else -1.0)
     else:
         decision = float(raw[0][classes.index(label)])
@@ -328,8 +308,8 @@ def additivity_check(
 
 
 TRANSFORMER_ATTRIBUTION = "occlusion"
-TRANSFORMER_MAX_TOKENS = 60          # forward passes per message: keep it bounded
-TRANSFORMER_CHAR_LIMIT = 4000        # the tokenizer truncates anyway
+TRANSFORMER_MAX_TOKENS = 60
+TRANSFORMER_CHAR_LIMIT = 4000
 
 _transformer_lock = threading.Lock()
 _transformers: dict[str, _Transformer] = {}
@@ -355,12 +335,10 @@ def _normalize_label(raw: str) -> str:
 
 
 def map_transformer_label(raw: str) -> str | None:
-    """Map one of the model's own labels onto a MailTrace class, or None."""
     return _TRANSFORMER_LABELS.get(_normalize_label(raw))
 
 
 def _map_scores(scored: object) -> dict[str, float]:
-    """``[{'label': ..., 'score': ...}, ...]`` -> probabilities over LABELS."""
     probs = dict.fromkeys(LABELS, 0.0)
     items: list[object] = [scored] if isinstance(scored, dict) else list(scored) if isinstance(scored, list) else []
     unmapped: list[str] = []
@@ -381,12 +359,11 @@ def _map_scores(scored: object) -> dict[str, float]:
 
 
 def _get_transformer(model_id: str) -> _Transformer:
-    """Load (once) and cache a text-classification pipeline for ``model_id``."""
     with _transformer_lock:
         cached = _transformers.get(model_id)
         if cached is not None:
             return cached
-        import torch  # noqa: F401 - fail fast when the backend is missing
+        import torch
         from transformers import pipeline as hf_pipeline
 
         log.info("loading transformer %s (first use downloads and pins ~300 MB+ of weights)", model_id)
@@ -396,7 +373,6 @@ def _get_transformer(model_id: str) -> _Transformer:
 
 
 def _occlusion_attributions(clf: _Transformer, text: str, label: str, base_prob: float) -> list[tuple[str, float]]:
-    """Leave-one-token-out attributions: how much p(label) falls when a token"""
     tokens = (text or "").split()
     head = tokens[:TRANSFORMER_MAX_TOKENS]
     if not head:
@@ -415,7 +391,6 @@ def _occlusion_attributions(clf: _Transformer, text: str, label: str, base_prob:
 
 
 def transformer_predict(text: str, cfg: Settings) -> tuple[str, dict[str, float], list[tuple[str, float]]] | None:
-    """(label, probabilities over the five classes, token attributions), or None."""
     model_id = (getattr(cfg, "transformer_model", "") or "").strip()
     if not model_id:
         return None
@@ -426,7 +401,7 @@ def transformer_predict(text: str, cfg: Settings) -> tuple[str, dict[str, float]
         return None
     try:
         clf = _get_transformer(model_id)
-    except Exception as exc:  # noqa: BLE001 - missing packages, no network, bad id, OOM
+    except Exception as exc:
         _transformer_failed.add(model_id)
         log.warning(
             "transformer backend %s unavailable (%s: %s); falling back to the linear model",
@@ -441,7 +416,7 @@ def transformer_predict(text: str, cfg: Settings) -> tuple[str, dict[str, float]
         label = max(probs.items(), key=lambda item: item[1])[0]
         attributions = _occlusion_attributions(clf, body[:TRANSFORMER_CHAR_LIMIT], label, probs[label])
         return label, probs, attributions
-    except Exception as exc:  # noqa: BLE001 - inference failure must never abort analysis
+    except Exception as exc:
         log.warning(
             "transformer inference with %s failed (%s: %s); falling back to the linear model",
             model_id, type(exc).__name__, exc,
@@ -449,7 +424,6 @@ def transformer_predict(text: str, cfg: Settings) -> tuple[str, dict[str, float]
         return None
 
 
-# CLI
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Train the MailTrace email classifier.")
     parser.add_argument("--csv", type=Path, help="CSV with subject/body (or text) and label columns")
@@ -487,7 +461,6 @@ def main(argv: list[str] | None = None) -> int:
     joblib.dump(bundle, args.out)
     print(f"Saved model to {args.out}")
 
-    # Prove the explanation is exact SHAP rather than a coefficient read-off.
     attach_expected(final, _bundle_expected(bundle))
     full_expected = expected_features(final, texts)
     label, _ = predict(final, texts[0])

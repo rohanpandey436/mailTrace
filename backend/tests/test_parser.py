@@ -54,7 +54,7 @@ def test_garbage_input_never_raises():
 def test_decode_header_value_tolerant():
     assert decode_header_value("=?UTF-8?B?4oK5MjU=?=") == "₹25"
     assert decode_header_value("plain\n value") == "plain value"
-    assert decode_header_value("=?bogus-charset?Q?abc?=")  # falls back instead of raising
+    assert decode_header_value("=?bogus-charset?Q?abc?=")
     assert decode_header_value(None) == ""
 
 

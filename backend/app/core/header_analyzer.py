@@ -1,4 +1,3 @@
-"""Received-chain reconstruction and header-forgery analysis."""
 from __future__ import annotations
 
 import ipaddress
@@ -18,11 +17,9 @@ log = logging.getLogger("mailtrace.headers")
 
 MODULE = "headers"
 
-# Top-level clause keywords of a Received header (RFC 5321 section 4.4).
 _CLAUSE_RE = re.compile(r"(?<!\S)(from|by|via|with|id|for)(?!\S)", re.IGNORECASE)
 _BRACKET_IP_RE = re.compile(r"\[(?:IPv6:)?([0-9A-Fa-f.:]+)\]")
 _HELO_RE = re.compile(r"\b(?:helo|ehlo|lhlo)[=\s]+\[?([^\s\]\)]+)", re.IGNORECASE)
-# "(rdns-name [ip])" as written by Postfix, Sendmail and Gmail ("name. [ip]").
 _RDNS_RE = re.compile(r"\(\s*([A-Za-z0-9][A-Za-z0-9._-]*?)\.?\s+\[(?:IPv6:)?[0-9A-Fa-f.:]+\]")
 _IPV4_RE = re.compile(r"(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?!\w|\.\w)")
 _IPV6_RE = re.compile(
@@ -43,11 +40,9 @@ _BULK_MAILER_RE = re.compile(
 )
 _CGNAT_NETWORK = ipaddress.ip_network("100.64.0.0/10")
 _CLIENT_IP_HEADERS = frozenset({"x-originating-ip", "x-sender-ip", "x-client-ip"})
-# Anomalies below the origin hop that make the chain less trustworthy.
 _CHAIN_DOUBT = frozenset(
     {"negative_delay", "large_delay", "missing_timestamp", "unparseable", "forged_received_order"}
 )
-# Providers whose Message-ID / Return-Path domains legitimately differ from the From domain.
 _RELAY_PROVIDER_DOMAINS: frozenset[str] = frozenset(
     FREEMAIL_DOMAINS
     | {
@@ -58,7 +53,6 @@ _RELAY_PROVIDER_DOMAINS: frozenset[str] = frozenset(
         "mailjet.com",
     }
 )
-# Multi-word brand names that map onto knowledge.BRANDS keys.
 _BRAND_ALIASES: dict[str, str] = {
     "state bank of india": "sbi", "reserve bank of india": "rbi", "hdfc bank": "hdfc",
     "icici bank": "icici", "axis bank": "axisbank", "kotak mahindra": "kotak",
@@ -72,9 +66,7 @@ _ALIAS_PHRASES: tuple[str, ...] = tuple(sorted(_BRAND_ALIASES, key=len, reverse=
 _BRAND_KEYS: tuple[str, ...] = tuple(sorted(BRANDS, key=len, reverse=True))
 
 
-# Low-level text helpers
 def _depth_map(text: str) -> list[int]:
-    """Parenthesis nesting depth *before* each character of ``text``."""
     depths: list[int] = []
     depth = 0
     for ch in text:
@@ -87,7 +79,6 @@ def _depth_map(text: str) -> list[int]:
 
 
 def _strip_comments(text: str) -> str:
-    """Remove (possibly nested) parenthesised comments and collapse whitespace."""
     kept: list[str] = []
     depth = 0
     for ch in text:
@@ -107,7 +98,6 @@ def _first_token(text: str) -> str:
 
 
 def _valid_ip(value: str) -> str:
-    """Canonical text form of ``value`` when it is an IP address, else ''."""
     try:
         return str(ipaddress.ip_address(value.strip()))
     except ValueError:
@@ -115,12 +105,10 @@ def _valid_ip(value: str) -> str:
 
 
 def _word_match(phrase: str, text: str) -> bool:
-    """True when ``phrase`` occurs in ``text`` delimited by non-alphanumerics."""
     return re.search(r"(?<![a-z0-9])" + re.escape(phrase) + r"(?![a-z0-9])", text) is not None
 
 
 def _host_matches(host: str, domains: Iterable[str]) -> bool:
-    """True when ``host`` equals or is a subdomain of any entry in ``domains``."""
     host = (host or "").lower().rstrip(".")
     if not host:
         return False
@@ -135,9 +123,7 @@ def _is_internal_host(host: str, cfg: Settings) -> bool:
     return _host_matches(host, cfg.org_domains) or _host_matches(host, cfg.trusted_relays)
 
 
-# Public helpers
 def is_private_ip(ip: str) -> bool:
-    """RFC 1918, loopback, link-local, CGNAT (100.64/10), ULA, site-local,"""
     try:
         addr = ipaddress.ip_address(ip.strip())
     except ValueError:
@@ -164,7 +150,6 @@ def _is_public_ip(ip: str) -> bool:
 
 
 def extract_ips(text: str) -> list[str]:
-    """Every IPv4/IPv6 literal in ``text`` (public and private) in order of"""
     if not text:
         return []
     text = _IPV6_PREFIX_RE.sub("", text)
@@ -177,7 +162,7 @@ def extract_ips(text: str) -> list[str]:
             v6_spans.append(match.span())
     for match in _IPV4_RE.finditer(text):
         if any(start <= match.start() < end for start, end in v6_spans):
-            continue  # dotted-quad tail of an IPv4-mapped IPv6 literal
+            continue
         ip = _valid_ip(match.group(0))
         if ip:
             found.append((match.start(), ip))
@@ -188,9 +173,7 @@ def extract_ips(text: str) -> list[str]:
     return result
 
 
-# Received header parsing
 def _split_clauses(body: str) -> dict[str, str]:
-    """Map each top-level clause keyword to its raw value (first occurrence"""
     depths = _depth_map(body)
     matches = [m for m in _CLAUSE_RE.finditer(body) if depths[m.start()] == 0]
     clauses: dict[str, str] = {}
@@ -203,13 +186,11 @@ def _split_clauses(body: str) -> dict[str, str]:
 
 
 def _parse_from_clause(clause: str) -> tuple[str, str, str]:
-    """Return (helo_or_host, connecting_ip, reverse_dns_name) for a ``from`` clause."""
     clause = clause.strip()
     if not clause:
         return "", "", ""
     token = _IPV6_PREFIX_RE.sub("", re.split(r"[\s(]", clause, maxsplit=1)[0].strip("[]")).rstrip(".").lower()
     if not token or token == "unknown" or _valid_ip(token):
-        # The HELO name lives in a comment: "(helo=x)", "(EHLO x)", "(LHLO x)".
         helo = _HELO_RE.search(clause)
         from_host = helo.group(1).rstrip(".").lower() if helo else ""
         if _valid_ip(from_host):
@@ -255,7 +236,7 @@ def _parse_timestamp(value: str) -> datetime | None:
         return None
     try:
         parsed = parsedate_to_datetime(text)
-    except (TypeError, ValueError, IndexError, OverflowError):  # malformed dates are data, not errors
+    except (TypeError, ValueError, IndexError, OverflowError):
         return None
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=UTC)
@@ -263,7 +244,6 @@ def _parse_timestamp(value: str) -> datetime | None:
 
 
 def _parse_received_full(value: str) -> dict[str, Any]:
-    """Tolerant parse of one Received header.  Superset of ``parse_received``"""
     text = " ".join((value or "").split())
     depths = _depth_map(text)
     split_at = -1
@@ -295,15 +275,12 @@ def _parse_received_full(value: str) -> dict[str, Any]:
 
 
 def parse_received(value: str) -> dict[str, Any]:
-    """Parse one Received header into ``from_host``, ``from_ip``, ``by_host``,"""
     full = _parse_received_full(value)
     keys = ("from_host", "from_ip", "by_host", "protocol", "hop_id", "timestamp", "for_addr")
     return {key: full[key] for key in keys}
 
 
-# Hop chain
 def _build_hops(infos: list[dict[str, Any]], cfg: Settings) -> list[Hop]:
-    """Turn chronologically ordered parses into Hop models with per-hop anomalies."""
     hops: list[Hop] = []
     previous_ts: datetime | None = None
     for index, info in enumerate(infos):
@@ -358,13 +335,12 @@ def _build_hops(infos: list[dict[str, Any]], cfg: Settings) -> list[Hop]:
 
 
 def _flag_forged_order(hops: list[Hop], cfg: Settings) -> None:
-    """A hop claiming delivery *by* an organisation server that sits earlier"""
     for position, hop in enumerate(hops):
         if not _is_internal_host(hop.by_host, cfg):
             continue
         for later in hops[position + 1:]:
             if later.from_host and _is_internal_host(later.from_host, cfg):
-                break  # the organisation handed the message onward itself: legitimate
+                break
             if later.from_ip and not later.is_private_ip and not _is_internal_host(later.from_host, cfg):
                 hop.anomalies.append("forged_received_order")
                 break
@@ -382,7 +358,6 @@ def _x_originating_ip(parsed: ParsedEmail) -> str:
 def _select_origin(
     hops: list[Hop], infos: list[dict[str, Any]], x_originating_ip: str, cfg: Settings
 ) -> tuple[str, int | None, float, str]:
-    """Return (originating_ip, hop_index, confidence, reasoning)."""
     if not hops:
         if x_originating_ip:
             return (
@@ -437,7 +412,6 @@ def _select_origin(
     )
 
 
-# Identity checks
 def _message_id_domain(message_id: str) -> str:
     value = (message_id or "").strip().strip("<>").strip()
     if "@" not in value:
@@ -446,7 +420,6 @@ def _message_id_domain(message_id: str) -> str:
 
 
 def _brand_in_display_name(name: str, cfg: Settings) -> tuple[str, list[str]]:
-    """Return (brand_key, legitimate_domains) for the first brand named in ``name``."""
     for phrase in _ALIAS_PHRASES:
         if _word_match(phrase, name):
             key = _BRAND_ALIASES[phrase]
@@ -478,7 +451,6 @@ def _hop_label(hop: Hop) -> str:
 
 
 def _sentence(text: str) -> str:
-    """Upper-case the first character without touching the rest (hostnames, IPs)."""
     return text[:1].upper() + text[1:]
 
 
@@ -489,11 +461,8 @@ def _timing_sentence(hop: Hop) -> str:
     return f"{_hop_label(hop)} waited {delay / 3600:.1f} h after the previous hop"
 
 
-# Entry point
 def analyze_headers(parsed: ParsedEmail, cfg: Settings) -> HeaderAnalysis:
-    """Reconstruct the routing chain, select the origin IP and check the"""
     received = [h.value for h in parsed.headers if h.name.lower() == "received"]
-    # Header order is latest-first; reverse so that index 0 is the earliest hop.
     infos = [_parse_received_full(value) for value in reversed(received)]
     hops = _build_hops(infos, cfg)
     _flag_forged_order(hops, cfg)
@@ -502,7 +471,6 @@ def analyze_headers(parsed: ParsedEmail, cfg: Settings) -> HeaderAnalysis:
         hops, infos, x_originating_ip, cfg
     )
 
-    # Registrable domains of the identity headers ---------------------------
     sender_address = parsed.sender.address.lower()
     sender_domain = (parsed.sender.domain or "").lower()
     sender_rd = registrable_domain(sender_domain) if sender_domain else ""
@@ -511,7 +479,7 @@ def analyze_headers(parsed: ParsedEmail, cfg: Settings) -> HeaderAnalysis:
     return_path_rd = registrable_domain(return_path_domain) if return_path_domain else ""
     return_path_mismatch = bool(sender_rd and return_path_rd and sender_rd != return_path_rd)
 
-    mismatched_reply: list[str] = []  # addresses whose registrable domain differs from the sender's
+    mismatched_reply: list[str] = []
     mismatched_reply_domains: list[str] = []
     for reply in parsed.reply_to:
         if reply.domain and sender_rd:
@@ -530,7 +498,6 @@ def analyze_headers(parsed: ParsedEmail, cfg: Settings) -> HeaderAnalysis:
         and message_id_rd not in relay_domains and message_id_rd not in _RELAY_PROVIDER_DOMAINS
     )
 
-    # Display-name impersonation --------------------------------------------
     display_name = " ".join((parsed.sender.display_name or "").split())
     display_lower = display_name.lower()
     display_name_spoof = False
@@ -556,7 +523,6 @@ def analyze_headers(parsed: ParsedEmail, cfg: Settings) -> HeaderAnalysis:
     mailer = " ".join((parsed.mailer or "").split())
     bulk_mailer = bool(mailer and _BULK_MAILER_RE.search(mailer))
 
-    # Chain-level facts -----------------------------------------------------
     public_hops = [h for h in hops if h.from_ip and not h.is_private_ip]
     private_only = bool(hops) and not public_hops
     negative_hops = [h for h in hops if "negative_delay" in h.anomalies]
@@ -584,7 +550,6 @@ def analyze_headers(parsed: ParsedEmail, cfg: Settings) -> HeaderAnalysis:
         score += 0.1
     score = min(1.0, max(0.0, score))
 
-    # Findings --------------------------------------------------------------
     findings: list[Finding] = []
     if not hops:
         findings.append(_finding(

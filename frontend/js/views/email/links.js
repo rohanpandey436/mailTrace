@@ -1,21 +1,11 @@
-// @ts-check
-/** "Links & files": where each link really goes, and what each file really is. */
 import { formatBytes, truncate } from "../../format.js";
 import { Fragment, html } from "../../react.js";
 import { chip, section, severityChip } from "../../ui/primitives.js";
 
-/** @typedef {import('../../types.js').AnalysisResult} AnalysisResult */
-/** @typedef {import('../../types.js').AttachmentMeta} AttachmentMeta */
-/** @typedef {import('../../types.js').UrlInfo} UrlInfo */
-
 const MAX_URL_CHARS = 150;
 const MAX_ANCHOR_CHARS = 70;
-/** Shannon entropy is measured in bits per byte; 8 is completely random. */
 const ENTROPY_MAX = 8;
 
-/**
- * @param {{ url: UrlInfo }} props
- */
 function UrlRow({ url }) {
   return html`<tr>
     <td>${severityChip(url.risk)}</td>
@@ -30,9 +20,6 @@ function UrlRow({ url }) {
   </tr>`;
 }
 
-/**
- * @param {{ file: AttachmentMeta }} props
- */
 function FileRow({ file }) {
   return html`<tr>
     <td>${severityChip(file.risk)}</td>
@@ -59,9 +46,6 @@ function FileRow({ file }) {
   </tr>`;
 }
 
-/**
- * @param {AnalysisResult} result
- */
 export function linksTab(result) {
   const urls = result.urls.urls;
   const files = result.attachments.attachments;

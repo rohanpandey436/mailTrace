@@ -1,13 +1,7 @@
-// @ts-check
 import { NODE_TYPE } from "../labels.js";
 import { Fragment, html, useEffect, useRef, useState } from "../react.js";
 import { color, toneColor } from "../theme.js";
 
-/** @typedef {import('../types.js').AttributionGraph} AttributionGraph */
-/** @typedef {import('../types.js').NodeType} NodeType */
-/** @typedef {{ label: string, kind: string, risk: string, x: number, y: number }} Hovered */
-
-/** Node diameter in pixels by risk: bigger circle, more dangerous. */
 const DIAMETER = { info: 14, low: 16, medium: 20, high: 24, critical: 28 };
 const DEFAULT_DIAMETER = DIAMETER.info;
 const LABEL_FONT_PX = 9;
@@ -17,21 +11,14 @@ const ZOOM_RANGE = { min: 0.3, max: 4 };
 const WHEEL_SENSITIVITY = 0.2;
 const LAYOUT_PADDING = 30;
 
-/**
- * @param {string} type
- */
 function nodeType(type) {
-  return type in NODE_TYPE ? NODE_TYPE[/** @type {NodeType} */ (type)] : { label: type, tone: /** @type {const} */ ("neutral") };
+  return type in NODE_TYPE ? NODE_TYPE[(type)] : { label: type, tone: ("neutral") };
 }
 
-/**
- * @param {string} risk
- */
 function diameter(risk) {
-  return risk in DIAMETER ? DIAMETER[/** @type {keyof DIAMETER} */ (risk)] : DEFAULT_DIAMETER;
+  return risk in DIAMETER ? DIAMETER[(risk)] : DEFAULT_DIAMETER;
 }
 
-/** @returns {cytoscape.StyleRule[]} */
 function stylesheet() {
   return [
     {
@@ -56,12 +43,9 @@ function stylesheet() {
   ];
 }
 
-/**
- * @param {{ graph: AttributionGraph, tall?: boolean }} props
- */
 export function RelationshipGraph({ graph, tall = false }) {
-  const container = useRef(/** @type {HTMLDivElement | null} */ (null));
-  const [hovered, setHovered] = useState(/** @type {Hovered | null} */ (null));
+  const container = useRef((null));
+  const [hovered, setHovered] = useState((null));
 
   useEffect(() => {
     const element = container.current;
@@ -86,7 +70,6 @@ export function RelationshipGraph({ graph, tall = false }) {
       boxSelectionEnabled: false,
     });
 
-    /** @param {cytoscape.EventObject} event */
     const show = (event) => {
       const data = event.target.data();
       setHovered({
@@ -120,7 +103,6 @@ export function RelationshipGraph({ graph, tall = false }) {
   </>`;
 }
 
-/** The colour key shown under a graph. */
 export function GraphLegend() {
   return html`<div class="hint legend">
     ${Object.entries(NODE_TYPE).map(
