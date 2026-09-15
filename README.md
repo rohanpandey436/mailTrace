@@ -169,7 +169,7 @@ a feature rather than a bug.
 **1. A trained machine-learning model** (`backend/app/ai/model_trainer.py`). Text is
 turned into numbers with TF-IDF over word pairs and character triples, and a
 multinomial logistic-regression classifier assigns one of the five categories. It
-is trained on this machine the first time the server starts, from the **249
+is trained on this machine the first time the server starts, from the **301
 labelled emails** in `backend/app/ai/seed_corpus.json`, and cached to
 `<data dir>/model.joblib`. Nothing is downloaded and no API is called. Measured
 in this pass with `python -m app.ai.model_trainer` on a 20% stratified hold-out the
@@ -177,21 +177,27 @@ model never sees during training:
 
 | Class | Precision | Recall |
 |---|---|---|
-| Phishing | 1.00 | 1.00 |
-| Fraud-Related | 1.00 | 0.90 |
-| Legitimate | 0.90 | 0.90 |
-| Impersonated | 0.82 | 0.90 |
-| Suspicious | 0.80 | 0.80 |
+| Phishing | 1.00 | 0.82 |
+| Impersonated | 0.91 | 0.91 |
+| Fraud-Related | 0.75 | 0.86 |
+| Legitimate | 0.72 | 0.93 |
+| Suspicious | 1.00 | 0.64 |
 
-Overall accuracy is **0.900**. Reproduce it any time with
-`cd backend && python -m app.ai.model_trainer`.
+Overall accuracy is **0.836** on the 61 held-out messages (the 249-message corpus
+measured 0.900 before the 52 messages added on 15 September). The drop is
+deliberate: the additions are the hard cases - threats without a money demand
+(labelled Suspicious) share their vocabulary with extortion (Fraud-Related), and
+genuine security alerts, statements and bills share theirs with phishing. The
+classifier only modulates confidence; the rule engine decides the verdict, and the
+whole system scores 71 of 71 on the regression corpus in `backend/tests/test_corpus.py`.
+Reproduce the figures any time with `cd backend && python -m app.ai.model_trainer`.
 
 Every prediction carries **exact SHAP values**. For a linear model the Shapley
 value of a feature is `phi_i = coef_i * (x_i - E[x_i])`, where the expectation is
 the mean feature value over the training corpus, which is stored alongside the
 model. That decomposition is exact rather than approximate: the same training run
-reports that summing all **34,643** contributions reproduces the classifier's own
-decision function to a residual of **4.885e-15**, which is float64 rounding
+reports that summing all **38,498** contributions reproduces the classifier's own
+decision function to a residual of **4.441e-16**, which is float64 rounding
 noise. Negative contributions are kept, so the dashboard can show that "verify"
 and "login" argued *against* Impersonated and *toward* Phishing, which a plain
 coefficient-times-feature view cannot express.
@@ -222,7 +228,7 @@ three reasons:
 - **Authentication cannot be guessed from wording.** SPF, DKIM, DMARC, a forged
   Received chain or a lookalike domain are facts to be checked, not text to be
   classified. Most of the engine is this kind of protocol analysis.
-- **A model trained on 249 examples is small.** Honest models of this size
+- **A model trained on 301 examples is small.** Honest models of this size
   generalise poorly to wording they have never seen. The rules provide a floor:
   a message demanding an OTP through a copycat domain is caught even if the
   phrasing is novel.
@@ -370,7 +376,7 @@ mailtrace/
         model_trainer.py    build / train / load / predict / exact SHAP + CLI
         lime_explainer.py   from-scratch LIME for the text classifier
         url_model.py        XGBoost URL/domain model (optional at runtime)
-        seed_corpus.json    249 labelled seed messages (five classes)
+        seed_corpus.json    301 labelled seed messages (five classes)
       utils/
         pdf_generator.py    forensic report builder, HTML and Section 65B PDF renderers
         pii_masker.py       PII masking
@@ -655,7 +661,7 @@ follow the quick start.
 | URL extraction, lookalike / homoglyph / typosquat detection | Offline |
 | Attachment magic-byte, macro, archive and entropy analysis | Offline |
 | NLP lexicons and BEC patterns | Offline |
-| TF-IDF + logistic-regression classifier with exact SHAP | Trained from the 249-message seed corpus on first start |
+| TF-IDF + logistic-regression classifier with exact SHAP | Trained from the 301-message seed corpus on first start |
 | LIME second explanation | On by default (`MAILTRACE_LIME=1`); the single largest cost in the pipeline |
 | XGBoost URL/domain model | On by default (`MAILTRACE_URL_MODEL=1`); `xgboost` is in `requirements.txt`. Removing it degrades cleanly to the rules |
 | Section 65B PDF reporting | `reportlab` is in `requirements.txt` |
@@ -889,7 +895,7 @@ output on all five demo messages. See section 9 and
 
 ## 15. Limitations and honest notes
 
-- **Seed corpus.** The classifier is trained on the 249 synthetic examples in
+- **Seed corpus.** The classifier is trained on the 301 synthetic examples in
   `backend/app/ai/seed_corpus.json`. It is a corroborating signal and an
   explainability aid, not a production model; retrain it on real labelled mail
   before relying on its probabilities.
