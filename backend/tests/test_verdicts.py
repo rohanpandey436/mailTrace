@@ -209,6 +209,9 @@ def test_money_demanded_under_threat_is_fraud_with_police_actions(session_cfg, s
     assert result.verdict.category == ThreatCategory.FRAUD
     assert {"extortion_demand", "violent_threat"} & finding_ids(result)
     assert any("1930" in action for action in result.verdict.recommended_actions)
+    assert not any("209.85.220.41" in action for action in result.verdict.recommended_actions)
+    assert "origin_ip:209.85.220.41" not in result.attribution.indicators
+    assert "origin_relay:Google" in result.attribution.indicators
 
 
 def test_violent_threat_without_money_is_suspicious_at_high_risk(session_cfg):

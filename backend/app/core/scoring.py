@@ -570,16 +570,19 @@ def _attribution_indicators(
     infra: InfraAnalysis,
 ) -> list[str]:
     items: list[str] = []
-    if header_analysis.originating_ip:
+    shared = header_analysis.origin_shared_provider
+    if header_analysis.originating_ip and not shared:
         items.append(f"origin_ip:{header_analysis.originating_ip}")
     geo = infra.origin_geo
-    if geo is not None:
+    if geo is not None and not shared:
         if geo.asn:
             items.append(f"asn:{geo.asn}")
         if geo.isp:
             items.append(f"isp:{geo.isp}")
         if geo.country_code:
             items.append(f"origin_country:{geo.country_code}")
+    if shared:
+        items.append(f"origin_relay:{shared}")
     if parsed.sender.address:
         items.append(f"sender:{parsed.sender.address.lower()}")
     sender_domain = _registrable(parsed.sender.domain)
@@ -802,7 +805,7 @@ def recommended_actions(
         actions.append("This message overlaps with prior incidents: extend containment to every member of the campaign and review the shared indicators.")
 
     iocs: list[str] = []
-    if origin_ip:
+    if origin_ip and not header_analysis.origin_shared_provider:
         iocs.append(f"origin IP {origin_ip}")
     iocs.extend(f"host {host}" for host in risky_hosts[:3])
     iocs.extend(f"SHA-256 {att.sha256}" for att in att_analysis.attachments[:2] if att.sha256)
