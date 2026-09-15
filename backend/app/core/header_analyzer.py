@@ -10,7 +10,7 @@ from typing import Any
 
 from ..config import Settings
 from ..schemas import Finding, HeaderAnalysis, Hop, ParsedEmail, Severity
-from .knowledge import BRANDS, EXEC_TITLES, FREEMAIL_DOMAINS
+from .knowledge import BRANDS, EXEC_TITLES, FREEMAIL_DOMAINS, shared_provider
 from .link_analyzer import registrable_domain
 
 log = logging.getLogger("mailtrace.headers")
@@ -357,15 +357,15 @@ def _x_originating_ip(parsed: ParsedEmail) -> str:
 
 def _select_origin(
     hops: list[Hop], infos: list[dict[str, Any]], x_originating_ip: str, cfg: Settings
-) -> tuple[str, int | None, float, str]:
+) -> tuple[str, int | None, float, str, str]:
     if not hops:
         if x_originating_ip:
             return (
                 x_originating_ip, None, 0.6,
                 "No Received headers are present; using the client address recorded in an "
-                "X-Originating-IP style header.",
+                "X-Originating-IP style header.", "",
             )
-        return "", None, 0.0, "No Received headers are present, so the routing path cannot be reconstructed."
+        return "", None, 0.0, "No Received headers are present, so the routing path cannot be reconstructed.", ""
 
     for hop in hops:
         if not hop.from_ip or hop.is_private_ip or _is_internal_host(hop.from_host, cfg):
@@ -373,6 +373,7 @@ def _select_origin(
         doubts = sorted({a for h in hops[: hop.index + 1] for a in h.anomalies if a in _CHAIN_DOUBT})
         confidence = 0.7 if doubts else 0.9
         submission = bool(infos[hop.index]["authenticated"])
+        provider = "" if submission else shared_provider(hop.from_host)
         if hop.index == 1 and hops[0].is_private_ip and submission:
             reason = (
                 f"Authenticated submission from a client behind NAT: hop 0 shows the private address "
@@ -384,6 +385,13 @@ def _select_origin(
                 f"Earliest public hop is an authenticated submission ({hop.protocol or 'SMTP AUTH'}) "
                 f"from {hop.from_ip} to {hop.by_host or 'the submission server'}."
             )
+        elif provider:
+            confidence = min(confidence, 0.5)
+            reason = (
+                f"Earliest public hop is {hop.from_ip} ({hop.from_host}), an outbound relay that {provider} "
+                f"shares between all of its users. {provider} does not expose the sender's own address, so this "
+                f"IP locates the provider's mail servers, not the sender."
+            )
         else:
             reason = (
                 f"Earliest public, non-trusted hop: {hop.from_ip} handed the message to "
@@ -391,24 +399,24 @@ def _select_origin(
             )
         if doubts:
             reason += " Confidence reduced because the chain below this hop shows: " + ", ".join(doubts) + "."
-        return hop.from_ip, hop.index, confidence, reason
+        return hop.from_ip, hop.index, confidence, reason, provider
 
     if x_originating_ip:
         return (
             x_originating_ip, None, 0.6,
             "The Received chain exposes no public external address; using the client address "
-            "recorded by the submission server in an X-Originating-IP style header.",
+            "recorded by the submission server in an X-Originating-IP style header.", "",
         )
     for hop in hops:
         if hop.from_ip and not hop.is_private_ip:
             return (
                 hop.from_ip, hop.index, 0.4,
                 f"Only trusted or organisation relays expose public addresses; falling back to the "
-                f"earliest of them ({hop.from_ip} at hop {hop.index}).",
+                f"earliest of them ({hop.from_ip} at hop {hop.index}).", "",
             )
     return (
         "", None, 0.0,
-        "Every hop shows a private or missing address; the true origin is hidden behind internal infrastructure.",
+        "Every hop shows a private or missing address; the true origin is hidden behind internal infrastructure.", "",
     )
 
 
@@ -467,7 +475,7 @@ def analyze_headers(parsed: ParsedEmail, cfg: Settings) -> HeaderAnalysis:
     hops = _build_hops(infos, cfg)
     _flag_forged_order(hops, cfg)
     x_originating_ip = _x_originating_ip(parsed)
-    origin_ip, origin_index, origin_confidence, origin_reasoning = _select_origin(
+    origin_ip, origin_index, origin_confidence, origin_reasoning, origin_provider = _select_origin(
         hops, infos, x_originating_ip, cfg
     )
 
@@ -722,6 +730,7 @@ def analyze_headers(parsed: ParsedEmail, cfg: Settings) -> HeaderAnalysis:
         originating_hop_index=origin_index,
         origin_confidence=origin_confidence,
         origin_reasoning=origin_reasoning,
+        origin_shared_provider=origin_provider,
         x_originating_ip=x_originating_ip,
         message_id_domain=message_id_domain,
         message_id_mismatch=message_id_mismatch,

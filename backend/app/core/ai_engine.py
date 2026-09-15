@@ -8,7 +8,9 @@ from ..config import Settings
 from ..schemas import (
     SEVERITY_ORDER,
     AttachmentAnalysis,
+    AuthResult,
     BecPattern,
+    BecPatternName,
     Finding,
     NlpAnalysis,
     ParsedEmail,
@@ -17,7 +19,7 @@ from ..schemas import (
     ThreatCategory,
     UrlAnalysis,
 )
-from .knowledge import EXEC_TITLES, FREEMAIL_DOMAINS
+from .knowledge import BRANDS, EXEC_TITLES, FREEMAIL_DOMAINS
 from .link_analyzer import registrable_domain
 
 log = logging.getLogger("mailtrace.nlp")
@@ -50,7 +52,89 @@ FINANCIAL = (
     "banking details", "account details", "utr", "transaction", "wallet", "cashback", "loan", "investment",
     "guaranteed returns", "profit", "commission", "bank transfer", "western union", "moneygram", "lakh",
     "crore", "rupees", "usd", "dollars", "amount", "fee", "fees", "pay", "paid", "deposit", "cheque", "demand draft",
+    "money", "dollar", "rupee", "rs", "rs.", "inr", "lakhs", "crores", "cash", "euro", "euros", "pounds",
+    "paise", "paisa", "paisey", "rupaye", "rupay", "btc", "eth", "usdt", "paytm", "phonepe", "gpay", "google pay",
+    "पैसे", "पैसा", "रुपये", "रुपए", "लाख", "करोड़",
 )
+MONEY_DEMAND = (
+    "send me", "give me", "pay me", "pay us", "send us", "transfer me", "return my money", "money back", "my money",
+    "give back", "want my money", "paise de", "paisa de", "paise do", "paise bhejo", "bhejo", "bhej do", "de de",
+    "de do", "dedo", "wapas do", "wapas kar", "vapas do", "vapas kar", "lauta", "पैसे दो", "पैसे भेजो", "वापस दो",
+    "दे दो", "भेजो", "लौटा",
+)
+VIOLENCE = (
+    "kill you", "kill u", "kill your", "i will kill", "will kill you", "murder you", "hurt you", "hurt your family",
+    "harm you", "harm your family", "your family will suffer", "i know where you live", "know where you live",
+    "know where your family", "where your family lives", "watch your back", "pray for your life", "pray for u r life",
+    "pray for ur life", "you will regret", "you'll regret", "you will regret it", "break your legs", "shoot you",
+    "stab you", "burn your house", "acid attack", "rape you", "beat you up", "bomb", "blow up your", "blow you up",
+    "your life is in danger", "last day of your life", "you are dead", "u r dead", "you are a dead man",
+    "finish you", "destroy you", "ruin your life", "ruin you", "i am watching you", "i'm watching you",
+    "watching you", "i saw you", "i know your address", "i know your house", "i know where you work",
+    "jaan se maar", "jaan se mar", "jan se maar", "jan se mar", "maar dunga", "maar dalunga", "mar dunga",
+    "mar dalunga", "maar daalunga", "dekh lunga", "dekh loonga", "chhodunga nahi", "chodunga nahi",
+    "nahi chhodunga", "nahi chodunga", "anjaam bura", "anjam bura", "khatam kar dunga", "khatam kar",
+    "tumhari khair nahi", "teri khair nahi", "ghar jaanta hoon", "ghar janta hu",
+    "जान से मार", "मार दूंगा", "मार डालूंगा", "मार डालेंगे", "छोड़ूंगा नहीं", "नहीं छोड़ूंगा", "अंजाम बुरा",
+    "खत्म कर दूंगा", "देख लूंगा", "बम", "जान ले लूंगा", "तेरी खैर नहीं", "तुम्हारी खैर नहीं",
+)
+EXTORTION = (
+    "leak your", "leak them", "leak it", "publish your", "publish everything", "publish them", "send the video",
+    "send them to all", "send it to all", "send it to your", "all your contacts", "your contact list",
+    "private photos", "your photos", "your pictures", "intimate", "nude", "nudes", "webcam", "recorded you",
+    "i have your", "we have your", "i have a video", "i have videos", "we have downloaded", "your data",
+    "your files", "pay or", "or else", "otherwise i will", "otherwise i", "last warning", "final warning",
+    "this is not a joke", "not a joke", "do not contact the police", "don't contact the police",
+    "do not involve the police", "not involve the police", "do not go to the police", "price doubles",
+    "price will double", "ransom", "decryption key", "encrypted your", "hush money", "keep quiet",
+    "or i will", "or we will", "or i send", "or i'll", "warna", "varna", "nahi to", "nahi toh", "nhi to", "nhi toh",
+    "वरना", "नहीं तो",
+)
+INVESTMENT = (
+    "guaranteed returns", "guaranteed return", "guaranteed profit", "guaranteed profits", "guaranteed income",
+    "double your money", "triple your money", "risk-free", "risk free", "zero risk", "passive income",
+    "trading bot", "ai trading", "auto trading", "monthly returns", "daily returns", "weekly returns",
+    "daily profit", "monthly profit", "investment plan", "investment opportunity", "minimum deposit",
+    "minimum investment", "withdraw profit", "withdraw any time", "withdraw anytime", "crypto trading",
+    "forex trading", "binary options", "mining contract", "high returns", "assured returns", "fixed returns",
+    "% returns", "% return", "% profit", "% monthly", "% daily", "returns of", "roi of", "join our investment",
+    "investors trust us", "investment scheme", "trading platform", "grow your money", "multiply your money",
+)
+TECHSUPPORT = (
+    "infected", "virus", "viruses", "malware", "spyware", "trojan", "ransomware detected", "your computer",
+    "your pc", "your laptop", "your device", "licence has expired", "license has expired", "licence expired",
+    "license expired", "windows licence", "windows license", "certified support", "certified technician",
+    "technician", "remote access", "anydesk", "teamviewer", "ultraviewer", "call our support", "call microsoft",
+    "call apple", "call now", "call immediately", "toll free", "toll-free", "do not switch off",
+    "don't switch off", "do not turn off", "don't turn off", "security warning", "system alert", "firewall",
+    "at risk", "your antivirus", "antivirus subscription", "auto-renewed", "auto renewed", "geek squad",
+    "norton", "mcafee",
+)
+STRONG_MONEY_TERMS: frozenset[str] = frozenset({
+    "money", "cash", "paise", "paisa", "paisey", "rupaye", "rupay", "rupees", "rupee", "rs", "rs.", "inr", "dollars",
+    "dollar", "usd", "euro", "euros", "pounds", "lakh", "lakhs", "crore", "crores", "bitcoin", "btc", "eth", "usdt",
+    "crypto", "cryptocurrency", "wallet", "bank account", "bank transfer", "wire transfer", "western union", "moneygram",
+    "upi", "paytm", "phonepe", "gpay", "google pay", "gift card", "gift cards", "ransom",
+    "पैसे", "पैसा", "रुपये", "रुपए", "लाख", "करोड़",
+})
+_MONEY_AMOUNT_RE = re.compile(
+    r"(?:(?:rs\.?|inr|usd|₹|\$|€|£)\s?\d[\d,]*(?:\.\d+)?(?:\s?(?:lakh|lakhs|crore|crores|k))?"
+    r"|\b\d[\d,]*(?:\.\d+)?\s?(?:rupees|rupee|rs|dollars|dollar|usd|lakh|lakhs|crore|crores|btc|eth|usdt|रुपये|रुपए))",
+    re.IGNORECASE,
+)
+_UPI_HANDLE_RE = re.compile(
+    r"(?<![\w.])[a-z0-9][a-z0-9._-]{1,}@(?:ybl|paytm|ptyes|ptaxis|ptsbi|pthdfc|okaxis|oksbi|okicici|okhdfcbank|"
+    r"okbizaxis|ibl|axl|apl|yapl|upi|ikwik|fam|kotak|indus|sbi|hdfcbank|icici|axisbank|barodampay|cnrb|boi|pnb|"
+    r"idfcbank|federal|dbs|yesbank|waaxis|wasbi|wahdfcbank|waicici|freecharge|airtel|slice|naviaxis|goaxb|kmbl|"
+    r"abfspay|superyes|tapicici|timecosmos|mbk|amazonpay|jupiteraxis|rapl|axisb|postbank|jio)(?![\w.])",
+    re.IGNORECASE,
+)
+_WALLET_RE = re.compile(
+    r"(?<![A-Za-z0-9])(?:bc1[a-z0-9]{25,62}|[13][a-km-zA-HJ-NP-Z1-9]{25,34}|0x[a-fA-F0-9]{40}|T[A-Za-z1-9]{33})(?![A-Za-z0-9])"
+)
+_IFSC_RE = re.compile(r"(?<![A-Za-z0-9])[A-Z]{4}0[A-Z0-9]{6}(?![A-Za-z0-9])")
+_REMITTANCE_RE = re.compile(r"\b(?:western union|moneygram|ria money|mtcn)\b", re.IGNORECASE)
+_PHONE_RE = re.compile(r"(?<![\d@\w])(?:\+\d{1,3}[\s-]?)?(?:\d[\s-]?){9,12}\d(?![\d\w])")
 CREDENTIAL = (
     "password", "passcode", "verify your account", "verify account", "login", "log in", "sign in", "signin",
     "username", "user id", "otp", "one-time password", "one time password", "pin", "cvv", "aadhaar", "aadhar",
@@ -115,8 +199,11 @@ _PAYMENT_ACTION_TERMS = (
     "release the payment", "release payment", "make the payment", "process the payment", "transfer the amount",
     "pay", "payment", "transfer", "remit", "neft", "rtgs", "wire", "settle", "clear the invoice",
 )
+_UNCHANGED_RE = re.compile(
+    r"\b(?:unchanged|remains? the same|not changed|no change|same as before|same as always|as per (?:our |the )?contract)\b"
+)
 _PAYMENT_DIVERSION_EXPLICIT = (
-    "bank details have changed", "our bank details", "new account below", "updated bank details",
+    "bank details have changed", "new account below", "updated bank details",
     "remit to the new", "pay to this account", "account is under audit", "update the beneficiary",
     "updated beneficiary", "new remittance instructions", "wire instructions changed", "changed our bank",
     "use the new account", "payment to the new account", "release the payment to the new",
@@ -168,8 +255,41 @@ _PATTERNS: dict[str, re.Pattern[str]] = {
         "bank_change": _BANK_CHANGE_TERMS, "change": _CHANGE_TERMS, "payment_action": _PAYMENT_ACTION_TERMS,
         "payment_explicit": _PAYMENT_DIVERSION_EXPLICIT, "invoice": _INVOICE_TERMS, "due": _DUE_TERMS,
         "cta": _CTA_TERMS, "cred_explicit": _CRED_EXPLICIT, "exec": _EXEC_PHRASES,
+        "money_demand": MONEY_DEMAND, "violence": VIOLENCE, "extortion": EXTORTION,
+        "investment": INVESTMENT, "techsupport": TECHSUPPORT,
     }.items()
 }
+
+
+def payment_handles(text: str) -> list[str]:
+    found: list[str] = []
+    for match in _UPI_HANDLE_RE.finditer(text):
+        found.append(f"UPI {match.group(0).lower()}")
+    for match in _WALLET_RE.finditer(text):
+        found.append(f"wallet {match.group(0)}")
+    for match in _IFSC_RE.finditer(text):
+        found.append(f"IFSC {match.group(0)}")
+    for match in _REMITTANCE_RE.finditer(text):
+        found.append(match.group(0).lower())
+    return _dedupe(found)
+
+
+def _first_party_links(parsed: ParsedEmail, url_analysis: UrlAnalysis, cfg: Settings, auth: AuthResult | None) -> bool:
+    if auth is None or not url_analysis.urls:
+        return False
+    if auth.spf.lower() != "pass" and auth.dkim.lower() != "pass":
+        return False
+    if not (auth.spf_aligned or auth.dkim_aligned) or auth.dmarc.lower() == "fail":
+        return False
+    sender_rd = registrable_domain(parsed.sender.domain)
+    if not sender_rd:
+        return False
+    allowed = {sender_rd} | {registrable_domain(d) for d in cfg.org_domains if d}
+    for domains in BRANDS.values():
+        if sender_rd in domains:
+            allowed |= {registrable_domain(d) for d in domains}
+    hosts = [u for u in url_analysis.urls if u.host]
+    return bool(hosts) and all((u.registrable_domain or registrable_domain(u.host)) in allowed for u in hosts)
 
 
 def normalize_text(subject: str, body: str) -> str:
@@ -253,6 +373,7 @@ def detect_bec_patterns(
     url_analysis: UrlAnalysis,
     att_analysis: AttachmentAnalysis,
     cfg: Settings,
+    auth: AuthResult | None = None,
 ) -> list[BecPattern]:
     patterns: list[BecPattern] = []
     urgency = _hits("urgency", text)
@@ -263,15 +384,18 @@ def detect_bec_patterns(
     sender_free = registrable_domain(parsed.sender.domain) in FREEMAIL_DOMAINS
     reply_mismatch = _reply_to_mismatch(parsed)
     word_count = len(_WORD_RE.findall(text))
+    first_party = _first_party_links(parsed, url_analysis, cfg, auth)
     risky_urls = [u for u in url_analysis.urls if SEVERITY_ORDER[u.risk.value] >= SEVERITY_ORDER["medium"]]
     high_urls = [u for u in url_analysis.urls if SEVERITY_ORDER[u.risk.value] >= SEVERITY_ORDER["high"]]
-    keyword_urls = [u for u in url_analysis.urls if u.suspicious_keywords]
+    keyword_urls = [] if first_party else [u for u in url_analysis.urls if u.suspicious_keywords]
     high_atts = [a for a in att_analysis.attachments if SEVERITY_ORDER[a.risk.value] >= SEVERITY_ORDER["high"]]
 
     bank = _hits("bank_change", text)
     change = _hits("change", text)
     explicit_pay = _hits("payment_explicit", text)
     action = _hits("payment_action", text)
+    if bank and change and not explicit_pay and _UNCHANGED_RE.search(text):
+        change = []
     conf = 0.0
     evidence: list[str] = []
     if bank and change and action:
@@ -352,8 +476,77 @@ def detect_bec_patterns(
     elif explicit_cred and cred:
         conf = 0.35
         evidence += explicit_cred[:2]
+    if conf > 0 and first_party and not high_urls:
+        conf *= 0.5
+        evidence.append("every link stays on the authenticated sender's own domain")
     if conf >= 0.35:
         patterns.append(BecPattern(pattern="credential_harvesting", confidence=_clamp01(conf), evidence=_dedupe(evidence)))
+
+    financial = _hits("financial", text)
+    demand = _hits("money_demand", text)
+    handles = payment_handles(text)
+    violence = _hits("violence", text)
+    extortion = _hits("extortion", text)
+    strong_money = [t for t in financial if t in STRONG_MONEY_TERMS]
+    amounts = [m.group(0).strip() for m in _MONEY_AMOUNT_RE.finditer(text)]
+    money = bool(strong_money or demand or handles or amounts)
+    conf = 0.0
+    evidence = []
+    if violence:
+        conf = 0.55 + min(0.2, 0.1 * (len(violence) - 1))
+        evidence += violence[:3]
+        if extortion:
+            conf += 0.15
+            evidence += extortion[:2]
+    elif extortion and money:
+        conf = 0.45 + min(0.25, 0.1 * len(extortion))
+        evidence += extortion[:3]
+    if conf > 0 and money:
+        conf += 0.1
+        evidence += (amounts[:1] + strong_money[:2] + demand[:1] + handles[:1])[:3]
+    if conf > 0 and urgency:
+        conf += 0.05
+    if conf >= 0.35:
+        name: BecPatternName = "extortion" if money else "violent_threat"
+        patterns.append(BecPattern(pattern=name, confidence=_clamp01(conf), evidence=_dedupe(evidence)))
+
+    invest = _hits("investment", text)
+    reward = _hits("reward", text)
+    scarcity = _hits("scarcity", text)
+    conf = 0.0
+    evidence = []
+    if len(invest) >= 2 or (invest and (reward or scarcity or handles)):
+        conf = 0.4 + 0.1 * min(3, max(0, len(invest) - 1))
+        evidence += invest[:3]
+        if url_analysis.urls or handles:
+            conf += 0.1
+            evidence.append(f"link {url_analysis.urls[0].host}" if url_analysis.urls else handles[0])
+        if scarcity or urgency:
+            conf += 0.1
+            evidence += (scarcity or urgency)[:1]
+        if reward:
+            evidence += reward[:1]
+    if conf >= 0.35:
+        patterns.append(BecPattern(pattern="investment_scam", confidence=_clamp01(conf), evidence=_dedupe(evidence)))
+
+    tech = _hits("techsupport", text)
+    phones = [m.group(0).strip() for m in _PHONE_RE.finditer(text)]
+    authority = _hits("authority", text)
+    conf = 0.0
+    evidence = []
+    if len(tech) >= 2 and (phones or urgency or threat):
+        conf = 0.4 + 0.1 * min(3, len(tech) - 2)
+        evidence += tech[:3]
+        if phones:
+            conf += 0.2
+            evidence.append(f"phone {phones[0]}")
+        if authority:
+            conf += 0.1
+            evidence += authority[:1]
+        if urgency:
+            evidence += urgency[:1]
+    if conf >= 0.35:
+        patterns.append(BecPattern(pattern="callback_scam", confidence=_clamp01(conf), evidence=_dedupe(evidence)))
 
     name_signals = _display_name_signals(parsed, cfg)
     exec_phrases = _hits("exec", text)
@@ -466,8 +659,20 @@ def _finding(fid: str, severity: Severity, title: str, detail: str, evidence: di
     return Finding(id=fid, module="nlp", severity=severity, title=title, detail=detail, evidence=evidence)
 
 
+_SCAM_PATTERN_TITLES: dict[str, tuple[str, str, str]] = {
+    "extortion": ("extortion_demand", "Money demanded under threat", "Extortion indicators"),
+    "violent_threat": ("violent_threat_pattern", "Violent threat", "Threat indicators"),
+    "investment_scam": ("investment_scam", "Investment scam lure", "Investment-scam indicators"),
+    "callback_scam": ("callback_scam", "Tech-support / call-back scam", "Call-back scam indicators"),
+}
+
+
 def analyze_content(
-    parsed: ParsedEmail, url_analysis: UrlAnalysis, att_analysis: AttachmentAnalysis, cfg: Settings
+    parsed: ParsedEmail,
+    url_analysis: UrlAnalysis,
+    att_analysis: AttachmentAnalysis,
+    cfg: Settings,
+    auth: AuthResult | None = None,
 ) -> NlpAnalysis:
     body = _body_text(parsed)
     text = normalize_text(parsed.subject, body)
@@ -477,6 +682,8 @@ def analyze_content(
     urgency = _hits("urgency", text)
     threat = _hits("threat", text)
     financial = _hits("financial", text)
+    violence = _hits("violence", text)
+    handles = payment_handles(text)
     credential = _hits("credential", text)
     authority = _hits("authority", text)
     secrecy = _hits("secrecy", text)
@@ -499,7 +706,7 @@ def analyze_content(
     cues: list[str] = []
     if authority:
         cues.append("authority")
-    if threat:
+    if threat or violence:
         cues.append("fear")
     if scarcity or urgency:
         cues.append("scarcity")
@@ -514,13 +721,14 @@ def analyze_content(
     analysis.urgency_phrases = urgency[:10]
     analysis.social_engineering_cues = cues
     analysis.financial_terms = financial[:15]
+    analysis.payment_handles = handles[:10]
     analysis.credential_terms = credential[:15]
-    analysis.threat_terms = threat[:10]
+    analysis.threat_terms = (threat + violence)[:10]
     analysis.generic_greeting = bool(greeting)
     risky_links = any(SEVERITY_ORDER[u.risk.value] >= SEVERITY_ORDER["medium"] for u in url_analysis.urls)
     analysis.requests_reply_not_click = bool(reply_cues) and not risky_links
 
-    bec = detect_bec_patterns(text, parsed, url_analysis, att_analysis, cfg)
+    bec = detect_bec_patterns(text, parsed, url_analysis, att_analysis, cfg, auth)
     analysis.bec_patterns = bec
     max_bec = max((p.confidence for p in bec), default=0.0)
     exec_conf = max((p.confidence for p in bec if p.pattern == "executive_impersonation"), default=0.0)
@@ -557,6 +765,20 @@ def analyze_content(
             "fear_or_threat_language", Severity.MEDIUM if len(threat) >= 2 else Severity.LOW, "Fear / threat language",
             f"Consequences are threatened to force compliance: {', '.join(threat[:4])}.",
             {"phrases": threat[:10]},
+        ))
+    if violence:
+        findings.append(_finding(
+            "violent_threat", Severity.CRITICAL, "Threat of physical harm",
+            f"The message threatens violence or stalks the recipient: {', '.join(violence[:4])}. This is criminal "
+            f"intimidation, not spam, and should be preserved for the police.",
+            {"phrases": violence[:10]},
+        ))
+    if handles:
+        findings.append(_finding(
+            "payment_handle", Severity.MEDIUM, "Direct payment instructions",
+            f"The text names where to send money: {', '.join(handles[:3])}. Genuine billing points at an invoice or a "
+            f"portal; scams and extortion name a UPI ID, wallet or remittance service in the body.",
+            {"handles": handles[:10]},
         ))
     cred_conf = max((p.confidence for p in bec if p.pattern == "credential_harvesting"), default=0.0)
     if credential:
@@ -600,9 +822,15 @@ def analyze_content(
     for pattern in bec:
         sev = Severity.CRITICAL if pattern.confidence >= 0.75 else (Severity.HIGH if pattern.confidence >= 0.5 else Severity.MEDIUM)
         pretty = pattern.pattern.replace("_", " ")
+        if pattern.pattern in _SCAM_PATTERN_TITLES:
+            fid, title, lead = _SCAM_PATTERN_TITLES[pattern.pattern]
+            if pattern.pattern in ("extortion", "violent_threat"):
+                sev = Severity.CRITICAL if pattern.confidence >= 0.5 else Severity.HIGH
+        else:
+            fid, title, lead = f"bec_{pattern.pattern}", f"BEC pattern: {pretty}", f"{pretty.capitalize()} indicators"
         findings.append(_finding(
-            f"bec_{pattern.pattern}", sev, f"BEC pattern: {pretty}",
-            f"{pretty.capitalize()} indicators with confidence {pattern.confidence:.2f}: {', '.join(pattern.evidence[:4])}.",
+            fid, sev, title,
+            f"{lead} with confidence {pattern.confidence:.2f}: {', '.join(pattern.evidence[:4])}.",
             {"pattern": pattern.pattern, "confidence": round(pattern.confidence, 3), "evidence": pattern.evidence},
         ))
     if analysis.requests_reply_not_click:

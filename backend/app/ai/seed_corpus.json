@@ -1243,5 +1243,265 @@
     "subject": "Unlock your blocked wallet - pay verification amount",
     "body": "Your Paytm wallet with balance ₹22,400 has been blocked. To unblock and receive your balance, send a verification amount of ₹1,000 to UPI paytm.verify@ybl. The amount will be refunded along with your balance within 30 minutes.",
     "label": "Fraud-Related"
+  },
+  {
+    "subject": "",
+    "body": "Haram khor paise de de\n\nGive me my money back otherwise I will kill you\n\nGive me fucking 50000 dollar u duffer\n\nPray for u r life",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "last warning",
+    "body": "Pay me 2,00,000 rupees by Friday or I will leak your private photos to everyone you know. I know where your family lives. Don't test me. Send it to my paytm number.",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "I have your videos",
+    "body": "I have recorded you. Send 20000 rs to my upi in 24 hours or I send the videos to all your contacts and your family. This is not a joke.",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "Your data",
+    "body": "We have downloaded 300 GB of your company data: HR records, contracts, customer database. Pay 2 BTC within 72 hours or we publish everything and inform your customers and the press. Do not involve the police or the price doubles.",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "paise wapas kar",
+    "body": "Tune mere paise nahi lautaye. Kal tak 30000 bhej de warna tera anjaam bura hoga. Main tera ghar janta hu aur tere office ka bhi pata hai.",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "पैसे वापस दो",
+    "body": "पैसे वापस दो नहीं तो जान से मार दूंगा। कल तक 50000 रुपये भेजो वरना अंजाम बुरा होगा। तुम्हें और तुम्हारे परिवार को नहीं छोड़ूंगा।",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "bomb",
+    "body": "There is a bomb planted in your office building. It goes off at 3 PM unless 5 lakh is sent to the bitcoin address below. bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "You owe me",
+    "body": "You owe me 15000 and I am done waiting. Transfer it tonight or I will come to your house and break your legs. You know I am serious.",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "Final notice",
+    "body": "I know what you did last month. Pay 1 BTC and I stay silent. Refuse and your wife, your boss and the police get the files. You have 48 hours.",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "Photos",
+    "body": "Nice photos you sent her. Send 10000 to my ybl upi today or your whole contact list gets them. Don't try to block me, I have copies.",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "Loan recovery - final",
+    "body": "Your loan app EMI of 8500 is overdue. Pay now or we will send your morphed photos to every contact in your phone and tell them you are a fraud. Our recovery team will come to your home.",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "warning",
+    "body": "Tumhe lagta hai tum bach jaoge? 25000 aaj raat tak bhej do nahi to tumhare office aake dekh lunga. Family ka bhi pata hai mujhe.",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "",
+    "body": "I will find you and kill you. Watch your back when you leave office. You will regret what you did to my brother.",
+    "label": "Suspicious"
+  },
+  {
+    "subject": "I am watching you",
+    "body": "I saw you leaving the office at 6 in the blue kurta. I know your address. Reply to me or you will regret it.",
+    "label": "Suspicious"
+  },
+  {
+    "subject": "You are dead",
+    "body": "Think you can ignore me? You are a dead man. I know where you live and I know your route to college.",
+    "label": "Suspicious"
+  },
+  {
+    "subject": "tujhe dekh lunga",
+    "body": "Tu samajhta kya hai apne aap ko. Bahar nikal, dekh lunga tujhe. Teri khair nahi.",
+    "label": "Suspicious"
+  },
+  {
+    "subject": "",
+    "body": "Stop messaging her or I will make your life hell. I have friends who can hurt you badly. Last warning.",
+    "label": "Suspicious"
+  },
+  {
+    "subject": "मैं तुम्हें छोड़ूंगा नहीं",
+    "body": "तुमने जो किया उसका अंजाम भुगतना पड़ेगा। मैं तुम्हें नहीं छोड़ूंगा। घर से बाहर निकल कर देखो।",
+    "label": "Suspicious"
+  },
+  {
+    "subject": "Guaranteed 30% monthly returns - limited slots",
+    "body": "Our AI trading bot delivers guaranteed returns of 30% every month. Minimum deposit only USD 250. Withdraw profit any time. Limited slots for September. Over 5,000 investors trust us. Don't miss out!",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "Earn 5% daily with our forex bot",
+    "body": "Our automated forex trading platform gives assured returns of 5% daily. Minimum investment $100. Withdraw profits any time. Join 12,000 investors. Limited slots this week.",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "Double your money in 30 days",
+    "body": "Invest in our verified bitcoin mining contract and double your money in 30 days, risk free. Deposit via USDT to the wallet below. Payouts every Friday. Zero risk, guaranteed profit.",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "Your Windows licence has expired - 5 viruses detected",
+    "body": "Warning! Your Windows licence has expired and your computer is infected with 5 viruses. Your bank details and passwords are at risk. Call Microsoft certified support immediately on +1-800-555-0142 to renew your licence (USD 99) and remove the viruses. Do not switch off your computer.",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "Norton subscription auto-renewed USD 349.99",
+    "body": "Your Norton antivirus subscription has been auto-renewed for USD 349.99. If you did not authorise this charge, call our billing desk immediately on +1 888 555 0199 within 24 hours to cancel and get a refund. Do not turn off your computer during the refund process.",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "Geek Squad order confirmation",
+    "body": "Thank you for your purchase of Geek Squad Total Protection, USD 299.00 charged to your account. To dispute or cancel the order call our toll free number +1 805 555 0137 within 24 hours. A technician will assist you with remote access.",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "Donate today - families need you tonight",
+    "body": "Thousands of families in Assam have lost their homes in the floods. Every rupee counts. Donate Rs.500 or more to UPI ID reliefund@ybl before midnight tonight and forward this to 10 friends.",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "Pre-approved personal loan of Rs.5,00,000 at 2% interest",
+    "body": "Congratulations! Your personal loan of Rs.5,00,000 at 2% annual interest is pre-approved with no documents required. Pay the processing fee of Rs.999 to UPI quickcash@ybl to get disbursal within 24 hours. Offer valid today only.",
+    "label": "Fraud-Related"
+  },
+  {
+    "subject": "Your parcel is on hold - customs fee pending",
+    "body": "Dear customer, your DHL parcel (tracking 7812 3345 9021) could not be delivered because a customs duty of Rs.49 is unpaid. Pay the fee within 24 hours to schedule redelivery: https://dhl-parcel-redelivery.info/track/pay. If the fee is not paid the parcel will be returned to the sender.",
+    "label": "Phishing"
+  },
+  {
+    "subject": "Complete KYC to keep your UPI active",
+    "body": "Dear user, your UPI ID will be blocked as per NPCI guidelines unless KYC is completed within 24 hours. Scan the attached QR code with any UPI app to complete KYC instantly.",
+    "label": "Phishing"
+  },
+  {
+    "subject": "RE: Revised SOW - please review",
+    "body": "Hi, please review the revised SOW on the secure portal below and sign by EOD, the link expires today. https://sharepoint-docs-viewer.com/bluepeak/SOW_v3?auth=required",
+    "label": "Phishing"
+  },
+  {
+    "subject": "Priya Nair shared 'Invoice_Sept2026' with you",
+    "body": "Priya Nair has shared a secure document with you. Open the attached HTML file to view the document. You will be asked to sign in with your email account.",
+    "label": "Phishing"
+  },
+  {
+    "subject": "Copyright infringement notice - your account will be deleted in 24 hours",
+    "body": "We received a copyright complaint about content posted on your Instagram account. If you believe this is a mistake you must submit an appeal within 24 hours or your account will be permanently deleted. Submit appeal: https://instagram-copyright-appeal.com/appeal/login",
+    "label": "Phishing"
+  },
+  {
+    "subject": "Security alert",
+    "body": "New sign-in on Windows. We noticed a new sign-in to your Google Account on a Windows device. If this was you, you don't need to do anything. If not, we'll help you secure your account. Check activity: https://myaccount.google.com/notifications",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "[GitHub] Please reset your password",
+    "body": "We heard that you lost your GitHub password. Sorry about that! You can use the following link to reset your password: https://github.com/password_reset/7f3c1a9e. If you don't use this link within 3 hours, it will expire. If you did not request a password reset, you can safely ignore this email.",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "OTP for your SBI internet banking login",
+    "body": "482913 is the OTP for your State Bank internet banking login. It is valid for 10 minutes. Please do not share this OTP with anyone. SBI never asks for your OTP, PIN, password or card details over phone, SMS or email.",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Your Acme network password expires in 3 days",
+    "body": "Hi Rohan, your Acme network password will expire in 3 days. Please change it before then to avoid being locked out of email and VPN. Change it at https://password.acme-corp.in or press Ctrl+Alt+Del on a domain-joined laptop. IT will never ask for your password by email or phone. IT Helpdesk, ext. 1100",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Your HDFC Bank account statement for August 2026",
+    "body": "Dear Customer, your HDFC Bank savings account statement for 01-Aug-2026 to 31-Aug-2026 is attached. The PDF is password protected; the password is your Customer ID followed by your date of birth in DDMM format. For queries call PhoneBanking on 1800 1600. This is a system generated statement.",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Flat 50% OFF on your next 3 orders - today only!",
+    "body": "Craving something? Flat 50% OFF is here. Use code HUNGRY50 on your next 3 orders. Limited time offer, valid till midnight today. Order now on Swiggy. Hurry, offers this good don't last! Unsubscribe.",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Your Airtel postpaid bill of Rs.1,240 is due on 20 Sep",
+    "body": "Hi Rohan, your Airtel postpaid bill is ready. Bill amount Rs.1,240.00, due date 20 Sep 2026. Pay now at airtel.in to avoid late payment charges. You can also pay through the Airtel Thanks app.",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "saturday plan",
+    "body": "bro are we still on for saturday? i booked the tickets, send me 500 for yours whenever, my upi is aditya0412@ybl. also bring the type-c charger you borrowed lol",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Invitation: Sprint review @ Fri 12 Sep 11:00 (IST)",
+    "body": "Priya Nair is inviting you to a scheduled Zoom meeting. Topic: Sprint review. Join Zoom Meeting https://us02web.zoom.us/j/84512339021 Meeting ID: 845 1233 9021 Passcode: 774411",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Action needed: update your salary account details on the HR portal by 30 September",
+    "body": "Dear colleagues, as part of the payroll migration to the new bank, please update your salary bank account details (account number, IFSC, bank name) on the HR portal by 30 September: https://hr.acme-corp.in/self-service/bank-details. Payments for the October cycle will be made only to the account recorded on the portal. For help contact hr@acme-corp.in or extension 2201.",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Refund of Rs.499 for order OD331207754112 has been processed",
+    "body": "Hi Rohan, good news! Your refund of Rs.499.00 for order OD331207754112 has been processed and credited to your original payment method (UPI). It may take 5-7 business days to reflect in your account depending on your bank. Thanks for shopping with Flipkart.",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Interview invitation - Software Engineer (Security)",
+    "body": "Dear Rohan, congratulations! You have been shortlisted for the Software Engineer (Security) interview at Zentrix Labs on Thursday 18 September at 11:00 AM IST over Google Meet. Please confirm your availability by replying to this email and keep a government photo ID handy for verification at the start of the call.",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Assignment 2 - submission deadline tomorrow 5 PM",
+    "body": "Dear students, this is a reminder that Assignment 2 (Python file handling) is due tomorrow by 5 PM on the LMS: https://lms.liet.in/course/view.php?id=214. Late submissions will attract a penalty of 2 marks per day as per the course policy. The question paper is attached again for reference. Regards, Vishal Gupta, Assistant Professor, CSE",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Rent for September",
+    "body": "Hi Rohan, rent for September is due on the 5th as usual, same account as always. Let me know once you transfer it and I will share the receipt. Also the plumber will come on Saturday morning for the kitchen tap. Regards, Mrs Sharma",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "dinner split",
+    "body": "Dinner came to 2400 so 600 each. Pay me on GPay whenever, no rush. Same place next Friday? Karan wants to try the new Korean spot.",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "EMI auto-debit reminder",
+    "body": "Dear Customer, your car loan EMI of Rs.12,450 will be auto-debited from your account ending 2093 on 10 Sep 2026. Please maintain sufficient balance to avoid a bounce charge. This is an automated reminder; no action is needed if funds are available.",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Payment received - Team plan",
+    "body": "Thanks for your payment. This email confirms that a payment of USD 48 was processed for your Team plan (12 seats, monthly). Your receipt is attached. Manage billing at https://github.com/organizations/acme-corp-india/settings/billing",
+    "label": "Legitimate"
+  },
+  {
+    "subject": "Quick task",
+    "body": "Priya, are you free? I need you to handle a task for me quietly, I'm boarding a flight and can't take calls. Reply on this email as soon as you see it. Sarthak",
+    "label": "Impersonated"
+  },
+  {
+    "subject": "Your PayPal account has limitations",
+    "body": "Dear PayPal customer, your account access has been limited because of a login from an unrecognised device. To lift the limitation, reply to this email with your registered phone number, date of birth and the last 4 digits of the linked card. Our team will restore full access within 24 hours.",
+    "label": "Impersonated"
+  },
+  {
+    "subject": "Unusual activity on your Microsoft account",
+    "body": "We noticed unusual sign-in activity on your Microsoft account. To keep your account secure, reply to this email to confirm your recovery email address and phone number. Microsoft Account Team",
+    "label": "Impersonated"
+  },
+  {
+    "subject": "New email id",
+    "body": "Hi Priya, this is my new personal email id. Please update your contacts and reply here from now on. I will explain later, keep this between us for now. Rohan",
+    "label": "Impersonated"
   }
 ]

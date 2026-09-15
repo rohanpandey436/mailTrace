@@ -461,6 +461,17 @@ def _numeric_ip_form(host: str) -> bool:
     return bool(_DOTTED_NUMERIC_RE.match(host)) and not _is_ip(host)
 
 
+def _target_host(target: str) -> str:
+    if target.startswith("//"):
+        target = "http:" + target
+    elif "://" not in target:
+        target = "http://" + target
+    try:
+        return (urlsplit(target).hostname or "").lower()
+    except ValueError:
+        return ""
+
+
 def _looks_base64(value: str) -> bool:
     if not _B64_RE.match(value):
         return False
@@ -563,6 +574,9 @@ def analyze_url(url: str, anchor_text: str, cfg: Settings) -> UrlInfo:
     for key, value in query_pairs:
         target = unquote(value).lower()
         if key.lower() in _REDIRECT_KEYS and (target.startswith(("http://", "https://", "//")) or "://" in target):
+            target_host = _target_host(target)
+            if target_host and info.registrable_domain and registrable_domain(target_host) == info.registrable_domain:
+                continue
             redirect = True
             break
     if redirect:

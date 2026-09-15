@@ -57,6 +57,10 @@ export const BEC_PATTERN = {
   fake_invoice: "Fake or pressured invoice",
   credential_harvesting: "Password / OTP harvesting",
   executive_impersonation: "Pretending to be a boss",
+  extortion: "Money demanded under threat",
+  violent_threat: "Threat of violence or stalking",
+  investment_scam: "Fake investment returns",
+  callback_scam: "Fake tech-support call-back",
 };
 
 export const CUSTODY_ACTION = {

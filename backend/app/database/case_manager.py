@@ -119,6 +119,13 @@ CREATE TABLE IF NOT EXISTS case_status (
     decided_at TEXT NOT NULL,
     actor TEXT NOT NULL DEFAULT ''
 );
+CREATE TABLE IF NOT EXISTS evidence (
+    email_id TEXT PRIMARY KEY,
+    sha256 TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    stored_at TEXT NOT NULL,
+    raw BLOB NOT NULL
+);
 """
 
 
@@ -262,6 +269,7 @@ class _PostgresDialect:
     @staticmethod
     def _schema_statements() -> list[str]:
         schema = _SCHEMA.replace("    indicator TEXT NOT NULL,", '    indicator TEXT COLLATE "C" NOT NULL,')
+        schema = schema.replace("    raw BLOB NOT NULL", "    raw BYTEA NOT NULL")
         return [statement.strip() for statement in schema.split(";") if statement.strip()]
 
     @staticmethod
@@ -323,7 +331,7 @@ class Store:
         elif self.backend == "sqlite":
             log.info("store opened at %s", self.db_path)
         else:
-            log.info("store opened on %s (evidence .eml files stay at %s)", self.backend, self.evidence_dir)
+            log.info("store opened on %s (raw messages kept in the evidence table, mirrored at %s)", self.backend, self.evidence_dir)
 
     @property
     def backend(self) -> str:
@@ -375,12 +383,19 @@ class Store:
         columns = self._summary_columns(result)
         columns["result_json"] = result.model_dump_json()
         sql = self._dialect.upsert("emails", list(columns), ("id",))
+        keep_raw = raw is not None and not self.in_memory
+        evidence_sql = self._dialect.insert_ignore("evidence", ["email_id", "sha256", "size", "stored_at", "raw"])
         with self._tx() as conn:
             conn.execute(sql, list(columns.values()))
-        if raw is not None and not self.in_memory:
+            if keep_raw and raw is not None:
+                conn.execute(evidence_sql, [result.id, hashlib.sha256(raw).hexdigest(), len(raw), _now_iso(), raw])
+        if keep_raw and raw is not None:
             path = self.evidence_dir / f"{result.id}.eml"
-            if not path.exists():
-                path.write_bytes(raw)
+            try:
+                if not path.exists():
+                    path.write_bytes(raw)
+            except OSError:
+                log.warning("could not mirror evidence %s to %s", result.id, path, exc_info=True)
 
     def get_analysis(self, email_id: str) -> AnalysisResult | None:
         with self._lock:
@@ -400,7 +415,17 @@ class Store:
         try:
             return path.read_bytes()
         except OSError:
+            pass
+        with self._lock:
+            row = self._conn.execute("SELECT raw FROM evidence WHERE email_id = ?", (email_id,)).fetchone()
+        if row is None:
             return None
+        raw = bytes(row["raw"])
+        try:
+            path.write_bytes(raw)
+        except OSError:
+            log.debug("could not mirror evidence %s to %s", email_id, path, exc_info=True)
+        return raw
 
     @staticmethod
     def _row_status(row: Row) -> CaseStatus:

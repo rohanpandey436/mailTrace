@@ -68,7 +68,7 @@ def analyze_bytes(
 
     def run_ai_core() -> tuple[AttachmentAnalysis, NlpAnalysis]:
         atts = file_analyzer.analyze_attachments(raw_attachments, cfg)
-        content = ai_engine.analyze_content(parsed, url_analysis, atts, cfg)
+        content = ai_engine.analyze_content(parsed, url_analysis, atts, cfg, auth=header_analysis.auth)
         virustotal.enrich(atts, raw_attachments, cfg, store)
         return atts, content
 

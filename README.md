@@ -74,14 +74,14 @@ from an earlier run.
 
 | Requirement area | How MailTrace covers it | Where |
 |---|---|---|
-| Ingest suspicious emails as raw evidence | Multipart upload of one or many `.eml` / `.txt` files, or pasted RFC 822 source; the exact bytes are hashed and stored once under `<data dir>/evidence/<id>.eml` | `POST /api/analyze`, `POST /api/analyze/raw`, `backend/app/core/parser.py`, `backend/app/database/case_manager.py` |
+| Ingest suspicious emails as raw evidence | Multipart upload of one or many `.eml` / `.txt` files, or pasted RFC 822 source; the exact bytes are hashed and stored once in the `evidence` table of the case database (mirrored under `<data dir>/evidence/<id>.eml`), so the original survives a redeploy of a host with no persistent disk | `POST /api/analyze`, `POST /api/analyze/raw`, `backend/app/core/parser.py`, `backend/app/database/case_manager.py` |
 | Header forensics and origin tracing | Every `Received` hop parsed (hosts, IP, protocol, TLS, timestamp), ordered chronologically, per-hop delay and anomalies (negative delay, private IP, missing TLS, forged order), originating IP with confidence and reasoning, `X-Originating-IP` handling | `backend/app/core/header_analyzer.py`, Trace tab |
 | Spoofing detection (SPF / DKIM / DMARC) | `Authentication-Results` parsing plus live SPF evaluation, DKIM signature verification and DMARC policy lookup; relaxed alignment; Return-Path, Reply-To, Message-ID and display-name mismatch checks | `backend/app/core/auth_checker.py`, `backend/app/core/header_analyzer.py` |
 | Geolocation and infrastructure intelligence | City / region / country, ISP, organisation, ASN and reverse DNS per public hop; Tor exit, VPN / proxy, hosting-provider, DNSBL, open-relay and botnet heuristics; AbuseIPDB with a key; route drawn on a map | `backend/app/core/geoip_mapper.py`, Leaflet map in the UI |
 | Malicious link analysis | URL extraction from text and HTML (anchor text vs. href), lookalike / homoglyph / typosquat / punycode detection, shorteners, IP literals, userinfo tricks, open redirects, obfuscation, suspicious TLDs and keywords, plus an XGBoost link model that can only raise the rule score | `backend/app/core/link_analyzer.py`, `backend/app/ai/url_model.py` |
 | Attachment analysis | Magic-byte sniffing against the declared type, double extensions, executables, macro documents, archives with risky members, password-protected archives, Shannon entropy, hashes | `backend/app/core/file_analyzer.py` |
 | Domain intelligence | WHOIS age and registrar, DNS (A / MX / NS / SPF / DMARC), free-mail and disposable detection, lookalike-of-brand, abuse-prone TLD tagging. **URLhaus reputation is skipped unless `MAILTRACE_URLHAUS_KEY` is set** - abuse.ch has required an Auth-Key since 2025 and `domain_reputation` returns before making any request without one | `backend/app/core/domain_intel.py` |
-| NLP and social-engineering analysis | Urgency, fear, authority, secrecy, reward and scarcity lexicons; credential and financial terms; generic greeting; "reply, do not click" pattern; BEC patterns (payment diversion, fake invoice, credential harvesting, executive impersonation) with confidence and evidence phrases | `backend/app/core/ai_engine.py` |
+| NLP and social-engineering analysis | Urgency, fear, authority, secrecy, reward and scarcity lexicons; credential and financial terms; generic greeting; "reply, do not click" pattern; BEC patterns (payment diversion, fake invoice, credential harvesting, executive impersonation) plus extortion, violent-threat, investment-scam and tech-support call-back patterns, each with confidence and evidence phrases; English, Hinglish and Devanagari threat and money lexicons; UPI IDs, wallet addresses, IFSC codes and remittance services extracted as payment handles | `backend/app/core/ai_engine.py` |
 | AI classification with explainability | TF-IDF (word and character n-grams) with logistic regression over a labelled seed corpus; per-class probabilities, exact SHAP token attributions and a second, independent LIME explanation with its surrogate R^2; optional DistilRoBERTa backend | `backend/app/ai/model_trainer.py`, `backend/app/ai/lime_explainer.py`, `backend/app/ai/seed_corpus.json` |
 | Risk scoring and dual validation | Five weighted component scores; deterministic first-match policy; ML corroboration modulates confidence; per-category floors; every step written to `verdict.rationale` | `backend/app/core/scoring.py` |
 | Source attribution | Spoofed domain / lookalike domain / compromised account / direct attacker infrastructure / legitimate sender, with confidence, reasoning and pivot indicators | `scoring.attribute_source` |
@@ -427,7 +427,9 @@ timeline, actions, legal notes, custody, full analysis) and `DashboardStats`.
 
 Storage (`backend/app/database/case_manager.py`): tables `emails` (summary columns plus
 `result_json`), `indicators`, `campaigns`, `campaign_members`, `custody`,
-`alerts` and `cache`; raw messages under `<data dir>/evidence/<id>.eml`.
+`alerts`, `cache` and `evidence` (the raw message bytes with their SHA-256); the
+`.eml` under `<data dir>/evidence/<id>.eml` is a mirror that is rebuilt from the
+table when the file is missing.
 
 ## 5. Scoring and classification policy
 
@@ -451,24 +453,47 @@ so they express relative importance rather than needing to add up by hand.
 
 **Rule policy** (first match wins, recorded as `verdict.rule_category`):
 
-1. **Fraud-Related** - payment-diversion or fake-invoice BEC pattern at confidence
-   0.5 or more; or two or more financial terms combined with pressure (Reply-To
-   mismatch, free-mail sender or urgency 0.5 or more) at risk 40 or more; or the
-   classifier says Fraud-Related (p 0.6 or more) with financial terms; or executive
-   impersonation (0.5 or more) paired with a money request. A dominant
-   credential-harvesting pattern suppresses the first three, so a KYC lure that
-   mentions money is still read as phishing.
-2. **Phishing** - credential-harvesting BEC pattern at 0.5 or more; a high-risk
-   link alongside credential terms; a `credential_harvest_link` finding; a lookalike
-   link with credential terms; the classifier says Phishing (p 0.6 or more) with a
-   medium-or-worse link; a critical attachment delivered with a credential lure.
-3. **Impersonated** - display-name spoof; executive-impersonation pattern at 0.35
+1. **Phishing, hard evidence** - an HTML attachment that is a login form, a
+   critical-risk link (brand imitation with credential keywords, or an executable
+   download) or a `credential_harvest_link` finding. These outrank everything
+   below, so a phishing page named `Invoice.html` is not mislabelled as a fake
+   invoice.
+2. **Fraud-Related** - payment-diversion or fake-invoice BEC pattern at confidence
+   0.5 or more; extortion (money demanded under a threat), investment-scam or
+   tech-support call-back pattern at 0.5 or more; a payment handle in the body
+   (UPI ID, wallet, IFSC, remittance service) pushed with urgency, reward, fear,
+   secrecy, scarcity or a Reply-To mismatch from a non-organisation sender; or two
+   or more financial terms combined with pressure (Reply-To mismatch, free-mail
+   sender or urgency 0.5 or more) at risk 40 or more; or the classifier says
+   Fraud-Related (p 0.6 or more) with financial terms; or executive impersonation
+   (0.5 or more) paired with a money request. A dominant credential-harvesting
+   pattern suppresses the first rules, so a KYC lure that mentions money is still
+   read as phishing, and the generic financial-lure rules step aside when a
+   high-risk link is present.
+3. **Phishing** - credential-harvesting BEC pattern at 0.5 or more; a high-risk
+   link alongside credential terms; a lookalike link combined with a request for
+   credentials, money or a payment handle; the classifier says Phishing (p 0.6 or
+   more) with a medium-or-worse link; a critical attachment delivered with a
+   credential lure.
+4. **Impersonated** - display-name spoof; executive-impersonation pattern at 0.35
    or more; lookalike sender or Reply-To domain; SPF or DMARC failure on a protected
    or brand domain; the classifier says Impersonated (p 0.6 or more) with any
    authentication failure.
-4. **Suspicious** - risk 25 or more, any high or critical finding, or a
-   non-legitimate ML class at p 0.6 or more.
-5. **Legitimate** otherwise.
+5. **Suspicious** - a violent-threat pattern without a money demand (risk floor 50),
+   risk 25 or more, any high or critical finding, or a non-legitimate ML class at
+   p 0.6 or more.
+6. **Legitimate** otherwise.
+
+Two guards keep genuine mail out of the threat classes. **First-party links**: when
+SPF or DKIM passes with alignment and every link stays on the sender's own
+registrable domain (or the organisation's, or the sender brand's genuine domains),
+credential wording is halved and a redirect that stays within the same site is not
+an open redirect, so password-reset, security-alert and internal IT notices score
+as what they are. **Brand-owned TLD variants**: a sender such as `brand.in` that
+the lookalike detector reads as a TLD swap of `brand.com`, but that authenticates
+with SPF, DKIM and DMARC, links only to the brand's genuine sites and carries no
+credential or payment lure, is treated as an alternate domain the brand owns; the
+lookalike and display-name findings drop to low severity and say why.
 
 **Dual validation** - the rule engine decides and the classifier modulates
 confidence: on agreement `confidence = 0.75 + 0.25 x P(rule class)` (capped at
@@ -506,7 +531,18 @@ knows that `acme-corp-in.com` is imitating anything.
 Every attribution lists the pivot indicators (origin IP, ASN / ISP, sender,
 Reply-To, URL hosts, attachment hashes) and `verdict.recommended_actions` turns the
 verdict into a playbook: block the IOCs, verify bank changes out of band, reset
-credentials, preserve the evidence, report to CERT-In and cybercrime.gov.in.
+credentials, preserve the evidence, report to CERT-In and cybercrime.gov.in. A
+threat or extortion verdict leads with the police route (helpline 1930,
+cybercrime.gov.in, 112 for an immediate danger) and asks the mailbox provider's
+abuse desk to preserve the account records, and any payment handle in the message
+is flagged for the payment provider and NPCI.
+
+When the earliest public hop is a relay that a webmail or bulk-mail provider shares
+between all of its users (Gmail's `mail-sor-*.google.com`, Outlook, Yahoo, Amazon
+SES, SendGrid, Mailchimp and the like), the origin confidence drops to 0.5, the
+reasoning and the geolocation finding say that the address locates the provider's
+servers rather than the sender, and the IP and ASN are left out of the campaign
+indicators so that unrelated Gmail users are never grouped into one campaign.
 
 ## 7. Privacy and chain of custody
 

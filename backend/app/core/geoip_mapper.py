@@ -703,14 +703,21 @@ def _geo_evidence(geo: GeoInfo) -> dict[str, Any]:
     }
 
 
-def _origin_finding(geo: GeoInfo) -> Finding:
+def _origin_finding(geo: GeoInfo, shared_provider: str = "") -> Finding:
     place = ", ".join(part for part in (geo.city, geo.region, geo.country) if part) or "an unknown location"
     provider = geo.isp or geo.org or "an unknown network"
     asn = f" ({geo.asn})" if geo.asn else ""
     detail = f"The originating IP {geo.ip} is located in {place} and announced by {provider}{asn}."
     if geo.reverse_dns:
         detail += f" Reverse DNS: {geo.reverse_dns}."
-    return _finding("origin_geolocated", Severity.INFO, "Origin IP geolocated", detail, _geo_evidence(geo))
+    if shared_provider:
+        detail += (
+            f" This address is one of {shared_provider}'s shared outbound mail servers, so the location is the "
+            f"provider's data centre, not where the sender was."
+        )
+    evidence = _geo_evidence(geo)
+    evidence["shared_provider"] = shared_provider
+    return _finding("origin_geolocated", Severity.INFO, "Origin IP geolocated", detail, evidence)
 
 
 def _geo_unavailable_finding(origin: str, origin_geo: GeoInfo | None, hops: list[Hop]) -> Finding:
@@ -937,7 +944,7 @@ def analyze_infrastructure(header_analysis: HeaderAnalysis, cfg: Settings, store
             )
         )
     if origin_geo is not None and origin_geo.source in _RESOLVED_SOURCES:
-        findings.append(_origin_finding(origin_geo))
+        findings.append(_origin_finding(origin_geo, header_analysis.origin_shared_provider))
     else:
         findings.append(_geo_unavailable_finding(origin, origin_geo, hops))
     trail = _trail_finding(hops)

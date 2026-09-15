@@ -36,8 +36,8 @@ BRANDS: dict[str, list[str]] = {
     "wetransfer": ["wetransfer.com", "we.tl"],
     "sbi": ["sbi.co.in", "onlinesbi.sbi", "onlinesbi.com", "sbicard.com", "sbi.bank.in", "yonobusiness.sbi", "sbiyono.sbi"],
     "onlinesbi": ["onlinesbi.sbi", "onlinesbi.com", "sbi.co.in"],
-    "hdfc": ["hdfcbank.com", "hdfc.com", "hdfclife.com", "hdfcergo.com", "hdfcsec.com"],
-    "hdfcbank": ["hdfcbank.com"],
+    "hdfc": ["hdfcbank.com", "hdfcbank.net", "hdfc.com", "hdfclife.com", "hdfcergo.com", "hdfcsec.com"],
+    "hdfcbank": ["hdfcbank.com", "hdfcbank.net"],
     "icici": ["icicibank.com", "icicidirect.com", "iciciprulife.com", "icicilombard.com"],
     "icicibank": ["icicibank.com"],
     "axisbank": ["axisbank.com", "axisdirect.in"],
@@ -70,9 +70,40 @@ BRANDS: dict[str, list[str]] = {
     "coinbase": ["coinbase.com"],
     "binance": ["binance.com"],
     "steam": ["steampowered.com", "steamcommunity.com"],
-    "swiggy": ["swiggy.com"],
+    "swiggy": ["swiggy.com", "swiggy.in"],
     "zomato": ["zomato.com"],
 }
+
+SHARED_MAIL_PROVIDERS: dict[str, str] = {
+    "google.com": "Google", "googlemail.com": "Google", "gmail.com": "Google",
+    "outlook.com": "Microsoft", "hotmail.com": "Microsoft", "live.com": "Microsoft", "office365.com": "Microsoft",
+    "microsoft.com": "Microsoft", "microsoftonline.com": "Microsoft",
+    "yahoo.com": "Yahoo", "yahoodns.net": "Yahoo", "yahoo.co.in": "Yahoo", "aol.com": "Yahoo", "ymail.com": "Yahoo",
+    "icloud.com": "Apple", "apple.com": "Apple", "me.com": "Apple",
+    "protonmail.ch": "Proton", "protonmail.com": "Proton", "proton.me": "Proton",
+    "zoho.com": "Zoho", "zohomail.com": "Zoho", "zohomail.in": "Zoho", "zoho.in": "Zoho",
+    "yandex.net": "Yandex", "yandex.ru": "Yandex", "yandex.com": "Yandex",
+    "mail.ru": "Mail.ru", "qq.com": "Tencent", "163.com": "NetEase", "126.com": "NetEase",
+    "rediffmail.com": "Rediff", "rediff.com": "Rediff", "gmx.net": "GMX", "gmx.com": "GMX", "web.de": "GMX",
+    "tutanota.de": "Tuta", "tutanota.com": "Tuta", "tuta.io": "Tuta", "tuta.com": "Tuta",
+    "amazonses.com": "Amazon SES", "sendgrid.net": "SendGrid", "mailgun.org": "Mailgun", "mailgun.net": "Mailgun",
+    "mcsv.net": "Mailchimp", "mcdlv.net": "Mailchimp", "rsgsv.net": "Mailchimp", "mandrillapp.com": "Mailchimp",
+    "sparkpostmail.com": "SparkPost", "postmarkapp.com": "Postmark", "mtasv.net": "Postmark",
+    "sendinblue.com": "Brevo", "brevo.com": "Brevo", "mailjet.com": "Mailjet", "smtp2go.com": "SMTP2GO",
+    "pphosted.com": "Proofpoint", "ppe-hosted.com": "Proofpoint", "mimecast.com": "Mimecast",
+    "messagelabs.com": "Symantec", "barracudanetworks.com": "Barracuda", "emailsrvr.com": "Rackspace",
+    "secureserver.net": "GoDaddy", "hubspotemail.net": "HubSpot", "exacttarget.com": "Salesforce",
+}
+
+
+def shared_provider(host: str) -> str:
+    host = (host or "").strip().lower().rstrip(".")
+    if not host:
+        return ""
+    for domain, provider in SHARED_MAIL_PROVIDERS.items():
+        if host == domain or host.endswith("." + domain):
+            return provider
+    return ""
 
 EXEC_TITLES: list[str] = [
     "ceo", "cfo", "coo", "cto", "cio", "chairman", "chairperson", "president",

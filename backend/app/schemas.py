@@ -38,6 +38,10 @@ BecPatternName = Literal[
     "fake_invoice",
     "credential_harvesting",
     "executive_impersonation",
+    "extortion",
+    "violent_threat",
+    "investment_scam",
+    "callback_scam",
 ]
 
 SourceType = Literal[
@@ -193,6 +197,7 @@ class HeaderAnalysis(BaseModel):
     originating_hop_index: int | None = None
     origin_confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     origin_reasoning: str = ""
+    origin_shared_provider: str = Field(default="", description="Mail provider whose shared relay is the earliest public hop, if any")
     x_originating_ip: str = ""
     message_id_domain: str = ""
     message_id_mismatch: bool = False
@@ -280,6 +285,7 @@ class NlpAnalysis(BaseModel):
     urgency_phrases: list[str] = Field(default_factory=list)
     social_engineering_cues: list[str] = Field(default_factory=list, description="authority|fear|scarcity|secrecy|reward|curiosity")
     financial_terms: list[str] = Field(default_factory=list)
+    payment_handles: list[str] = Field(default_factory=list, description="UPI IDs, wallet addresses, IFSC codes or remittance services named in the text")
     credential_terms: list[str] = Field(default_factory=list)
     threat_terms: list[str] = Field(default_factory=list)
     generic_greeting: bool = False

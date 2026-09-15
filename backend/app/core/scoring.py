@@ -38,6 +38,7 @@ RISK_FLOORS: dict[ThreatCategory, int] = {
     ThreatCategory.SUSPICIOUS: 25,
 }
 LEGITIMATE_RISK_CEILING = 40
+VIOLENT_THREAT_RISK_FLOOR = 50
 
 _ATTACK_CATEGORIES: frozenset[ThreatCategory] = frozenset(
     {ThreatCategory.PHISHING, ThreatCategory.FRAUD, ThreatCategory.IMPERSONATED}
@@ -198,10 +199,10 @@ def _text_score(nlp: NlpAnalysis) -> float:
 URL_MODEL_ALPHA = 0.5
 
 
-def _deterministic_url_score(urls: UrlAnalysis, domain_intel: list[DomainIntel]) -> float:
+def _deterministic_url_score(urls: UrlAnalysis, domain_intel: list[DomainIntel], brand_variant: str = "") -> float:
     score = 100 * _clamp(urls.score, 0.0, 1.0)
     for d in domain_intel:
-        if d.lookalike_of:
+        if d.lookalike_of and not (brand_variant and d.role == "sender"):
             score = max(score, 85.0)
         if d.age_days is not None and d.age_days < 30 and not d.is_free_mail:
             score = max(score, 75.0)
@@ -217,8 +218,10 @@ def _deterministic_url_score(urls: UrlAnalysis, domain_intel: list[DomainIntel])
     return _clamp(score)
 
 
-def _url_score(urls: UrlAnalysis, domain_intel: list[DomainIntel], url_model: Any = None) -> float:
-    floor = _deterministic_url_score(urls, domain_intel)
+def _url_score(
+    urls: UrlAnalysis, domain_intel: list[DomainIntel], url_model: Any = None, brand_variant: str = ""
+) -> float:
+    floor = _deterministic_url_score(urls, domain_intel, brand_variant)
     probability = _clamp(getattr(url_model, "max_probability", 0.0), 0.0, 1.0) if url_model is not None else 0.0
     return _clamp(max(floor, floor + (100.0 - floor) * URL_MODEL_ALPHA * probability))
 
@@ -245,7 +248,10 @@ def _identity_forgery_score(header_analysis: HeaderAnalysis) -> float:
 
 
 def _auth_pillar(auth: AuthResult, header_analysis: HeaderAnalysis, sender_domain: str, cfg: Settings) -> float:
-    return _clamp(_authentication_score(auth, sender_domain, cfg) + _identity_forgery_score(header_analysis))
+    forgery = _identity_forgery_score(header_analysis)
+    if header_analysis.return_path_mismatch and auth.dkim.lower() == "pass" and auth.dkim_aligned:
+        forgery -= 15
+    return _clamp(_authentication_score(auth, sender_domain, cfg) + forgery)
 
 
 _ROUTING_ANOMALIES: dict[str, float] = {
@@ -306,6 +312,7 @@ def component_scores(
     cfg: Settings,
     sender_domain: str = "",
     url_model: Any = None,
+    brand_variant: str = "",
 ) -> RiskBreakdown:
     domain_intel = list(domain_intel or [])
     if not sender_domain:
@@ -313,7 +320,7 @@ def component_scores(
     return RiskBreakdown(
         auth=_auth_pillar(header_analysis.auth, header_analysis, sender_domain, cfg),
         text=_text_score(nlp_analysis),
-        url=_url_score(url_analysis, domain_intel, url_model),
+        url=_url_score(url_analysis, domain_intel, url_model, brand_variant),
         network=_network_score(header_analysis, infra, intel),
         entropy=_entropy_score(att_analysis),
         weights=_normalized_weights(cfg),
@@ -349,6 +356,39 @@ def _pressure_cues(
     return cues
 
 
+def _phishing_attachments(att_analysis: AttachmentAnalysis) -> list[Any]:
+    return [a for a in att_analysis.attachments if any("credential-phishing" in r for r in a.reasons)]
+
+
+def brand_owned_variant(
+    parsed: ParsedEmail,
+    header_analysis: HeaderAnalysis,
+    url_analysis: UrlAnalysis,
+    att_analysis: AttachmentAnalysis,
+    nlp_analysis: NlpAnalysis,
+    domain_intel: Iterable[DomainIntel],
+) -> str:
+    sender = next((d for d in domain_intel if d.role == "sender" and d.lookalike_of), None)
+    if sender is None or sender.lookalike_technique != "tld_swap":
+        return ""
+    auth = header_analysis.auth
+    if auth.spf.lower() != "pass" or auth.dkim.lower() != "pass" or auth.dmarc.lower() == "fail":
+        return ""
+    if not (auth.spf_aligned or auth.dkim_aligned) or header_analysis.reply_to_mismatch:
+        return ""
+    genuine = {_registrable(d) for d in BRANDS.get(sender.lookalike_of, [])} | {_registrable(sender.domain)}
+    for url in url_analysis.urls:
+        if url.host and _registrable(url.host) not in genuine:
+            return ""
+    if any(_sev(a.risk) >= SEVERITY_ORDER["high"] for a in att_analysis.attachments):
+        return ""
+    if nlp_analysis.credential_terms or nlp_analysis.payment_handles:
+        return ""
+    if any(p.confidence >= 0.35 for p in nlp_analysis.bec_patterns):
+        return ""
+    return sender.lookalike_of
+
+
 def rule_classify(
     parsed: ParsedEmail,
     header_analysis: HeaderAnalysis,
@@ -359,27 +399,49 @@ def rule_classify(
     findings: list[Finding],
     risk_score: int,
     cfg: Settings,
+    brand_variant: str = "",
 ) -> tuple[ThreatCategory, list[str]]:
     auth = header_analysis.auth
     sender_domain = _registrable(parsed.sender.domain)
     sender_free = _is_freemail(sender_domain)
     fin_terms = nlp_analysis.financial_terms
     cred_terms = nlp_analysis.credential_terms
+    handles = nlp_analysis.payment_handles
     ml_cat = _as_category(nlp_analysis.ml_category)
     ml_p = _ml_prob(nlp_analysis.ml_probabilities, ml_cat)
     payment_conf, payment_ev = _bec_confidence(nlp_analysis, "payment_diversion")
     invoice_conf, invoice_ev = _bec_confidence(nlp_analysis, "fake_invoice")
     cred_conf, cred_ev = _bec_confidence(nlp_analysis, "credential_harvesting")
     exec_conf, exec_ev = _bec_confidence(nlp_analysis, "executive_impersonation")
+    extortion_conf, extortion_ev = _bec_confidence(nlp_analysis, "extortion")
+    violent_conf, violent_ev = _bec_confidence(nlp_analysis, "violent_threat")
+    invest_conf, invest_ev = _bec_confidence(nlp_analysis, "investment_scam")
+    callback_conf, callback_ev = _bec_confidence(nlp_analysis, "callback_scam")
     spf, dkim, dmarc = auth.spf.lower(), auth.dkim.lower(), auth.dmarc.lower()
     spf_fail, dmarc_fail = spf == "fail", dmarc == "fail"
     any_auth_failure = spf in {"fail", "softfail"} or dkim == "fail" or dmarc_fail
+    unauthenticated = spf != "pass" and dkim != "pass"
     protected_sender = _is_protected_domain(sender_domain, cfg)
+    internal_sender = bool(sender_domain) and sender_domain in _org_domains(cfg)
     high_urls = [u for u in url_analysis.urls if _sev(u.risk) >= SEVERITY_ORDER["high"]]
     medium_urls = [u for u in url_analysis.urls if _sev(u.risk) >= SEVERITY_ORDER["medium"]]
+    critical_urls = [u for u in url_analysis.urls if _sev(u.risk) >= SEVERITY_ORDER["critical"]]
     critical_atts = [a for a in att_analysis.attachments if _sev(a.risk) >= SEVERITY_ORDER["critical"]]
+    phish_atts = _phishing_attachments(att_analysis)
+    harvest = _finding(findings, "credential_harvest_link")
+    lookalike_link = _finding(findings, "lookalike_domain_link")
 
     why: list[str] = []
+    for att in phish_atts[:1]:
+        why.append(f"Attachment '{att.filename}' is an HTML page with a login form: a credential-phishing page delivered as a file")
+    for url in critical_urls[:1]:
+        why.append(f"Critical link {_describe_url(url)}")
+    if harvest is not None:
+        why.append(f"Link flagged as a credential-harvest page: {harvest.detail}")
+    if why:
+        return ThreatCategory.PHISHING, why
+
+    why = []
     credential_dominant = cred_conf >= 0.5 and cred_conf >= max(payment_conf, invoice_conf)
     if payment_conf >= 0.5 and not credential_dominant:
         why.append(
@@ -391,10 +453,25 @@ def rule_classify(
             f"Fake-invoice BEC pattern (confidence {invoice_conf:.2f}): "
             f"{_quote(invoice_ev) or 'invoice/payment demand with pressure'}"
         )
+    if extortion_conf >= 0.5:
+        why.append(f"Money is demanded under threat (extortion, confidence {extortion_conf:.2f}): {_quote(extortion_ev)}")
+    if invest_conf >= 0.5:
+        why.append(f"Investment-scam lure (confidence {invest_conf:.2f}): {_quote(invest_ev)}")
+    if callback_conf >= 0.5:
+        why.append(f"Tech-support / call-back scam (confidence {callback_conf:.2f}): {_quote(callback_ev)}")
     pressure = _pressure_cues(parsed, header_analysis, nlp_analysis, sender_domain, sender_free)
-    if len(fin_terms) >= 2 and pressure and risk_score >= 40 and not credential_dominant:
+    pushes = [cue for cue in pressure if not cue.startswith("free-mail")]
+    pushes += sorted(set(nlp_analysis.social_engineering_cues) & {"reward", "secrecy", "fear", "scarcity"})
+    if nlp_analysis.urgency_score >= 0.25 and not any(cue.startswith("urgency") for cue in pushes):
+        pushes.append(f"urgency score {nlp_analysis.urgency_score:.2f}")
+    if handles and not internal_sender and pushes:
+        why.append(
+            f"The message names where to send money ({_quote(handles, 2)}) and pushes with {'; '.join(pushes)}, "
+            f"from {'a free-mail' if sender_free else 'an unverified' if unauthenticated else 'an external'} sender"
+        )
+    if len(fin_terms) >= 2 and pressure and risk_score >= 40 and not credential_dominant and not high_urls:
         why.append(f"Financial lure {_quote(fin_terms)} combined with {'; '.join(pressure)} at risk {risk_score}/100")
-    if ml_cat == ThreatCategory.FRAUD and ml_p >= 0.6 and fin_terms and cred_conf < 0.5:
+    if ml_cat == ThreatCategory.FRAUD and ml_p >= 0.6 and fin_terms and cred_conf < 0.5 and not high_urls:
         why.append(f"ML classifier rates Fraud-Related at p={ml_p:.2f} and the text carries financial terms {_quote(fin_terms)}")
     if exec_conf >= 0.5 and fin_terms:
         why.append(
@@ -412,12 +489,9 @@ def rule_classify(
         )
     if high_urls and cred_terms:
         why.append(f"High-risk link {_describe_url(high_urls[0])} alongside credential terms {_quote(cred_terms)}")
-    harvest = _finding(findings, "credential_harvest_link")
-    if harvest is not None:
-        why.append(f"Link flagged as a credential-harvest page: {harvest.detail}")
-    lookalike_link = _finding(findings, "lookalike_domain_link")
-    if lookalike_link is not None and cred_terms:
-        why.append(f"Lookalike-domain link ({lookalike_link.detail}) combined with credential terms {_quote(cred_terms)}")
+    if lookalike_link is not None and (cred_terms or fin_terms or handles):
+        asks = cred_terms or fin_terms or handles
+        why.append(f"Lookalike-domain link ({lookalike_link.detail}) combined with a request for {_quote(asks)}")
     if ml_cat == ThreatCategory.PHISHING and ml_p >= 0.6 and medium_urls:
         why.append(f"ML classifier rates Phishing at p={ml_p:.2f} and the message links to {_describe_url(medium_urls[0])}")
     if critical_atts and cred_terms:
@@ -428,7 +502,7 @@ def rule_classify(
         return ThreatCategory.PHISHING, why
 
     why = []
-    if header_analysis.display_name_spoof:
+    if header_analysis.display_name_spoof and not brand_variant:
         name = parsed.sender.display_name or parsed.sender.raw or "(empty)"
         brand = header_analysis.display_name_brand or "a trusted identity"
         why.append(f"Display name '{_short(name, 60)}' imitates {brand} while the sender domain is {sender_domain or 'unknown'}")
@@ -438,6 +512,8 @@ def rule_classify(
             f"{_quote(exec_ev) or 'first-touch request from an executive persona'}"
         )
     for d in _lookalike_sender_domains(domain_intel):
+        if brand_variant and d.role == "sender":
+            continue
         why.append(f"{_role_label(d.role)} domain {d.domain} is a {d.lookalike_technique or 'lookalike'} imitation of {d.lookalike_of}")
     if (spf_fail or dmarc_fail) and protected_sender:
         failed = " and ".join(name for name, flag in (("SPF", spf_fail), ("DMARC", dmarc_fail)) if flag)
@@ -449,6 +525,8 @@ def rule_classify(
         return ThreatCategory.IMPERSONATED, why
 
     why = []
+    if violent_conf >= 0.5:
+        why.append(f"Violent threat or stalking language without a money demand (confidence {violent_conf:.2f}): {_quote(violent_ev)}")
     if risk_score >= 25:
         why.append(f"Weighted risk score {risk_score}/100 is at or above the suspicious threshold of 25")
     severe = [f for f in findings if _sev(f.severity) >= SEVERITY_ORDER["high"]]
@@ -660,6 +738,23 @@ def recommended_actions(
 
     block_scope = sender if (_is_freemail(sender_domain) or not sender_domain) else f"{sender} and the domain {sender_domain}"
     block = f"Block {block_scope} at the mail gateway and purge copies of this message from user mailboxes."
+    threatening = bool(finding_ids & {"violent_threat", "extortion_demand", "violent_threat_pattern"})
+
+    if threatening:
+        actions.append(
+            "Do not pay, reply or negotiate. This is criminal intimidation / extortion, not spam: preserve the original "
+            "message with its headers and report it to the police through the cybercrime helpline 1930 or "
+            "cybercrime.gov.in; if the threat is immediate, call 112."
+        )
+        actions.append(
+            f"Ask the mailbox provider's abuse desk (abuse@{sender_domain or 'the sender domain'}) to preserve the account "
+            f"and login records for {sender}; only the provider can identify who was behind the webmail session."
+        )
+    if "payment_handle" in finding_ids and category in _ATTACK_CATEGORIES:
+        actions.append(
+            "Report the payment handle named in the message (UPI ID, wallet or remittance reference) to the payment "
+            "provider and NPCI so the account can be frozen before further victims pay."
+        )
 
     if category == ThreatCategory.FRAUD:
         if finding_ids & {"bec_payment_diversion", "bec_fake_invoice"}:
@@ -667,7 +762,12 @@ def recommended_actions(
                 "Do not act on any payment or bank-detail instruction in this message: have Finance verify the change with the "
                 "counterparty on a previously known phone number, never by replying to this thread."
             )
-        else:
+        elif "callback_scam" in finding_ids:
+            actions.append(
+                "Do not call the number in the message or install any remote-access tool it asks for; genuine vendors never "
+                "raise support cases by unsolicited email."
+            )
+        elif not threatening:
             actions.append("Treat every request for money, fees or personal identifiers in this message as fraudulent; do not respond, pay or share documents.")
         actions.append(block)
     elif category == ThreatCategory.PHISHING:
@@ -684,6 +784,8 @@ def recommended_actions(
         actions.append(block)
         if header_analysis.display_name_spoof and parsed.sender.display_name:
             actions.append(f"Add a gateway rule that flags external mail using the display name '{_short(parsed.sender.display_name, 60)}'.")
+    elif threatening:
+        actions.append(block)
     else:
         actions.append("Quarantine the message pending analyst review; do not open attachments or follow links until the sender is verified.")
         actions.append(f"Verify the sender ({sender}) through a known contact channel before responding.")
@@ -708,7 +810,7 @@ def recommended_actions(
     if iocs:
         actions.append(f"Add these IOCs to the mail gateway / SIEM blocklists: {'; '.join(iocs)}.")
 
-    if category == ThreatCategory.SUSPICIOUS:
+    if category == ThreatCategory.SUSPICIOUS and not threatening:
         watch = sender + (f" and origin IP {origin_ip}" if origin_ip else "")
         actions.append(f"Monitor for further messages from {watch}; escalate if the pattern repeats.")
     else:
@@ -719,6 +821,19 @@ def recommended_actions(
     subject = _short(parsed.subject, 60) or "(no subject)"
     actions.append(f"Circulate a short user-awareness note describing this lure (subject: '{subject}') so recipients recognise similar messages.")
     return _unique(actions)[:10]
+
+
+def _soften_brand_variant(findings: list[Finding], header_analysis: HeaderAnalysis, brand: str) -> None:
+    note = (
+        f" The domain authenticates with SPF, DKIM and DMARC and every link points to {brand}'s genuine sites, so this "
+        f"looks like an alternate domain owned by {brand} rather than an imitation; treat it as informational."
+    )
+    for finding in findings:
+        if (finding.module, finding.id) in {("domains", "lookalike_domain"), ("headers", "display_name_spoof")}:
+            finding.severity = Severity.LOW
+            finding.detail = finding.detail.rstrip() + note
+    header_analysis.display_name_spoof = False
+    findings.sort(key=lambda f: (-_sev(f.severity), f.module, f.id))
 
 
 def collect_findings(*finding_lists: Iterable[Finding] | None) -> list[Finding]:
@@ -801,13 +916,21 @@ def evaluate(
         intel.findings,
     )
     sender_domain = _registrable(parsed.sender.domain)
+    brand_variant = brand_owned_variant(parsed, header_analysis, url_analysis, att_analysis, nlp_analysis, domain_intel)
+    if brand_variant:
+        _soften_brand_variant(findings, header_analysis, brand_variant)
     url_model, url_model_finding = _score_urls_with_model(url_analysis, domain_intel, cfg)
     breakdown = component_scores(
         header_analysis, url_analysis, att_analysis, nlp_analysis, domain_intel, infra, intel, cfg,
-        sender_domain=sender_domain, url_model=url_model,
+        sender_domain=sender_domain, url_model=url_model, brand_variant=brand_variant,
     )
     raw_risk = weighted_risk(breakdown)
     rationale: list[str] = [_breakdown_line(breakdown, raw_risk)]
+    if brand_variant:
+        rationale.append(
+            f"Sender domain {sender_domain} is a TLD variant of {brand_variant} that authenticates (SPF, DKIM, DMARC) and "
+            f"links only to {brand_variant}'s genuine sites, so it is treated as a brand-owned alternate domain, not an imitation."
+        )
     if url_model is not None:
         rule_only = _deterministic_url_score(url_analysis, domain_intel)
         rationale.append(
@@ -817,7 +940,8 @@ def evaluate(
         )
 
     rule_cat, rule_lines = rule_classify(
-        parsed, header_analysis, url_analysis, att_analysis, nlp_analysis, domain_intel, findings, raw_risk, cfg
+        parsed, header_analysis, url_analysis, att_analysis, nlp_analysis, domain_intel, findings, raw_risk, cfg,
+        brand_variant=brand_variant,
     )
     rationale.extend(rule_lines)
 
@@ -861,6 +985,9 @@ def evaluate(
             f"Risk score {risk}/100 is too high for a Legitimate verdict (ceiling {LEGITIMATE_RISK_CEILING}); category raised to Suspicious."
         )
     floor = RISK_FLOORS.get(category, 0)
+    violent_conf, _ = _bec_confidence(nlp_analysis, "violent_threat")
+    if violent_conf >= 0.5 and category != ThreatCategory.LEGITIMATE:
+        floor = max(floor, VIOLENT_THREAT_RISK_FLOOR)
     if risk < floor:
         rationale.append(f"Risk score raised from {risk} to the {category.value} floor of {floor}.")
         scoring_findings.append(

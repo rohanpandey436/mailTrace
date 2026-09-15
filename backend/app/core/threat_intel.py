@@ -26,7 +26,7 @@ from ..schemas import (
     ThreatIntel,
     UrlAnalysis,
 )
-from .knowledge import COMMON_URL_HOSTS, FREEMAIL_DOMAINS
+from .knowledge import COMMON_URL_HOSTS, FREEMAIL_DOMAINS, shared_provider
 from .link_analyzer import registrable_domain
 from .parser import hamming_distance, tlsh_diff
 
@@ -78,7 +78,11 @@ def extract_indicators(
     infra: InfraAnalysis,
 ) -> list[str]:
     indicators: list[str] = []
-    if header_analysis.originating_ip:
+    geo = infra.origin_geo
+    shared_origin = bool(header_analysis.origin_shared_provider) or bool(
+        geo is not None and shared_provider(geo.reverse_dns)
+    )
+    if header_analysis.originating_ip and not shared_origin:
         indicators.append(f"ip:{header_analysis.originating_ip}")
     sender = (parsed.sender.address or "").lower()
     if sender:
@@ -101,8 +105,7 @@ def extract_indicators(
     subject = normalize_subject(parsed.subject)
     if len(subject) >= 12:
         indicators.append(f"subject:{subject}")
-    geo = infra.origin_geo
-    if geo is not None and geo.asn:
+    if geo is not None and geo.asn and not shared_origin:
         indicators.append(f"asn:{geo.asn.upper()}")
     if parsed.mailer:
         indicators.append(f"mailer:{parsed.mailer.lower()[:60]}")
