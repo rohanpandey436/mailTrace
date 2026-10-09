@@ -1,0 +1,21 @@
+{
+  "name": "mailtrace-gmail-addon",
+  "version": "1.0.0",
+  "private": true,
+  "description": "MailTrace for Gmail: the MailTrace forensic engine running inside your Google account as a Gmail add-on",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node tests/run_all.js",
+    "test:quick": "node tests/test_addon.js && node tests/test_models.js && node tests/test_pipeline.js",
+    "build": "node tools/bundle.js",
+    "deploy": "node tools/deploy.js",
+    "open": "clasp open-script",
+    "logs": "clasp logs"
+  },
+  "devDependencies": {
+    "@google/clasp": "^3.4.1"
+  }
+}

@@ -1,0 +1,46 @@
+name: Keep the live service awake
+
+on:
+  schedule:
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ping:
+    name: Query the live API so Supabase and Render see activity
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Wake the API (Render free instances sleep when idle)
+        run: |
+          for attempt in $(seq 1 6); do
+            if curl -fsS --max-time 120 https://mailtrace-t9vo.onrender.com/api/health -o health.json; then
+              echo "awake after attempt ${attempt}"
+              cat health.json
+              break
+            fi
+            echo "attempt ${attempt} failed; waiting for the cold start"
+            sleep 30
+          done
+          test -s health.json
+
+      - name: Run a request that reads the Postgres database
+        run: |
+          curl -fsS --max-time 120 https://mailtrace-t9vo.onrender.com/api/stats -o stats.json
+          python3 -c "
+          import json
+          stats = json.load(open('stats.json'))
+          print(f\"{stats['total_emails']} cases visible through the database\")
+          "
+
+      - name: Confirm the API is backed by PostgreSQL
+        run: |
+          python3 -c "
+          import json
+          health = json.load(open('health.json'))
+          print('database:', health['database'])
+          assert health['database'] == 'postgresql', health
+          "
