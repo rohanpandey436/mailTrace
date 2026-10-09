@@ -76,10 +76,21 @@ export function emptyState(title, hint = "") {
   return html`<div class="card empty"><div class="empty__title">${title}</div><div class="hint empty__hint">${hint}</div></div>`;
 }
 
+export function loadingState(count = 3, slow = false) {
+  return html`<${Fragment}>
+    ${skeleton(count)}
+    ${slow &&
+    html`<div class="hint loading-note">
+      <span class="spinner"></span>Still loading. The server may be waking up, which can take up to a minute on free hosting.
+    </div>`}
+  </>`;
+}
+
 export function errorState(message, onRetry) {
+  const offline = navigator.onLine === false;
   return html`<div class="card empty">
-    <div class="empty__title">Could not load this page</div>
+    <div class="empty__title">${offline ? "You are offline" : "Could not load this page"}</div>
     <div class="hint empty__hint">${message}</div>
-    ${onRetry && html`<button class="btn" type="button" onClick=${onRetry}>Try again</button>`}
+    ${onRetry && html`<button class="btn btn--primary" type="button" onClick=${onRetry}>Try again</button>`}
   </div>`;
 }

@@ -8,8 +8,27 @@ export class ApiError extends Error {
   }
 }
 
-export function errorMessage(error) {
-  return error instanceof Error ? error.message : String(error);
+const NETWORK_FAILURE = /Failed to fetch|NetworkError|Load failed|network error/i;
+export const UNREACHABLE_EVENT = "mailtrace:unreachable";
+
+function reportUnreachable() {
+  window.dispatchEvent(new Event(UNREACHABLE_EVENT));
+}
+
+export function friendlyError(error) {
+  if (!(error instanceof Error)) return "Something went wrong. Try again.";
+  if (error instanceof ApiError) {
+    if (error.status === 502 || error.status === 503 || error.status === 504) return "The server is waking up. Try again in a few seconds.";
+    if (error.status === 429) return "Too many requests at once. Wait a moment and try again.";
+    if (error.status >= 500) return "The server hit a problem. Try again in a moment.";
+    return error.message;
+  }
+  if (error.name === "TypeError" || NETWORK_FAILURE.test(error.message)) {
+    return navigator.onLine === false
+      ? "You are offline. Check your internet connection and try again."
+      : "Can't reach the server. Check your internet connection and try again.";
+  }
+  return error.message;
 }
 
 function withMask(path) {
@@ -28,7 +47,14 @@ function listParams(query) {
 }
 
 async function request(path, init) {
-  const response = await fetch(withMask(path), init);
+  let response;
+  try {
+    response = await fetch(withMask(path), init);
+  } catch (cause) {
+    reportUnreachable();
+    throw new ApiError(friendlyError(cause), 0);
+  }
+  if (response.status === 502 || response.status === 503 || response.status === 504) reportUnreachable();
   const text = await response.text();
   let data = null;
   try {
@@ -82,6 +108,10 @@ export const api = {
 
   recordDecision: (id, action) =>
     (request(`/api/emails/${encodeURIComponent(id)}/${action}`, { method: "POST" })),
+
+  getRetention: (id) => (request(`/api/emails/${encodeURIComponent(id)}/retention`)),
+
+  freezeEvidence: (id) => (request(`/api/emails/${encodeURIComponent(id)}/freeze`, { method: "POST" })),
 
   listCampaigns: () => (request("/api/campaigns")),
 

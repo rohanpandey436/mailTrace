@@ -1,10 +1,10 @@
-import { api, errorMessage } from "../api.js";
+import { api, friendlyError } from "../api.js";
 import { formatDate } from "../format.js";
 import { useAsync } from "../hooks.js";
 import { subscribeToAlerts } from "../live-feed.js";
 import { Fragment, html, useEffect, useState } from "../react.js";
 import { unreadAlerts } from "../state.js";
-import { categoryChip, chip, emptyState, errorState, pageHead, riskBar, skeleton } from "../ui/primitives.js";
+import { categoryChip, chip, emptyState, errorState, loadingState, pageHead, riskBar } from "../ui/primitives.js";
 import { toast } from "../ui/toast.js";
 
 const LIST_LIMIT = 100;
@@ -26,7 +26,7 @@ function AlertRow({ alert, onAcknowledged }) {
       void refreshUnreadCount();
     } catch (error) {
       setBusy(false);
-      toast(html`Could not update: ${errorMessage(error)}`, "error");
+      toast(html`Could not update: ${friendlyError(error)}`, "error");
     }
   }
   return html`<div class="card card--tight alert-row">
@@ -40,12 +40,12 @@ function AlertRow({ alert, onAcknowledged }) {
     </div>
     ${alert.acknowledged
       ? chip("seen")
-      : html`<button class="btn" type="button" disabled=${busy} onClick=${() => void acknowledge()}>Mark as seen</button>`}
+      : html`<button class=${`btn${busy ? " is-busy" : ""}`} type="button" disabled=${busy} onClick=${() => void acknowledge()}>Mark as seen</button>`}
   </div>`;
 }
 
 export function AlertsView() {
-  const { data, error, loading, reload } = useAsync(() => api.listAlerts({ limit: LIST_LIMIT }), []);
+  const { data, error, loading, slow, reload } = useAsync(() => api.listAlerts({ limit: LIST_LIMIT }), []);
   const [live, setLive] = useState(([]));
   const [seen, setSeen] = useState((new Set()));
 
@@ -58,7 +58,7 @@ export function AlertsView() {
 
   const alerts = loading || !data ? [] : [...live, ...data];
   const body = () => {
-    if (loading || !data) return skeleton(3);
+    if (loading || !data) return loadingState(3, slow);
     if (alerts.length === 0) return emptyState("No alerts", "Anything scoring above the alert level will show up here straight away.");
     return alerts.map(
       (alert) => html`<${AlertRow}

@@ -1,4 +1,4 @@
-import { api, errorMessage } from "../api.js";
+import { api, friendlyError } from "../api.js";
 import { plural } from "../format.js";
 import { html, useEffect, useRef, useState } from "../react.js";
 import { navigate } from "../router.js";
@@ -41,7 +41,7 @@ export function Dropzone() {
       }
       navigate(`#/email/${encodeURIComponent(results[0].id)}`);
     } catch (error) {
-      toast(html`Could not check that: ${errorMessage(error)}`, "error");
+      toast(html`Could not check that: ${friendlyError(error)}`, "error");
     } finally {
       setBusy(false);
       setStatus("");
@@ -80,7 +80,7 @@ export function Dropzone() {
       }
       if (done > 0) navigate("#/cases");
     } catch (error) {
-      toast(html`Could not check those: ${errorMessage(error)}`, "error");
+      toast(html`Could not check those: ${friendlyError(error)}`, "error");
     } finally {
       setBusy(false);
       setStatus("");
@@ -149,7 +149,7 @@ export function Dropzone() {
       ></textarea>
       <div class="cluster cluster--end dropzone__actions">
         <button
-          class="btn btn--primary"
+          class=${`btn btn--primary${busy ? " is-busy" : ""}`}
           type="button"
           onClick=${() => {
             if (!pasted.trim()) {

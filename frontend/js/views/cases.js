@@ -5,7 +5,7 @@ import { CATEGORY } from "../labels.js";
 import { Fragment, html, useState } from "../react.js";
 import { session } from "../state.js";
 import { CasesTable } from "../ui/cases-table.js";
-import { emptyState, errorState, pageHead, skeleton } from "../ui/primitives.js";
+import { emptyState, errorState, loadingState, pageHead } from "../ui/primitives.js";
 
 const PAGE_SIZE = 25;
 
@@ -21,14 +21,14 @@ export function CasesView() {
   };
 
   const query = { q: filters.q, category: filters.category, minRisk: filters.minRisk };
-  const { data, error, loading, reload } = useAsync(
+  const { data, error, loading, slow, reload } = useAsync(
     () => api.listEmails({ ...query, limit: PAGE_SIZE, offset: filters.page * PAGE_SIZE }),
     [filters.q, filters.category, filters.minRisk, filters.page],
   );
 
   const results = () => {
     if (error) return errorState(error, reload);
-    if (loading || !data) return skeleton(3);
+    if (loading || !data) return loadingState(3, slow);
     if (data.items.length === 0) return emptyState("Nothing matches", "Try clearing the search box or lowering the risk filter.");
     const pages = Math.max(1, Math.ceil(data.total / PAGE_SIZE));
     return html`<${Fragment}>

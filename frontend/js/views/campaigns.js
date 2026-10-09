@@ -5,7 +5,7 @@ import { severityForScore } from "../labels.js";
 import { Fragment, html } from "../react.js";
 import { CasesTable } from "../ui/cases-table.js";
 import { GraphLegend, RelationshipGraph } from "../ui/graph.js";
-import { categoryChip, chip, emptyState, errorState, pageHead, riskBar, section, skeleton } from "../ui/primitives.js";
+import { categoryChip, chip, emptyState, errorState, loadingState, pageHead, riskBar, section } from "../ui/primitives.js";
 
 function CampaignCard({ campaign }) {
   return html`<a class="card card--pad card--link campaign-card" href=${`#/campaigns/${encodeURIComponent(campaign.id)}`}>
@@ -20,10 +20,10 @@ function CampaignCard({ campaign }) {
 }
 
 export function CampaignsView() {
-  const { data, error, loading, reload } = useAsync(() => api.listCampaigns(), []);
+  const { data, error, loading, slow, reload } = useAsync(() => api.listCampaigns(), []);
   const body = () => {
     if (error) return errorState(error, reload);
-    if (loading || !data) return skeleton(2);
+    if (loading || !data) return loadingState(2, slow);
     if (data.length === 0) {
       return emptyState(
         "No linked attacks yet",
@@ -42,9 +42,9 @@ export function CampaignsView() {
 }
 
 export function CampaignView({ campaignId }) {
-  const { data, error, loading, reload } = useAsync(() => api.getCampaign(campaignId), [campaignId]);
+  const { data, error, loading, slow, reload } = useAsync(() => api.getCampaign(campaignId), [campaignId]);
   if (error) return errorState(error, reload);
-  if (loading || !data) return skeleton(3);
+  if (loading || !data) return loadingState(3, slow);
 
   const { campaign, emails, graph } = data;
   return html`<${Fragment}>

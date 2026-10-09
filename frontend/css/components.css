@@ -116,15 +116,67 @@
   cursor: not-allowed;
 }
 
+.btn:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}
+
 .btn--primary {
   background: var(--color-brand);
   border-color: var(--color-brand);
   color: var(--color-on-brand);
+  transition: background var(--duration), border-color var(--duration), transform var(--duration), box-shadow var(--duration);
 }
 
 .btn--primary:hover {
   background: var(--color-brand-strong);
   border-color: var(--color-brand-strong);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+.btn--primary:active {
+  transform: translateY(0) scale(0.98);
+  box-shadow: var(--shadow-sm);
+}
+
+.btn.is-busy {
+  position: relative;
+  color: transparent;
+  pointer-events: none;
+}
+
+.btn.is-busy::after,
+.spinner {
+  width: 1rem;
+  height: 1rem;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--color-ink) 25%, transparent);
+  border-top-color: var(--color-ink);
+  animation: spin 0.7s linear infinite;
+}
+
+.btn.is-busy::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  margin: auto;
+}
+
+.btn--primary.is-busy::after {
+  border-color: color-mix(in srgb, var(--color-on-brand) 40%, transparent);
+  border-top-color: var(--color-on-brand);
+}
+
+.spinner {
+  display: inline-block;
+  flex: none;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .btn--block {
@@ -984,4 +1036,158 @@
   box-shadow: var(--shadow-md);
   font-size: 0.76rem;
   pointer-events: none;
+}
+
+.banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0.6rem var(--space-4);
+  border-bottom: 1px solid var(--color-line);
+  font-size: var(--text-sm);
+  animation: rise-in 0.2s ease-out;
+}
+
+.banner--warn {
+  background: var(--color-note-warn-bg);
+  border-color: var(--color-note-warn-line);
+  color: var(--color-note-warn-ink);
+}
+
+.banner--bad {
+  background: var(--color-bad-soft);
+  border-color: color-mix(in srgb, var(--color-bad) 30%, var(--color-card));
+  color: color-mix(in srgb, var(--color-bad) 85%, var(--color-ink));
+}
+
+.status-dot.is-pulsing {
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.view__content {
+  animation: rise-in 0.18s ease-out;
+}
+
+.loading-note {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: var(--space-2);
+  animation: rise-in 0.2s ease-out;
+}
+
+.boot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  min-height: 100vh;
+  color: var(--color-muted);
+}
+
+.boot__card {
+  position: relative;
+  width: 7rem;
+  height: 4.75rem;
+  overflow: hidden;
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-lg);
+  background: var(--color-card);
+  box-shadow: var(--shadow-md);
+}
+
+.boot__card::before {
+  content: "";
+  position: absolute;
+  inset: 0.9rem 1rem auto;
+  height: 0.375rem;
+  border-radius: 3px;
+  background: var(--color-line-soft);
+  box-shadow: 0 0.875rem 0 var(--color-line-soft), 0 1.75rem 0 var(--color-line-soft);
+}
+
+.boot__scan {
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 2px;
+  background: var(--color-brand);
+  box-shadow: 0 0 10px var(--color-brand);
+  animation: scan 1.6s ease-in-out infinite;
+}
+
+.boot__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-ink);
+  font-weight: 600;
+}
+
+.boot__hint {
+  max-width: 22rem;
+  text-align: center;
+  font-size: var(--text-xs);
+  opacity: 0;
+  animation: appear 0.3s ease-out 12s forwards;
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.35;
+    transform: scale(0.8);
+  }
+}
+
+@keyframes scan {
+  0%,
+  100% {
+    top: 0;
+  }
+
+  50% {
+    top: calc(100% - 2px);
+  }
+}
+
+@keyframes appear {
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn--primary:hover,
+  .btn--primary:active {
+    transform: none;
+  }
+
+  .view__content,
+  .banner,
+  .loading-note,
+  .status-dot.is-pulsing,
+  .boot__scan,
+  .skeleton,
+  .toast {
+    animation: none;
+  }
 }
