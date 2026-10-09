@@ -27,6 +27,7 @@ _CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]")
 _MAX_DEPTH = 40
 _MAX_PARTS = 500
 _OCTET_STREAM = "application/octet-stream"
+_MIME_TYPES = mimetypes.MimeTypes()
 
 def _lenient[T](call: Callable[[], T], default: T) -> T:
     try:
@@ -104,6 +105,13 @@ def _trim_last_message(msg: Message) -> None:
             break
         target = payload[0]
     if target.get_content_maintype() == "multipart":
+        epilogue = target.epilogue
+        if epilogue == "":
+            target.epilogue = None
+        elif isinstance(epilogue, str) and epilogue.endswith("\r\n"):
+            target.epilogue = epilogue[:-2]
+        elif isinstance(epilogue, str) and epilogue[-1] in "\r\n":
+            target.epilogue = epilogue[:-1]
         return
     payload = vars(target)["_payload"]
     if not isinstance(payload, str) or not payload:
@@ -243,6 +251,17 @@ _SELF_CHECK_FIXTURES: tuple[tuple[bytes, bool], ...] = (
     ),
     (b"Content-Type: multipart/mixed; boundary=MISSING\r\n\r\nno boundary ever appears\r\n", False),
     (b"From someone Mon Jan  1 00:00:00 2020\r\nSubject: mbox\r\n\r\nbody\r\n", False),
+    (
+        b"Content-Type: multipart/mixed; boundary=OUTER\r\n\r\n--OUTER\r\nContent-Type: message/rfc822\r\n\r\n"
+        b"Content-Type: multipart/alternative; boundary=INNER\r\n\r\npre\r\n--INNER\r\n\r\none\r\n--INNER\r\n\r\ntwo\r\n"
+        b"--INNER--\r\nepi\r\n--OUTER--\r\n",
+        True,
+    ),
+    (
+        b"Content-Type: multipart/mixed; boundary=OUTER\r\n\r\n--OUTER\r\nContent-Type: message/rfc822\r\n\r\n"
+        b"Content-Type: multipart/alternative; boundary=INNER\r\n\r\n--INNER\r\n\r\none\r\n--INNER--\r\n--OUTER--\r\n",
+        True,
+    ),
     (b"Content-Type: message/delivery-status\r\n\r\nStatus: 5.0.0\r\n", False),
 )
 
@@ -336,7 +355,7 @@ def decode_header_value(value: object) -> str:
                 try:
                     decoded = chunk.decode(encoding, errors="replace")
                     break
-                except (LookupError, UnicodeError):
+                except (LookupError, ValueError):
                     continue
             out.append(decoded or chunk.decode("latin-1", errors="replace"))
         else:
@@ -395,11 +414,11 @@ def _parse_date(value: str) -> datetime | None:
         return None
     try:
         parsed = parsedate_to_datetime(value)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=UTC)
+        return parsed.astimezone(UTC)
     except (TypeError, ValueError, IndexError, OverflowError):
         return None
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=UTC)
-    return parsed.astimezone(UTC)
 
 
 _BLOCK_TAGS = {
@@ -536,11 +555,11 @@ def _decode_text(part: Message, issues: list[str], label: str) -> str:
             continue
         try:
             return data.decode(encoding, errors="strict").replace("\r\n", "\n")
-        except (LookupError, UnicodeError):
+        except (LookupError, ValueError):
             continue
     try:
         text = data.decode(charset or "cp1252", errors="replace")
-    except LookupError:
+    except (LookupError, ValueError):
         text = data.decode("cp1252", errors="replace")
     issues.append(f"{label} part could not be decoded cleanly (declared charset {charset or 'none'})")
     return text.replace("\r\n", "\n")
@@ -719,7 +738,7 @@ def parse_email(raw: bytes) -> tuple[ParsedEmail, list[RawAttachment]]:
         content_id = _header(part, "Content-ID").strip().strip("<>").strip()
         is_inline = disposition.strip().startswith("inline") or (bool(content_id) and ctype.startswith("image/"))
         if not filename:
-            guessed = mimetypes.guess_extension(ctype) or ""
+            guessed = _MIME_TYPES.guess_extension(ctype) or ""
             filename = f"part-{counter}{guessed or '.bin'}"
         raw_attachments.append(RawAttachment(filename, ctype, data, content_id=content_id, is_inline=is_inline))
 

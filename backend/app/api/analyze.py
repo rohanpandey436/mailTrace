@@ -10,7 +10,7 @@ from fastapi.responses import Response
 
 from .. import tasks
 from ..config import Settings
-from ..core import decisions, explanations, pipeline
+from ..core import decisions, explanations, pipeline, retention
 from ..core.errors import NotFound
 from ..database.case_manager import Store
 from ..schemas import (
@@ -25,6 +25,7 @@ from ..schemas import (
     JobStatus,
     LimeReport,
     RawSubmission,
+    Retention,
     SourceType,
     ThreatCategory,
 )
@@ -79,15 +80,25 @@ def _check_job_id(job_id: str) -> None:
         raise HTTPException(status_code=422, detail=f"'{job_id[:64]}' is not a job id")
 
 
+_LISTED_FOREVER = retention.Plan()
+
+
 def _process(
-    raw: bytes, filename: str, actor: str, mask: bool, store: Store, settings: Settings
-) -> tuple[AnalysisResult, Alert | None]:
-    result = pipeline.analyze_bytes(raw, filename, store, settings, actor)
-    alert = maybe_alert(result, store, settings)
+    raw: bytes,
+    filename: str,
+    actor: str,
+    mask: bool,
+    store: Store,
+    settings: Settings,
+    plan: retention.Plan = _LISTED_FOREVER,
+) -> tuple[AnalysisResult, Alert | None, Retention | None]:
+    result = pipeline.analyze_bytes(raw, filename, store, settings, actor, plan.listed)
+    alert = maybe_alert(result, store, settings) if plan.listed else None
+    kept = retention.apply(store, result, plan, actor)
     if mask:
         result = mask_result(result)
         alert = mask_alert(alert) if alert is not None else None
-    return result, alert
+    return result, alert, kept
 
 
 class CaseFilters:
@@ -140,7 +151,7 @@ async def analyze_upload(
 
     response = AnalyzeResponse(results=[])
     for filename, raw in payloads:
-        result, alert = await run_in_threadpool(_process, raw, filename, actor, mask, store, settings)
+        result, alert, _ = await run_in_threadpool(_process, raw, filename, actor, mask, store, settings)
         response.results.append(result)
         if alert is not None:
             response.alerts.append(alert)
@@ -158,8 +169,16 @@ async def analyze_raw(
     filename = _clean_filename(submission.filename, "pasted.eml")
     raw = submission.raw.encode("utf-8", errors="surrogateescape")
     _check_size(len(raw), filename, settings)
-    result, alert = await run_in_threadpool(_process, raw, filename, actor, mask, store, settings)
-    return AnalyzeResponse(results=[result], alerts=[alert] if alert is not None else [])
+    try:
+        plan = retention.plan(submission.origin, submission.listed, submission.retention_hours, settings)
+    except retention.RetentionLimit as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    result, alert, kept = await run_in_threadpool(_process, raw, filename, actor, mask, store, settings, plan)
+    return AnalyzeResponse(
+        results=[result],
+        alerts=[alert] if alert is not None else [],
+        retention=[kept] if kept is not None else [],
+    )
 
 
 @router.post("/analyze/async", status_code=202)
@@ -268,8 +287,19 @@ def get_email(email_id: str, store: StoreDep, settings: SettingsDep, mask: MaskD
     return result
 
 
+@router.get("/emails/{email_id}/retention")
+def get_retention(email_id: str, store: StoreDep) -> Retention:
+    return retention.current(store, email_id)
+
+
+@router.post("/emails/{email_id}/freeze")
+def freeze_email(email_id: str, store: StoreDep, actor: ActorParam = DEFAULT_ACTOR) -> Retention:
+    return retention.freeze(store, email_id, actor)
+
+
 @router.get("/emails/{email_id}/raw")
 def get_raw(email_id: str, store: StoreDep, settings: SettingsDep) -> Response:
+    retention.ensure_available(store, email_id)
     raw = store.get_raw(email_id)
     if raw is None:
         if settings.zero_persistence:

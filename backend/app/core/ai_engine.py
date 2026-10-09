@@ -241,7 +241,7 @@ _WORD_RE = re.compile(r"\S+")
 
 
 def _compile(lexicon: tuple[str, ...]) -> re.Pattern[str]:
-    phrases = sorted({p.lower() for p in lexicon}, key=len, reverse=True)
+    phrases = sorted({p.lower() for p in lexicon}, key=lambda phrase: (-len(phrase), phrase))
     alternatives = "|".join(re.escape(p).replace(r"\ ", " ").replace(" ", r"\s+") for p in phrases)
     return re.compile(rf"(?<![\w-])(?:{alternatives})(?![\w-])", re.IGNORECASE)
 

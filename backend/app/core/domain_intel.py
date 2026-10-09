@@ -7,19 +7,16 @@ import socket
 from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import httpx
 from pydantic import JsonValue
 
 from ..config import Settings
 from ..schemas import DomainIntel, Finding, HeaderAnalysis, ParsedEmail, Severity, UrlAnalysis
-from ..utils.cache import cache_get, cache_set
+from ..utils.cache import CacheBackend, cache_get, cache_set
 from .knowledge import COMMON_URL_HOSTS, DISPOSABLE_DOMAINS, FREEMAIL_DOMAINS, SUSPICIOUS_TLDS
 from .link_analyzer import is_lookalike, registrable_domain
-
-if TYPE_CHECKING:
-    from ..database.case_manager import Store
 
 log = logging.getLogger("mailtrace.domains")
 
@@ -137,7 +134,7 @@ def _whois_query(server: str, query: str, timeout: float) -> str:
     return b"".join(chunks).decode("utf-8", errors="replace")
 
 
-def _whois_server_for(domain: str, cfg: Settings, store: Store | None) -> str:
+def _whois_server_for(domain: str, cfg: Settings, store: CacheBackend | None) -> str:
     labels = domain.split(".")
     tld = labels[-1]
     if len(labels) >= 3 and ".".join(labels[-2:]) in _WHOIS_SERVERS:
@@ -159,7 +156,7 @@ def _whois_server_for(domain: str, cfg: Settings, store: Store | None) -> str:
     return server
 
 
-def whois_lookup(domain: str, cfg: Settings, store: Store | None) -> Mapping[str, object]:
+def whois_lookup(domain: str, cfg: Settings, store: CacheBackend | None) -> Mapping[str, object]:
     if not cfg.enable_network or not domain or _is_ip(domain):
         return {}
     cache_key = f"whois:{domain}"
@@ -199,7 +196,7 @@ def whois_lookup(domain: str, cfg: Settings, store: Store | None) -> Mapping[str
     return result
 
 
-def dns_lookup(domain: str, cfg: Settings, store: Store | None) -> Mapping[str, object]:
+def dns_lookup(domain: str, cfg: Settings, store: CacheBackend | None) -> Mapping[str, object]:
     if not cfg.enable_network or not domain or _is_ip(domain):
         return {}
     cache_key = f"dns:{domain}"
@@ -254,7 +251,7 @@ def dns_lookup(domain: str, cfg: Settings, store: Store | None) -> Mapping[str, 
     return result
 
 
-def domain_reputation(domain: str, cfg: Settings, store: Store | None) -> list[str]:
+def domain_reputation(domain: str, cfg: Settings, store: CacheBackend | None) -> list[str]:
     tags: list[str] = []
     if not domain:
         return tags
@@ -290,7 +287,7 @@ def _finding(fid: str, severity: Severity, title: str, detail: str, evidence: di
     return Finding(id=fid, module="domains", severity=severity, title=title, detail=detail, evidence=evidence)
 
 
-def analyze_domain(domain: str, role: str, cfg: Settings, store: Store | None) -> DomainIntel:
+def analyze_domain(domain: str, role: str, cfg: Settings, store: CacheBackend | None) -> DomainIntel:
     domain = (domain or "").strip().lower().rstrip(".")
     intel = DomainIntel(domain=domain, role=role or "")
     if not domain:
@@ -459,7 +456,7 @@ def collect_domains(
     return targets[:limit]
 
 
-def analyze_domains(targets: list[tuple[str, str]], cfg: Settings, store: Store | None) -> list[DomainIntel]:
+def analyze_domains(targets: list[tuple[str, str]], cfg: Settings, store: CacheBackend | None) -> list[DomainIntel]:
     if not targets:
         return []
 

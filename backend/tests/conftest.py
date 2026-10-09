@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -10,6 +11,12 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from app.config import Settings
+
+TEST_DATABASE_URL = os.environ.get("MAILTRACE_TEST_DATABASE_URL", "").strip()
+TABLES = (
+    "emails", "indicators", "indicator_digests", "campaigns", "campaign_members", "custody", "alerts",
+    "cache", "case_status", "evidence", "retention",
+)
 
 SAMPLES = ROOT.parent / "samples"
 SAMPLE_FILES = {
@@ -29,7 +36,19 @@ def make_settings(data_dir: Path) -> Settings:
         executives=["ceo", "cfo", "managing director", "sarthak srivastava"],
         enable_network=False,
         alert_threshold=70,
+        database_url=TEST_DATABASE_URL,
     )
+
+
+@pytest.fixture(autouse=True)
+def fresh_database():
+    if TEST_DATABASE_URL:
+        import psycopg
+
+        with psycopg.connect(TEST_DATABASE_URL, autocommit=True, prepare_threshold=None) as conn:
+            for table in TABLES:
+                conn.execute(f"DROP TABLE IF EXISTS {table}")
+    yield
 
 
 @pytest.fixture
@@ -43,7 +62,7 @@ def cfg(tmp_path: Path) -> Settings:
 def store(cfg: Settings):
     from app.database.case_manager import Store
 
-    handle = Store(cfg.db_path, cfg.evidence_dir)
+    handle = Store(cfg.db_path, cfg.evidence_dir, database_url=cfg.database_url)
     yield handle
     handle.close()
 
