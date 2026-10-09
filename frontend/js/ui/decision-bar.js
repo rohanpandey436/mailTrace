@@ -1,4 +1,4 @@
-import { api, errorMessage, urls } from "../api.js";
+import { api, friendlyError, urls } from "../api.js";
 import { formatDate, plural } from "../format.js";
 import { DECISION } from "../labels.js";
 import { html, useEffect, useState } from "../react.js";
@@ -47,7 +47,7 @@ export function DecisionBar({ emailId }) {
       setDecision(await api.recordDecision(emailId, action));
       toast("Decision saved to the evidence log. Nothing was sent to your mail system — pass the indicators to whoever enforces.");
     } catch (error) {
-      toast(html`Could not record that: ${errorMessage(error)}`, "error");
+      toast(html`Could not record that: ${friendlyError(error)}`, "error");
     } finally {
       setBusy(false);
     }

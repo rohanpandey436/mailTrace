@@ -27,6 +27,12 @@ answers the questions an incident responder actually asks:
   hash-linked chain of custody, and a self-contained forensic report (JSON, HTML
   or PDF) prepared with the electronic-evidence certificate (Section 65B of the
   Indian Evidence Act, inserted by the IT Act 2000) in mind.
+- **Can it live where the mail is?** A Gmail add-on runs the same rules and the
+  same models inside the user's Google account: every message gets a
+  `MailTrace/<Category>` label, the side panel shows the score and the reasons,
+  and nothing leaves the account unless the user turns on Connected mode or
+  clicks Investigate. See the Gmail add-on part of section 8 and
+  [`docs/gmail-addon.md`](docs/gmail-addon.md).
 
 It starts with a single `python run.py` inside `backend/` on Windows, macOS or
 Linux, needs no external database and no API key, and the **analysis engine** has
@@ -625,6 +631,25 @@ Verified in this pass: `python run.py` from `backend/` starts uvicorn,
 `GET /` serves the 77 KB dashboard and `POST /api/analyze` with a sample file
 returns a full `AnalysisResult`.
 
+### Gmail add-on in three steps
+
+The add-on in [`gmail-addon/`](gmail-addon/) needs Node.js 18 or newer and a
+Google account:
+
+```bash
+cd gmail-addon
+npm install
+npx clasp login
+npm run deploy
+```
+
+`npm run deploy` bundles the engine, creates the Apps Script project, pushes it
+and prints the one step left in the browser: Deploy > Test deployments >
+Install. Open any email in Gmail and the MailTrace panel shows its verdict;
+Private mode is on by default, so nothing is sent anywhere. Full details,
+permissions, limits and the parity evidence are in
+[`docs/gmail-addon.md`](docs/gmail-addon.md).
+
 ### Showing it on someone else's phone
 
 `127.0.0.1` only works on the machine running the server. To let a judge open the
@@ -668,6 +693,8 @@ follow the quick start.
 | ip-api.com geolocation, reverse DNS, Tor exit list, DNSBL | Live only with `MAILTRACE_ENABLE_NETWORK=true` (the default) |
 | WHOIS and DNS domain intelligence | Same |
 | SQLite store, custody ledger, campaigns, alerts, WebSocket + SSE | Always |
+| Gmail add-on | `gmail-addon/`: the engine ported to Apps Script, installed with `npm run deploy`. Private mode runs entirely inside the Google account; Connected mode and Investigate call `/api/intel/*` and `/api/analyze/raw` on this server |
+| Retention for Gmail cases | Cases with `origin: "gmail"` are unlisted and deleted 24 hours after analysis unless frozen (`POST /api/emails/{id}/freeze`); a sweeper task purges on schedule |
 
 ### Written but dormant
 
@@ -811,7 +838,11 @@ On Windows PowerShell use `curl.exe`; plain `curl` is an alias of `Invoke-WebReq
 | GET | `/` | - | the analyst UI (`frontend/`, served as static files) |
 | GET | `/api/health` | - | `{"status", "engine_version", "network", "pii_mask_default", "zero_persistence", "webhooks", "database", "native_engine", "native_engine_version", "native_engine_status"}` |
 | POST | `/api/analyze` | multipart `files` (one or more), query `actor`, `mask` | `{"results": [AnalysisResult], "alerts": [Alert]}` |
-| POST | `/api/analyze/raw` | JSON `{"raw", "filename"}`, query `actor`, `mask` | same shape with one result |
+| POST | `/api/analyze/raw` | JSON `{"raw", "filename", "origin", "listed", "retention_hours"}`, query `actor`, `mask`. `origin` is `dashboard` (default) or `gmail`; a `gmail` case is unlisted and expires after 24 hours unless the other two fields say otherwise | same shape with one result, plus `"retention": [Retention]` for a case that is unlisted or due for deletion |
+| GET | `/api/emails/{id}/retention` | - | `Retention`: origin, listed, state (`permanent`, `expiring`, `frozen`, `purged`), `expires_at`, `seconds_left`, `frozen_at`, `frozen_by` |
+| POST | `/api/emails/{id}/freeze` | `actor` | `Retention`; cancels the deletion and records an `evidence_frozen` custody event |
+| POST | `/api/intel/lookup` | JSON `{"domains": [{"domain", "role"}], "ips", "origin_ip"}` | `{"domains": [DomainIntel], "ips": [GeoInfo], "network", "stored": false}`; answered from a memory cache, never written to the case store. Used by the Gmail add-on's Connected mode |
+| POST | `/api/intel/match` | JSON `{"fingerprints": [sha256 hex], "simhash", "body_length"}` | `{"incidents": [{"risk_score", "category", "analyzed_at", "in_campaign", "shared", "fuzzy"}], "campaigns", "worst_risk", "stored": false}`; the digests are compared and discarded, and no subject or sender is returned |
 | GET | `/api/emails` | `q`, `category`, `min_risk`, `campaign_id`, `source_type`, `limit`, `offset`, `mask` (blank `category` / `source_type` = no filter) | `{"items": [CaseSummary], "total"}` |
 | GET | `/api/emails/{id}` | `mask` | `AnalysisResult`; records `viewed_unmasked` when overriding a masked default |
 | GET | `/api/emails/{id}/raw` | - | the original `.eml` as `text/plain` attachment; records `exported` |
@@ -892,6 +923,27 @@ run, comparing the C++ against `hashlib`, against the Python entropy function,
 node-for-node against `email.feedparser`, and for byte-identical `ParsedEmail`
 output on all five demo messages. See section 9 and
 [`engine/README.md`](engine/README.md).
+
+The Gmail add-on has its own suite. It needs Node.js 18 or newer and the
+backend's development requirements (the exporters import the Python engine):
+
+```bash
+cd gmail-addon
+pip install -r ../backend/requirements-dev.txt
+python tools/export_data.py        # data blobs + model vectors
+python tools/export_fixtures.py    # expected.json, 76 emails through the Python pipeline
+python tools/export_vectors.py     # ~100,000 vectors from CPython's email, html, urllib, codecs and more
+npm test
+```
+
+`npm test` runs ten test files: the Python-semantics helpers, the HTML parser,
+`binascii`, the `email` package port, MIME parsing, codecs (including the 24
+CJK codecs, decoding and encoding), URLs, both models, the full pipeline stage
+by stage, and the add-on itself behind mocked Apps Script services. The
+measured results on 2026-09-30 are tabulated in
+[`docs/gmail-addon.md`](docs/gmail-addon.md): every vector matches Python.
+`npm test -- --fuzz` also runs the 2,166 fuzzed messages through every
+pipeline stage.
 
 ## 15. Limitations and honest notes
 

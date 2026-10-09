@@ -106,6 +106,13 @@ class Settings:
     host: str = "127.0.0.1"
     port: int = 8000
     max_upload_bytes: int = 15 * 1024 * 1024
+    retention_default_hours: int = 24
+    retention_max_hours: int = 168
+    retention_sweep_seconds: int = 300
+    intel_max_domains: int = 12
+    intel_max_ips: int = 12
+    intel_max_fingerprints: int = 64
+    intel_cache_entries: int = 2048
     log_level: str = "info"
 
     @property
@@ -185,6 +192,13 @@ class Settings:
             host=_env("HOST", "0.0.0.0" if os.environ.get("PORT") else "127.0.0.1"),
             port=_env_int("PORT", int(os.environ.get("PORT", "8000") or 8000)),
             max_upload_bytes=_env_int("MAX_UPLOAD_BYTES", 15 * 1024 * 1024),
+            retention_default_hours=max(1, _env_int("RETENTION_DEFAULT_HOURS", 24)),
+            retention_max_hours=max(1, _env_int("RETENTION_MAX_HOURS", 168)),
+            retention_sweep_seconds=max(5, _env_int("RETENTION_SWEEP_SECONDS", 300)),
+            intel_max_domains=max(1, _env_int("INTEL_MAX_DOMAINS", 12)),
+            intel_max_ips=max(1, _env_int("INTEL_MAX_IPS", 12)),
+            intel_max_fingerprints=max(1, _env_int("INTEL_MAX_FINGERPRINTS", 64)),
+            intel_cache_entries=max(16, _env_int("INTEL_CACHE_ENTRIES", 2048)),
             log_level=_env("LOG_LEVEL", "info"),
         )
 

@@ -10,18 +10,15 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import httpx
 from pydantic import ValidationError
 
 from ..config import Settings
 from ..schemas import Finding, GeoInfo, HeaderAnalysis, Hop, InfraAnalysis, Severity
-from ..utils.cache import cache_get, cache_set
+from ..utils.cache import CacheBackend, cache_get, cache_set
 from .knowledge import DNSBL_ZONES
-
-if TYPE_CHECKING:
-    from ..database.case_manager import Store
 
 log = logging.getLogger("mailtrace.geoip")
 
@@ -379,7 +376,7 @@ def maxmind_lookup(ip: str, cfg: Settings) -> GeoInfo | None:
     return geo
 
 
-def geolocate(ip: str, cfg: Settings, store: Store | None) -> GeoInfo:
+def geolocate(ip: str, cfg: Settings, store: CacheBackend | None) -> GeoInfo:
     normalized = _normalize_ip(ip)
     if not normalized:
         return GeoInfo(ip=_text(ip), source="unavailable")
@@ -437,7 +434,7 @@ def _download_tor_exit_list(cfg: Settings) -> set[str]:
     return exits
 
 
-def tor_exit_ips(cfg: Settings, store: Store | None) -> set[str]:
+def tor_exit_ips(cfg: Settings, store: CacheBackend | None) -> set[str]:
     global _tor_memo
     if not cfg.enable_network:
         return set()
@@ -465,7 +462,7 @@ def _dnsbl_hit(answer_text: str) -> bool:
     return addr is not None and addr in _DNSBL_ANSWER_SPACE and addr not in _DNSBL_ERROR_SPACE
 
 
-def dnsbl_check(ip: str, cfg: Settings, store: Store | None) -> list[str]:
+def dnsbl_check(ip: str, cfg: Settings, store: CacheBackend | None) -> list[str]:
     ip = _normalize_ip(ip)
     if not ip or ":" in ip or not is_public_ip(ip) or not cfg.enable_network or not DNSBL_ZONES:
         return []
@@ -503,7 +500,7 @@ def dnsbl_check(ip: str, cfg: Settings, store: Store | None) -> list[str]:
     return listed
 
 
-def abuseipdb_check(ip: str, cfg: Settings, store: Store | None) -> int | None:
+def abuseipdb_check(ip: str, cfg: Settings, store: CacheBackend | None) -> int | None:
     ip = _normalize_ip(ip)
     if not ip or not cfg.abuseipdb_key or not cfg.enable_network or not is_public_ip(ip):
         return None
@@ -528,7 +525,7 @@ def abuseipdb_check(ip: str, cfg: Settings, store: Store | None) -> int | None:
     return score
 
 
-def _cached_reverse_dns(ip: str, cfg: Settings, store: Store | None) -> str:
+def _cached_reverse_dns(ip: str, cfg: Settings, store: CacheBackend | None) -> str:
     key = f"rdns:{ip}"
     cached = cache_get(store, key)
     if isinstance(cached, str):
@@ -541,7 +538,7 @@ def _cached_reverse_dns(ip: str, cfg: Settings, store: Store | None) -> str:
     return host
 
 
-def enrich_ip(ip: str, cfg: Settings, store: Store | None, full: bool) -> GeoInfo:
+def enrich_ip(ip: str, cfg: Settings, store: CacheBackend | None, full: bool) -> GeoInfo:
     geo = geolocate(ip, cfg, store)
     if geo.is_private or not is_public_ip(geo.ip):
         return geo
@@ -554,6 +551,19 @@ def enrich_ip(ip: str, cfg: Settings, store: Store | None, full: bool) -> GeoInf
     return geo
 
 
+def enrich_addresses(
+    addresses: list[str], origin: str, cfg: Settings, store: CacheBackend | None
+) -> list[GeoInfo]:
+    origin_ip = _normalize_ip(origin)
+    ordered: list[str] = []
+    for candidate in [origin_ip, *addresses]:
+        ip = _normalize_ip(candidate)
+        if ip and is_public_ip(ip) and ip not in ordered:
+            ordered.append(ip)
+    enriched = _enrich_many(ordered[: max(0, cfg.max_geo_lookups)], origin_ip, cfg, store)
+    return [enriched[ip] for ip in ordered if ip in enriched]
+
+
 def _public_ips_in_order(header_analysis: HeaderAnalysis, origin: str) -> list[str]:
     candidates = [origin, *(hop.from_ip for hop in header_analysis.hops), header_analysis.x_originating_ip]
     ordered: list[str] = []
@@ -564,7 +574,7 @@ def _public_ips_in_order(header_analysis: HeaderAnalysis, origin: str) -> list[s
     return ordered
 
 
-def _enrich_many(targets: list[str], origin: str, cfg: Settings, store: Store | None) -> dict[str, GeoInfo]:
+def _enrich_many(targets: list[str], origin: str, cfg: Settings, store: CacheBackend | None) -> dict[str, GeoInfo]:
     if not targets:
         return {}
     results: dict[str, GeoInfo] = {}
@@ -798,7 +808,7 @@ def _trail_finding(hops: list[Hop]) -> Finding | None:
     )
 
 
-def analyze_infrastructure(header_analysis: HeaderAnalysis, cfg: Settings, store: Store | None) -> InfraAnalysis:
+def analyze_infrastructure(header_analysis: HeaderAnalysis, cfg: Settings, store: CacheBackend | None) -> InfraAnalysis:
     hops = header_analysis.hops
     origin = _normalize_ip(header_analysis.originating_ip)
     public_ips = _public_ips_in_order(header_analysis, origin)

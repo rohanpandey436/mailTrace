@@ -6,7 +6,8 @@ import { Fragment, html, useState } from "../../react.js";
 import { preferences, session, setPreference } from "../../state.js";
 import { DecisionBar } from "../../ui/decision-bar.js";
 import { GraphLegend, RelationshipGraph } from "../../ui/graph.js";
-import { categoryChip, check, chip, errorState, gauge, section, skeleton } from "../../ui/primitives.js";
+import { RetentionBar } from "../../ui/retention-bar.js";
+import { categoryChip, check, chip, errorState, gauge, loadingState, section } from "../../ui/primitives.js";
 import { ContentTab } from "./content.js";
 import { CustodyTab } from "./custody.js";
 import { domainsTab } from "./domains.js";
@@ -117,7 +118,7 @@ function TabPanel({ result, tab }) {
 }
 
 export function EmailView({ emailId }) {
-  const { data: result, error, loading, reload } = useAsync(() => api.getEmail(emailId), [emailId]);
+  const { data: result, error, loading, slow, reload } = useAsync(() => api.getEmail(emailId), [emailId]);
   const [advanced, setAdvanced] = useState(preferences.advanced);
   const [tab, setTab] = useState(() => (isAdvanced(session.emailTab) && !preferences.advanced ? DEFAULT_TAB : session.emailTab));
 
@@ -134,7 +135,7 @@ export function EmailView({ emailId }) {
   };
 
   if (error) return errorState(error, reload);
-  if (loading || !result) return skeleton(4);
+  if (loading || !result) return loadingState(4, slow);
 
   const { email } = result;
   const noHeaders = result.headers.hops.length === 0;
@@ -158,8 +159,6 @@ export function EmailView({ emailId }) {
         <div class="hint cluster cluster--loose">
           <span>
             From <b class="strong">${email.sender.display_name || "unnamed"}</b>
-            <!-- Built as one expression: htm renders template text verbatim, so an
-                 HTML entity here would appear on screen as "&lt;" rather than "<". -->
             <span class="mono">${`<${email.sender.address}>`}</span>
           </span>
           <span>Sent ${formatDate(email.date)}</span>
@@ -179,6 +178,7 @@ export function EmailView({ emailId }) {
         html`<a class="btn" href=${`#/campaigns/${encodeURIComponent(result.campaign_id)}`}>See linked attacks</a>`}
       </div>
     </div>
+    <${RetentionBar} emailId=${result.id} />
     <div class="section"><${DecisionBar} emailId=${result.id} /></div>
     ${noHeaders &&
     html`<div class="note note--warn section">

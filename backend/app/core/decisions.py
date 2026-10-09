@@ -4,6 +4,7 @@ from typing import Literal
 
 from ..database.case_manager import Store
 from ..schemas import AnalysisResult, CaseDecision, CaseStatus
+from . import retention
 from .errors import NotFound
 
 DecisionName = Literal["quarantine", "block"]
@@ -25,6 +26,7 @@ _INDICATOR_ALIASES: dict[str, str] = {
 
 
 def load_case(store: Store, email_id: str) -> AnalysisResult:
+    retention.ensure_available(store, email_id)
     result = store.get_analysis(email_id)
     if result is None:
         raise NotFound(f"email {email_id} not found")

@@ -3,7 +3,7 @@ import { useAsync } from "../hooks.js";
 import { categoryOf } from "../labels.js";
 import { Fragment, html } from "../react.js";
 import { CasesTable } from "../ui/cases-table.js";
-import { errorState, kpi, pageHead, section, skeleton } from "../ui/primitives.js";
+import { errorState, kpi, loadingState, pageHead, section, skeleton } from "../ui/primitives.js";
 import { Dropzone } from "../ui/upload.js";
 
 const RECENT_LIMIT = 8;
@@ -54,7 +54,7 @@ function Countries({ stats }) {
 }
 
 export function DashboardView() {
-  const { data, error, loading, reload } = useAsync(
+  const { data, error, loading, slow, reload } = useAsync(
     () => Promise.all([api.stats(), api.listEmails({ limit: RECENT_LIMIT })]),
     [],
   );
@@ -62,7 +62,7 @@ export function DashboardView() {
   const body = () => {
     if (error) return errorState(error, reload);
     if (loading || !data) {
-      return html`<${Fragment}>${skeleton(1)}<div class="grid grid--recent">${skeleton(2)}${skeleton(2)}</div></>`;
+      return html`<${Fragment}>${skeleton(1)}<div class="grid grid--recent">${skeleton(2)}${loadingState(2, slow)}</div></>`;
     }
     const [stats, recent] = data;
     return html`<${Fragment}>

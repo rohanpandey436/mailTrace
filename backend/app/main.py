@@ -4,10 +4,11 @@ import asyncio
 import logging
 import threading
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -16,9 +17,10 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.requests import ClientDisconnect
 
 from . import tasks
-from .api import alerts, analyze, cases, reports
+from .api import alerts, analyze, cases, intel, reports
 from .config import Settings
 from .config import settings as default_settings
+from .core import retention
 from .core.errors import NotFound
 from .database.case_manager import Store
 from .schemas import ENGINE_VERSION, HealthStatus
@@ -38,6 +40,17 @@ def _warm_model(cfg: Settings) -> None:
             log.warning("ML classifier unavailable, continuing with rule-based analysis: %s", exc)
 
     threading.Thread(target=run, name="mt-ml-warmup", daemon=True).start()
+
+
+async def _sweep_retention(store: Store, cfg: Settings) -> None:
+    while True:
+        try:
+            purged = await run_in_threadpool(retention.purge_expired, store)
+            if purged:
+                log.info("retention sweep deleted %d case(s)", len(purged))
+        except Exception:
+            log.warning("retention sweep failed", exc_info=True)
+        await asyncio.sleep(cfg.retention_sweep_seconds)
 
 
 async def _http_error(request: Request, exc: Exception) -> JSONResponse:
@@ -81,6 +94,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         tasks.configure(cfg)
         tasks.start_embedded_worker(cfg)
         _warm_model(cfg)
+        sweeper = asyncio.create_task(_sweep_retention(app.state.store, cfg), name="mt-retention-sweep")
         if cfg.zero_persistence:
             log.warning(
                 "*** ZERO-PERSISTENCE MODE *** MailTrace %s is analysing in memory only: no database, "
@@ -98,6 +112,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             yield
         finally:
+            sweeper.cancel()
+            with suppress(asyncio.CancelledError):
+                await sweeper
             alerts.shutdown_webhooks()
             tasks.unbind_store()
             app.state.store.close()
@@ -119,6 +136,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(cases.router)
     app.include_router(reports.router)
     app.include_router(alerts.router)
+    app.include_router(intel.router)
 
     @app.get("/api/health", tags=["system"])
     def health() -> HealthStatus:
@@ -140,6 +158,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             native_engine_status=parser.NATIVE_ENGINE_STATUS,
             native_engine_sha256=parser.NATIVE_ENGINE_SHA256,
             queue=tasks.queue_status(cfg),
+            retention=retention.summary(store, cfg) if store is not None else "",
         )
 
     _mount_dashboard(app, cfg.static_dir)

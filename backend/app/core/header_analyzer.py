@@ -236,11 +236,11 @@ def _parse_timestamp(value: str) -> datetime | None:
         return None
     try:
         parsed = parsedate_to_datetime(text)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=UTC)
+        return parsed.astimezone(UTC)
     except (TypeError, ValueError, IndexError, OverflowError):
         return None
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=UTC)
-    return parsed.astimezone(UTC)
 
 
 def _parse_received_full(value: str) -> dict[str, Any]:
@@ -444,7 +444,7 @@ def _brand_in_display_name(name: str, cfg: Settings) -> tuple[str, list[str]]:
 
 def _executive_in_display_name(name: str, cfg: Settings) -> str:
     tokens = {t.strip().lower() for t in list(cfg.executives) + EXEC_TITLES if t.strip()}
-    for token in sorted(tokens, key=len, reverse=True):
+    for token in sorted(tokens, key=lambda item: (-len(item), item)):
         if _word_match(token, name):
             return token
     return ""

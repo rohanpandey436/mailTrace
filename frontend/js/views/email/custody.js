@@ -1,9 +1,9 @@
-import { api, errorMessage } from "../../api.js";
+import { api, friendlyError } from "../../api.js";
 import { formatDate, truncate } from "../../format.js";
 import { useAsync } from "../../hooks.js";
 import { CUSTODY_ACTION } from "../../labels.js";
 import { html } from "../../react.js";
-import { chip, errorState, section, skeleton } from "../../ui/primitives.js";
+import { chip, errorState, loadingState, section } from "../../ui/primitives.js";
 import { toast } from "../../ui/toast.js";
 
 const HASH_PREVIEW_CHARS = 16;
@@ -20,7 +20,7 @@ function EventRow({ event }) {
 }
 
 export function CustodyTab({ result }) {
-  const { data, error, loading, reload } = useAsync(() => api.getCustody(result.id), [result.id]);
+  const { data, error, loading, slow, reload } = useAsync(() => api.getCustody(result.id), [result.id]);
 
   async function verify() {
     try {
@@ -31,12 +31,12 @@ export function CustodyTab({ result }) {
       );
       reload();
     } catch (cause) {
-      toast(html`Could not check: ${errorMessage(cause)}`, "error");
+      toast(html`Could not check: ${friendlyError(cause)}`, "error");
     }
   }
 
   if (error) return errorState(error, reload);
-  if (loading || !data) return skeleton(2);
+  if (loading || !data) return loadingState(2, slow);
 
   return section(
     "Evidence log",

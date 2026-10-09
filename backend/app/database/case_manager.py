@@ -127,11 +127,49 @@ CREATE TABLE IF NOT EXISTS evidence (
     stored_at TEXT NOT NULL,
     raw BLOB NOT NULL
 );
+CREATE TABLE IF NOT EXISTS retention (
+    email_id TEXT PRIMARY KEY,
+    origin TEXT NOT NULL DEFAULT 'dashboard',
+    listed INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    expires_at TEXT,
+    frozen_at TEXT,
+    frozen_by TEXT NOT NULL DEFAULT '',
+    purged_at TEXT,
+    evidence_sha256 TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_retention_listed ON retention(listed);
+CREATE TABLE IF NOT EXISTS indicator_digests (
+    digest TEXT NOT NULL,
+    email_id TEXT NOT NULL,
+    indicator TEXT NOT NULL,
+    PRIMARY KEY (digest, email_id)
+);
+CREATE INDEX IF NOT EXISTS idx_digests_email ON indicator_digests(email_id);
 """
+
+UNDIGESTED_PREFIXES: tuple[str, ...] = ("simhash:", "tlsh:")
+_LISTED = "NOT EXISTS (SELECT 1 FROM retention WHERE retention.email_id = emails.id AND retention.listed = 0)"
 
 
 def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def _row_dict(row: Row) -> dict[str, Any]:
+    return dict(zip(row.keys(), row))
+
+
+def indicator_digest(indicator: str) -> str:
+    return hashlib.sha256(indicator.encode("utf-8")).hexdigest()
+
+
+def _digest_rows(email_id: str, indicators: Sequence[str]) -> list[tuple[str, str, str]]:
+    return [
+        (indicator_digest(indicator), email_id, indicator)
+        for indicator in dict.fromkeys(i for i in indicators if i)
+        if not indicator.startswith(UNDIGESTED_PREFIXES)
+    ]
 
 
 def _parse_dt(value: str) -> datetime:
@@ -349,6 +387,7 @@ class Store:
             self._live = self._dialect.connect()
         with self._lock:
             self._dialect.init_schema(self._conn)
+        self._backfill_digests()
         if self.in_memory:
             log.info("store opened in memory (zero-persistence): nothing is written to %s", self.db_path.parent)
         elif self.backend == "sqlite":
@@ -517,7 +556,7 @@ class Store:
         limit: int = 50,
         offset: int = 0,
     ) -> tuple[list[CaseSummary], int]:
-        clauses: list[str] = ["risk_score >= ?"]
+        clauses: list[str] = [_LISTED, "risk_score >= ?"]
         params: list[Any] = [int(min_risk or 0)]
         if q:
             like = f"%{q.strip().lower()}%"
@@ -603,10 +642,135 @@ class Store:
     def save_indicators(self, email_id: str, indicators: list[str]) -> None:
         with self._tx() as conn:
             conn.execute("DELETE FROM indicators WHERE email_id = ?", (email_id,))
+            conn.execute("DELETE FROM indicator_digests WHERE email_id = ?", (email_id,))
             conn.executemany(
                 self._dialect.insert_ignore("indicators", ["email_id", "indicator"]),
                 [(email_id, ind) for ind in dict.fromkeys(i for i in indicators if i)],
             )
+            conn.executemany(
+                self._dialect.insert_ignore("indicator_digests", ["digest", "email_id", "indicator"]),
+                _digest_rows(email_id, indicators),
+            )
+
+    def _backfill_digests(self) -> None:
+        try:
+            with self._lock:
+                rows = self._conn.execute(
+                    "SELECT email_id, indicator FROM indicators WHERE NOT EXISTS ("
+                    "SELECT 1 FROM indicator_digests WHERE indicator_digests.email_id = indicators.email_id "
+                    "AND indicator_digests.indicator = indicators.indicator)"
+                ).fetchall()
+            pending: list[tuple[str, str, str]] = []
+            for row in rows:
+                pending.extend(_digest_rows(str(row["email_id"]), [str(row["indicator"])]))
+            if not pending:
+                return
+            with self._tx() as conn:
+                conn.executemany(
+                    self._dialect.insert_ignore("indicator_digests", ["digest", "email_id", "indicator"]), pending
+                )
+            log.info("indexed %d indicator digest(s) for hashed matching", len(pending))
+        except Exception:
+            log.warning("indicator digests could not be indexed; hashed matching will miss older cases", exc_info=True)
+
+    def find_emails_by_digests(self, digests: Sequence[str]) -> dict[str, list[str]]:
+        keys = [d for d in dict.fromkeys(digests) if d]
+        if not keys:
+            return {}
+        placeholders = ", ".join("?" for _ in keys)
+        with self._lock:
+            rows = self._conn.execute(
+                f"SELECT email_id, indicator FROM indicator_digests WHERE digest IN ({placeholders})", keys
+            ).fetchall()
+        result: dict[str, list[str]] = {}
+        for row in rows:
+            result.setdefault(row["email_id"], []).append(row["indicator"])
+        return result
+
+    def set_retention(
+        self,
+        email_id: str,
+        origin: str,
+        listed: bool,
+        expires_at: str | None,
+        evidence_sha256: str,
+    ) -> None:
+        columns = [
+            "email_id", "origin", "listed", "created_at", "expires_at",
+            "frozen_at", "frozen_by", "purged_at", "evidence_sha256",
+        ]
+        with self._tx() as conn:
+            conn.execute(
+                self._dialect.upsert("retention", columns, ("email_id",)),
+                (email_id, origin, int(bool(listed)), _now_iso(), expires_at, None, "", None, evidence_sha256 or ""),
+            )
+
+    def get_retention(self, email_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._conn.execute("SELECT * FROM retention WHERE email_id = ?", (email_id,)).fetchone()
+        if row is None:
+            return None
+        return _row_dict(row)
+
+    def freeze_retention(self, email_id: str, actor: str) -> bool:
+        with self._tx() as conn:
+            cursor = conn.execute(
+                "UPDATE retention SET frozen_at = ?, frozen_by = ? "
+                "WHERE email_id = ? AND frozen_at IS NULL AND purged_at IS NULL",
+                (_now_iso(), actor or "", email_id),
+            )
+            return bool(cursor.rowcount > 0)
+
+    def retention_pending(self) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM retention WHERE expires_at IS NOT NULL AND frozen_at IS NULL AND purged_at IS NULL"
+            ).fetchall()
+        return [_row_dict(row) for row in rows]
+
+    def case_exists(self, email_id: str) -> bool:
+        with self._lock:
+            return self._conn.execute("SELECT 1 FROM emails WHERE id = ?", (email_id,)).fetchone() is not None
+
+    def purge_case(self, email_id: str) -> bool:
+        campaign_id = self.campaign_for_email(email_id)
+        with self._tx() as conn:
+            existed = conn.execute("SELECT 1 FROM emails WHERE id = ?", (email_id,)).fetchone() is not None
+            for table, column in (
+                ("indicators", "email_id"),
+                ("indicator_digests", "email_id"),
+                ("alerts", "email_id"),
+                ("case_status", "email_id"),
+                ("campaign_members", "email_id"),
+                ("evidence", "email_id"),
+                ("emails", "id"),
+            ):
+                conn.execute(f"DELETE FROM {table} WHERE {column} = ?", (email_id,))
+            conn.execute(
+                "UPDATE retention SET purged_at = ? WHERE email_id = ? AND purged_at IS NULL", (_now_iso(), email_id)
+            )
+        if campaign_id:
+            self._drop_campaign_member(campaign_id, email_id)
+        if not self.in_memory:
+            try:
+                (self.evidence_dir / f"{email_id}.eml").unlink(missing_ok=True)
+            except OSError:
+                log.warning("could not remove the evidence mirror for %s", email_id, exc_info=True)
+        return existed
+
+    def _drop_campaign_member(self, campaign_id: str, email_id: str) -> None:
+        campaign = self.get_campaign(campaign_id)
+        if campaign is None:
+            return
+        remaining = [member for member in campaign.email_ids if member != email_id]
+        if len(remaining) < 2:
+            for member in remaining:
+                self.update_campaign_id(member, None)
+            self.delete_campaign(campaign_id)
+            return
+        campaign.email_ids = remaining
+        campaign.updated_at = datetime.now(UTC)
+        self.upsert_campaign(campaign)
 
     def find_emails_by_indicators(self, indicators: list[str], exclude_email_id: str = "") -> dict[str, list[str]]:
         keys = [i for i in dict.fromkeys(indicators) if i]
@@ -822,17 +986,23 @@ class Store:
 
     def stats(self) -> DashboardStats:
         with self._lock:
-            total = self._conn.execute("SELECT COUNT(*) FROM emails").fetchone()[0]
-            high = self._conn.execute("SELECT COUNT(*) FROM emails WHERE risk_score >= ?", (HIGH_RISK_THRESHOLD,)).fetchone()[0]
+            total = self._conn.execute(f"SELECT COUNT(*) FROM emails WHERE {_LISTED}").fetchone()[0]
+            high = self._conn.execute(
+                f"SELECT COUNT(*) FROM emails WHERE {_LISTED} AND risk_score >= ?", (HIGH_RISK_THRESHOLD,)
+            ).fetchone()[0]
             campaigns = self._conn.execute("SELECT COUNT(*) FROM campaigns").fetchone()[0]
             alerts_open = self._conn.execute("SELECT COUNT(*) FROM alerts WHERE acknowledged = 0").fetchone()[0]
-            avg = self._conn.execute("SELECT AVG(risk_score) FROM emails").fetchone()[0]
-            categories = self._conn.execute("SELECT category, COUNT(*) AS n FROM emails GROUP BY category").fetchall()
+            avg = self._conn.execute(f"SELECT AVG(risk_score) FROM emails WHERE {_LISTED}").fetchone()[0]
+            categories = self._conn.execute(
+                f"SELECT category, COUNT(*) AS n FROM emails WHERE {_LISTED} GROUP BY category"
+            ).fetchall()
             countries = self._conn.execute(
-                "SELECT origin_country, COUNT(*) AS n FROM emails WHERE origin_country != '' "
+                f"SELECT origin_country, COUNT(*) AS n FROM emails WHERE {_LISTED} AND origin_country != '' "
                 "GROUP BY origin_country ORDER BY n DESC LIMIT 5"
             ).fetchall()
-            sources = self._conn.execute("SELECT source_type, COUNT(*) AS n FROM emails GROUP BY source_type").fetchall()
+            sources = self._conn.execute(
+                f"SELECT source_type, COUNT(*) AS n FROM emails WHERE {_LISTED} GROUP BY source_type"
+            ).fetchall()
         by_category = Counter({c.value: 0 for c in ThreatCategory})
         for row in categories:
             by_category[row["category"]] = int(row["n"])

@@ -58,6 +58,10 @@ NodeType = Literal["email", "address", "domain", "ip", "asn", "url", "attachment
 CaseStatus = Literal["open", "quarantined", "blocked"]
 CASE_STATUSES: tuple[CaseStatus, ...] = ("open", "quarantined", "blocked")
 
+CaseOrigin = Literal["dashboard", "gmail"]
+RetentionState = Literal["permanent", "expiring", "frozen", "purged"]
+DomainRole = Literal["sender", "reply_to", "return_path", "message_id", "url"]
+
 
 class Finding(BaseModel):
 
@@ -616,12 +620,84 @@ class DashboardStats(BaseModel):
 class RawSubmission(BaseModel):
     raw: str = Field(description="Full RFC822 message text")
     filename: str = "pasted.eml"
+    origin: CaseOrigin = Field(default="dashboard", description="Where the message was submitted from")
+    listed: bool | None = Field(
+        default=None,
+        description="Show the case in lists, statistics and campaigns; defaults to false for origin 'gmail'",
+    )
+    retention_hours: int | None = Field(
+        default=None, ge=1,
+        description="Delete the case this many hours after analysis unless it is frozen; defaults to 24 for origin 'gmail'",
+    )
+
+
+class Retention(BaseModel):
+
+    email_id: str
+    origin: CaseOrigin = "dashboard"
+    listed: bool = True
+    state: RetentionState = "permanent"
+    created_at: datetime | None = None
+    expires_at: datetime | None = None
+    seconds_left: int | None = Field(default=None, description="Whole seconds until deletion; null unless the state is 'expiring'")
+    frozen_at: datetime | None = None
+    frozen_by: str = ""
+    purged_at: datetime | None = None
 
 
 class AnalyzeResponse(BaseModel):
 
     results: list[AnalysisResult]
     alerts: list[Alert] = Field(default_factory=list)
+    retention: list[Retention] = Field(
+        default_factory=list, description="One entry per result that is unlisted or due for deletion",
+    )
+
+
+class DomainTarget(BaseModel):
+
+    domain: str = Field(min_length=1, max_length=253)
+    role: DomainRole = "url"
+
+
+class IntelLookupRequest(BaseModel):
+
+    domains: list[DomainTarget] = Field(default_factory=list)
+    ips: list[str] = Field(default_factory=list)
+    origin_ip: str = Field(default="", max_length=64, description="The address that receives blocklist and abuse checks")
+
+
+class IntelLookupResponse(BaseModel):
+
+    domains: list[DomainIntel] = Field(default_factory=list)
+    ips: list[GeoInfo] = Field(default_factory=list)
+    network: bool = Field(description="False when this server runs with lookups disabled and answers offline")
+    stored: bool = Field(default=False, description="Always false: lookups are answered from memory and never written to the case store")
+
+
+class IntelMatchRequest(BaseModel):
+
+    fingerprints: list[str] = Field(default_factory=list, description="SHA-256 hex digests of indicator keys")
+    simhash: str = Field(default="", max_length=128, description="Body SimHash in hex, compared by Hamming distance")
+    body_length: int = Field(default=0, ge=0)
+
+
+class IntelIncident(BaseModel):
+
+    risk_score: int = Field(ge=0, le=100)
+    category: ThreatCategory
+    analyzed_at: datetime | None = None
+    in_campaign: bool = False
+    shared: list[str] = Field(default_factory=list, description="The submitted digests this earlier case shares")
+    fuzzy: list[str] = Field(default_factory=list, description="Near-duplicate body tags such as 'simhash~3'")
+
+
+class IntelMatchResponse(BaseModel):
+
+    incidents: list[IntelIncident] = Field(default_factory=list)
+    campaigns: int = 0
+    worst_risk: int = 0
+    stored: bool = Field(default=False, description="Always false: the submitted digests are compared and discarded")
 
 
 class JobSummary(BaseModel):
@@ -694,6 +770,7 @@ class HealthStatus(BaseModel):
     native_engine_version: str
     native_engine_status: str
     queue: str = Field(default="", description="How background tasks execute: eager, or Redis with embedded/external workers")
+    retention: str = Field(default="", description="How often expired cases are deleted and how many are waiting")
     native_engine_sha256: str = Field(
         default="",
         description='Which SHA-256 the engine links: "openssl", "builtin", or "" when the engine is not in use',

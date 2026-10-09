@@ -35,6 +35,7 @@ def analyze_bytes(
     store: Store | None = None,
     cfg: Settings | None = None,
     actor: str = "system",
+    listed: bool = True,
 ) -> AnalysisResult:
     from ..utils import virustotal
     from . import (
@@ -118,7 +119,7 @@ def analyze_bytes(
             {"filename": filename, "size": len(raw), "sha256": parsed.raw_sha256, "md5": parsed.raw_md5},
             parsed.raw_sha256,
         )
-        campaign_id = threat_intel.assign_campaign(result, store, cfg)
+        campaign_id = threat_intel.assign_campaign(result, store, cfg) if listed else None
         result.campaign_id = campaign_id
         result.intel.campaign_id = campaign_id
         result.processing_ms = int((time.perf_counter() - t0) * 1000)
@@ -131,6 +132,7 @@ def analyze_bytes(
                 "confidence": result.verdict.confidence,
                 "engine_version": ENGINE_VERSION,
                 "campaign_id": campaign_id,
+                "listed": listed,
             },
             parsed.raw_sha256,
         )
@@ -143,5 +145,6 @@ def analyze_text(
     store: Store | None = None,
     cfg: Settings | None = None,
     actor: str = "system",
+    listed: bool = True,
 ) -> AnalysisResult:
-    return analyze_bytes(raw_text.encode("utf-8", errors="surrogateescape"), filename, store, cfg, actor)
+    return analyze_bytes(raw_text.encode("utf-8", errors="surrogateescape"), filename, store, cfg, actor, listed)

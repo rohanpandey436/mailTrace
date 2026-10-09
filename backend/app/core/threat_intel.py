@@ -20,6 +20,7 @@ from ..schemas import (
     FuzzyDigest,
     HeaderAnalysis,
     InfraAnalysis,
+    IntelIncident,
     ParsedEmail,
     RelatedIncident,
     Severity,
@@ -156,6 +157,51 @@ def _fuzzy_related(
             if nearest is not None and nearest <= limit:
                 matches.setdefault(email_id, []).append(f"{prefix[:-1]}~{nearest}")
     return matches
+
+
+def match_digests(
+    store: Store, digests: list[str], simhash: str, body_length: int, cfg: Settings | None = None
+) -> tuple[list[IntelIncident], int]:
+    from ..database.case_manager import indicator_digest
+
+    cfg = cfg or default_settings
+    try:
+        raw = store.find_emails_by_digests(sorted({d for d in digests if d}))
+    except Exception:
+        log.exception("digest lookup failed")
+        raw = {}
+    exact: dict[str, list[str]] = {}
+    for email_id, shared in raw.items():
+        strong = [s for s in shared if is_strong(s)]
+        weak = [s for s in shared if not is_strong(s)]
+        if strong or len(weak) >= 2:
+            exact[email_id] = sorted(set(shared))
+    fuzzy = _fuzzy_related(store, FuzzyDigest(simhash=simhash, body_length=body_length), "", cfg)
+    merged = _merge_matches(exact, fuzzy)
+    if not merged:
+        return [], 0
+    try:
+        summaries = store.summaries_for(list(merged))
+    except Exception:
+        log.exception("summary lookup failed")
+        return [], 0
+    campaigns: set[str] = set()
+    incidents: list[IntelIncident] = []
+    for summary in summaries:
+        tags = merged.get(summary.id, [])
+        campaign_id = store.campaign_for_email(summary.id)
+        if campaign_id:
+            campaigns.add(campaign_id)
+        incidents.append(IntelIncident(
+            risk_score=summary.risk_score,
+            category=summary.category,
+            analyzed_at=summary.analyzed_at,
+            in_campaign=bool(campaign_id),
+            shared=sorted(indicator_digest(tag) for tag in tags if not tag.startswith(FUZZY_MATCH_PREFIXES)),
+            fuzzy=[tag for tag in tags if tag.startswith(FUZZY_MATCH_PREFIXES)],
+        ))
+    incidents.sort(key=lambda incident: -incident.risk_score)
+    return incidents, len(campaigns)
 
 
 def _merge_matches(exact: dict[str, list[str]], fuzzy: dict[str, list[str]]) -> dict[str, list[str]]:

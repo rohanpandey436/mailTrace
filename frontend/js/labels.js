@@ -71,6 +71,20 @@ export const CUSTODY_ACTION = {
   viewed_unmasked: "viewed in full",
   quarantine_decision: "marked for quarantine",
   block_decision: "marked for blocking",
+  retention_set: "set to delete itself",
+  evidence_frozen: "frozen as evidence",
+  purged: "deleted, period ended",
+};
+
+export const ORIGIN = {
+  dashboard: {
+    title: "Temporary case",
+    detail: "This case was submitted with a retention period.",
+  },
+  gmail: {
+    title: "Sent from Gmail",
+    detail: "This email was sent here from the MailTrace add-on in Gmail because its owner pressed Investigate.",
+  },
 };
 
 export const DECISION = {

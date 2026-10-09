@@ -61,7 +61,10 @@ def load(fingerprint: str, path: Path = BUNDLED) -> OnnxUrlScorer | None:
         log.info("onnxruntime is not installed; falling back to xgboost for URL scoring")
         return None
     try:
-        session = ort.InferenceSession(str(path), providers=["CPUExecutionProvider"])
+        options = ort.SessionOptions()
+        options.intra_op_num_threads = 1
+        options.inter_op_num_threads = 1
+        session = ort.InferenceSession(str(path), options, providers=["CPUExecutionProvider"])
         stamped = dict(session.get_modelmeta().custom_metadata_map)
     except Exception:
         log.warning("the bundled URL model at %s could not be loaded", path, exc_info=True)
