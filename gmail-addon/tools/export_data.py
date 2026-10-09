@@ -506,6 +506,56 @@ def render_files(name: str, packed: bytes) -> list[tuple[str, str]]:
         files.append((f"data_{name}{suffix}.js", NL.join(lines)))
     return files
 
+def _decode(text: str) -> Any:
+    start = text.find("gzip: [")
+    end = text.find("].join(", start)
+    if start < 0 or end < 0:
+        return None
+    chunks = re.findall('"([A-Za-z0-9+/=]*)"', text[start:end])
+    try:
+        return json.loads(gzip.decompress(base64.b64decode("".join(chunks))))
+    except (ValueError, OSError):
+        return None
+
+
+def _preview(value: Any) -> str:
+    text = json.dumps(value, ensure_ascii=False, default=str)
+    return text if len(text) <= 80 else text[:77] + "..."
+
+
+def _differences(old: Any, new: Any, path: str, out: list[str], limit: int) -> None:
+    if len(out) >= limit:
+        return
+    if isinstance(old, dict) and isinstance(new, dict):
+        for key in sorted(old.keys() - new.keys(), key=str):
+            out.append(f"{path}.{key}: only in the committed file")
+        for key in sorted(new.keys() - old.keys(), key=str):
+            out.append(f"{path}.{key}: only in this export")
+        for key in old:
+            if key in new and old[key] != new[key]:
+                _differences(old[key], new[key], f"{path}.{key}", out, limit)
+        return
+    if isinstance(old, list) and isinstance(new, list):
+        if len(old) != len(new):
+            out.append(f"{path}: {len(old)} entries committed, {len(new)} in this export")
+        shown = 0
+        for index, (a, b) in enumerate(zip(old, new)):
+            if a == b:
+                continue
+            if isinstance(a, (dict, list)) and isinstance(b, (dict, list)):
+                _differences(a, b, f"{path}[{index}]", out, limit)
+            else:
+                out.append(f"{path}[{index}]: committed {_preview(a)} vs export {_preview(b)}")
+            shown += 1
+            if shown >= 3 or len(out) >= limit:
+                return
+        for index in range(min(len(old), len(new)), min(max(len(old), len(new)), min(len(old), len(new)) + 3)):
+            side, item = ("committed", old[index]) if index < len(old) else ("export", new[index])
+            out.append(f"{path}[{index}]: only in {side}: {_preview(item)}")
+        return
+    out.append(f"{path}: committed {_preview(old)} vs export {_preview(new)}")
+
+
 def main(argv: list[str] | None = None) -> int:
     from export_fixtures import settings
 
@@ -524,6 +574,7 @@ def main(argv: list[str] | None = None) -> int:
     cfg.ensure_dirs()
     if args.check:
         stale = []
+        details: list[str] = []
         import cjk_tables
 
         checks = (("knowledge", knowledge_blob(cfg)), ("psl", psl_blob()), ("cjk", cjk_tables.build()), ("url_model", url_model_blob(cfg)[0]))
@@ -532,7 +583,14 @@ def main(argv: list[str] | None = None) -> int:
             current = target.read_text(encoding="utf-8") if target.is_file() else ""
             if current != render(name, pack(value)):
                 stale.append(target.name)
+                committed = _decode(current)
+                if committed is not None:
+                    lines: list[str] = []
+                    _differences(committed, json.loads(json.dumps(value, ensure_ascii=False)), name, lines, 25)
+                    details.extend(lines or [f"{name}: same content, different file encoding"])
         if stale:
+            for line in details:
+                print("  " + line)
             message = "stale data files: " + ", ".join(stale) + "; run python tools/export_data.py"
             recorded, running = recorded_python(), platform.python_version()
             if recorded and recorded != running:
