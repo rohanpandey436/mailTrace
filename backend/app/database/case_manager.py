@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 import hashlib
 import json
 import logging
@@ -11,7 +12,7 @@ from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from pydantic import JsonValue, ValidationError
 
@@ -175,6 +176,14 @@ class _SqliteDialect:
         conn.row_factory = sqlite3.Row
         return conn
 
+    @staticmethod
+    def is_broken(conn: Connection) -> bool:
+        return False
+
+    @staticmethod
+    def is_disconnect(exc: BaseException) -> bool:
+        return isinstance(exc, sqlite3.ProgrammingError) and "closed" in str(exc)
+
     def init_schema(self, conn: Connection) -> None:
         if self.on_disk:
             conn.execute("PRAGMA journal_mode=WAL")
@@ -246,6 +255,10 @@ class _PgConnection:
     def close(self) -> None:
         self._conn.close()
 
+    @property
+    def closed(self) -> bool:
+        return bool(self._conn.closed)
+
 
 class _PostgresDialect:
 
@@ -261,6 +274,16 @@ class _PostgresDialect:
             self.url, autocommit=True, row_factory=_pg_row_factory, prepare_threshold=None
         )
         return _PgConnection(conn)
+
+    @staticmethod
+    def is_broken(conn: Connection) -> bool:
+        return bool(conn.closed)
+
+    @staticmethod
+    def is_disconnect(exc: BaseException) -> bool:
+        import psycopg
+
+        return isinstance(exc, (psycopg.OperationalError, psycopg.InterfaceError))
 
     def init_schema(self, conn: Connection) -> None:
         for statement in self._schema_statements():
@@ -314,7 +337,7 @@ class Store:
         if database_url.strip() and not database_url.strip().startswith(POSTGRES_SCHEMES):
             self.backend_note = "MAILTRACE_DATABASE_URL is set but is not a postgres:// or postgresql:// URL"
         try:
-            self._conn = self._dialect.connect()
+            self._live = self._dialect.connect()
         except Exception as exc:
             self.backend_note = f"{type(exc).__name__}: {exc}"[:400]
             log.error(
@@ -323,7 +346,7 @@ class Store:
                 type(exc).__name__, exc, self.db_path,
             )
             self._dialect = _SqliteDialect(target, on_disk=not self.in_memory)
-            self._conn = self._dialect.connect()
+            self._live = self._dialect.connect()
         with self._lock:
             self._dialect.init_schema(self._conn)
         if self.in_memory:
@@ -337,10 +360,36 @@ class Store:
     def backend(self) -> str:
         return str(self._dialect.name)
 
+    @property
+    def _conn(self) -> Connection:
+        with self._lock:
+            if self._dialect.is_broken(self._live):
+                self._reconnect(None)
+            return self._live
+
+    def _reconnect(self, cause: BaseException | None) -> None:
+        with self._lock:
+            log.warning("%s connection lost (%s); reconnecting", self.backend, cause if cause is not None else "closed")
+            try:
+                self._live.close()
+            except Exception:
+                log.debug("closing the lost connection failed", exc_info=True)
+            self._live = self._dialect.connect()
+
+    def _probe(self) -> None:
+        self._conn.execute("SELECT 1")
+
+    def ping(self) -> str:
+        try:
+            self._probe()
+        except Exception as exc:
+            return f"{type(exc).__name__}: {exc}"[:400]
+        return ""
+
     def close(self) -> None:
         with self._lock:
             try:
-                self._conn.close()
+                self._live.close()
             except Exception:
                 log.debug("closing store failed", exc_info=True)
 
@@ -797,3 +846,22 @@ class Store:
             top_source_types={row["source_type"]: int(row["n"]) for row in sources},
             avg_risk=round(float(avg or 0.0), 1),
         )
+
+
+def _reconnecting[F: Callable[..., Any]](method: F) -> F:
+    @functools.wraps(method)
+    def wrapper(self: Store, *args: Any, **kwargs: Any) -> Any:
+        try:
+            return method(self, *args, **kwargs)
+        except Exception as exc:
+            if not self._dialect.is_disconnect(exc):
+                raise
+            self._reconnect(exc)
+            return method(self, *args, **kwargs)
+
+    return cast(F, wrapper)
+
+
+for _name, _member in list(vars(Store).items()):
+    if callable(_member) and (_name == "_probe" or (not _name.startswith("_") and _name != "close")):
+        setattr(Store, _name, _reconnecting(_member))
