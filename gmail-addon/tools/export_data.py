@@ -33,6 +33,7 @@ ENGINE_MODULES = (
     "ai_engine", "domain_intel", "geoip_mapper", "threat_intel", "scoring",
 )
 SELFTEST_SAMPLES = ("phishing_sbi_kyc", "legit_transactional", "fraud_lottery_advance_fee", "impersonation_ceo_gift_cards")
+RUNTIME_STATUS_PREFIXES = ("NATIVE_ENGINE",)
 
 
 def recorded_python() -> str:
@@ -70,6 +71,8 @@ def module_export(module: Any) -> tuple[dict[str, Any], dict[str, Any]]:
     patterns: dict[str, Any] = {}
     for name, value in vars(module).items():
         if name.startswith("__") or callable(value) or isinstance(value, type(sys)):
+            continue
+        if name.startswith(RUNTIME_STATUS_PREFIXES):
             continue
         if isinstance(value, re.Pattern):
             if isinstance(value.pattern, str):
