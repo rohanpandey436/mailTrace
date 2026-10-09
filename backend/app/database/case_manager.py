@@ -192,6 +192,7 @@ def chain_hash(
 
 
 POSTGRES_SCHEMES = ("postgres://", "postgresql://")
+_TABLES = tuple(line.split()[5] for line in _SCHEMA.splitlines() if line.startswith("CREATE TABLE IF NOT EXISTS "))
 
 Connection = Any
 Row = Any
@@ -326,12 +327,25 @@ class _PostgresDialect:
     def init_schema(self, conn: Connection) -> None:
         for statement in self._schema_statements():
             conn.execute(statement)
+        self._widen_real_columns(conn)
 
     @staticmethod
     def _schema_statements() -> list[str]:
         schema = _SCHEMA.replace("    indicator TEXT NOT NULL,", '    indicator TEXT COLLATE "C" NOT NULL,')
         schema = schema.replace("    raw BLOB NOT NULL", "    raw BYTEA NOT NULL")
+        schema = schema.replace(" REAL ", " DOUBLE PRECISION ")
         return [statement.strip() for statement in schema.split(";") if statement.strip()]
+
+    @staticmethod
+    def _widen_real_columns(conn: Connection) -> None:
+        rows = conn.execute(
+            "SELECT table_name, column_name FROM information_schema.columns "
+            "WHERE table_schema = current_schema() AND data_type = 'real' AND CAST(table_name AS text) = ANY(?)",
+            (list(_TABLES),),
+        ).fetchall()
+        for table, column in rows:
+            conn.execute(f"ALTER TABLE {table} ALTER COLUMN {column} TYPE DOUBLE PRECISION")
+            log.info("widened %s.%s from real to double precision", table, column)
 
     @staticmethod
     def upsert(table: str, columns: list[str], conflict: tuple[str, ...]) -> str:

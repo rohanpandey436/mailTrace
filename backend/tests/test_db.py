@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import time
 from datetime import UTC, datetime
+
+import pytest
 
 from app.core import pipeline
 from app.database.case_manager import GENESIS_HASH, Store
@@ -68,3 +71,23 @@ def test_alerts_and_cache(store: Store):
     assert store.cache_get("expired") is None
     assert store.cache_get("missing") is None
     assert store.stats().alerts_open == 0
+
+
+def test_cache_expiry_keeps_the_full_timestamp(store: Store):
+    before = time.time()
+    store.cache_set("k", {"a": 1}, 60)
+    row = store._conn.execute("SELECT expires_at FROM cache WHERE key = ?", ("k",)).fetchone()
+    assert abs(float(row["expires_at"]) - (before + 60)) < 1.0
+
+
+def test_postgres_widens_real_columns_left_by_older_schemas(store: Store):
+    if store.backend != "postgresql":
+        pytest.skip("PostgreSQL only")
+    conn = store._conn
+    conn.execute("ALTER TABLE cache ALTER COLUMN expires_at TYPE REAL")
+    store._dialect.init_schema(conn)
+    row = conn.execute(
+        "SELECT data_type FROM information_schema.columns "
+        "WHERE table_schema = current_schema() AND table_name = 'cache' AND column_name = 'expires_at'"
+    ).fetchone()
+    assert row[0] == "double precision"
