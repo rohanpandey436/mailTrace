@@ -23,5 +23,5 @@ Python engine are in [`docs/gmail-addon.md`](../docs/gmail-addon.md).
 | `npm test` | Every parity test plus the add-on behaviour test (`--fuzz` adds the 2,166 fuzzed messages) |
 | `npm run build` | Writes `dist/` (manifest, `MailTrace.js`, six data files) |
 | `npm run deploy` | Builds and pushes with clasp, creating the project on first use |
-| `python tools/export_data.py` | Regenerates `src/data_*.js` from the Python engine (`--check` reports stale files) |
+| `python tools/export_data.py` | Regenerates `src/data_*.js` from the Python engine and records the CPython release in `.python-version`, which CI checks the files with (`--check` reports stale files) |
 | `python tools/export_fixtures.py`, `python tools/export_vectors.py` | Regenerate `tests/fixtures/` (git-ignored) |

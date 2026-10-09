@@ -76,7 +76,11 @@ engine needs (brand and free-mail lists, lexicons, the source of every regular
 expression, the text model vocabulary and weights, the URL model's trees, the
 public suffix list, single-byte codec tables, HTML entities, the MIME type map)
 is exported from Python by `tools/export_data.py`, so there is one source of
-truth. The logic is then pinned to CPython 3.13 behaviour with vectors generated
+truth. Some of those tables come straight from the standard library and change
+between CPython releases (3.13.16 reworked the stringprep case-folding table,
+for example), so `gmail-addon/.python-version` records the release that
+generated the committed blobs and CI runs the staleness check on that exact
+release. The logic is then pinned to CPython 3.13 behaviour with vectors generated
 by `tools/export_vectors.py` and `tools/export_fixtures.py` and checked by
 `npm test`:
 
@@ -138,7 +142,7 @@ handful of combining classes that later Unicode versions corrected.
 | `src/gas_addon.js` | Cards, labels, scans, Connected-mode calls, Investigate, self-test, the trigger |
 | `src/appsscript.json` | Manifest: scopes, URL allow-list, triggers |
 | `src/data_*.js` | Generated data blobs (gzip + base64), 1.6 MB in total |
-| `tools/export_data.py`, `tools/cjk_tables.py` | Regenerate the data blobs and the two model vector files; `--check` fails when the deterministic blobs are stale |
+| `tools/export_data.py`, `tools/cjk_tables.py` | Regenerate the data blobs and the two model vector files and record the CPython release in `.python-version`; `--check` fails when the deterministic blobs are stale and says so when a different release is running |
 | `tools/export_fixtures.py`, `tools/export_vectors.py` | Regenerate `tests/fixtures/` (git-ignored, 40 MB); `--fuzz N` shortens the fuzzed sets |
 | `tests/` | `npm test` runs every parity test plus `test_addon.js`, which drives the add-on through mocked Apps Script services (Gmail, CardService, UrlFetchApp, PropertiesService, ScriptApp) and checks labels, cards, consent, the exact request payloads, error handling and the bundled self-test |
 | `tools/bundle.js`, `tools/deploy.js` | Build `dist/` and push it with clasp |

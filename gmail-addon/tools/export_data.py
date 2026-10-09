@@ -9,6 +9,7 @@ import html.entities
 import json
 import math
 import mimetypes
+import platform
 import re
 import struct
 import sys
@@ -24,6 +25,7 @@ for entry in (BACKEND, BACKEND / "tests", HERE):
         sys.path.insert(0, str(entry))
 
 NL = chr(10)
+PYTHON_VERSION_FILE = HERE.parent / ".python-version"
 CHUNK = 60000
 TF_TABLE_SIZE = 4096
 ENGINE_MODULES = (
@@ -31,6 +33,13 @@ ENGINE_MODULES = (
     "ai_engine", "domain_intel", "geoip_mapper", "threat_intel", "scoring",
 )
 SELFTEST_SAMPLES = ("phishing_sbi_kyc", "legit_transactional", "fraud_lottery_advance_fee", "impersonation_ceo_gift_cards")
+
+
+def recorded_python() -> str:
+    try:
+        return PYTHON_VERSION_FILE.read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
 
 
 def _plain(value: Any) -> Any:
@@ -524,7 +533,16 @@ def main(argv: list[str] | None = None) -> int:
             if current != render(name, pack(value)):
                 stale.append(target.name)
         if stale:
-            print("stale data files: " + ", ".join(stale) + "; run python tools/export_data.py")
+            message = "stale data files: " + ", ".join(stale) + "; run python tools/export_data.py"
+            recorded, running = recorded_python(), platform.python_version()
+            if recorded and recorded != running:
+                message += (
+                    f" (they were generated with Python {recorded} and this is Python {running}; the standard-library"
+                    f" tables the knowledge blob mirrors change between releases, so run the check with Python"
+                    f" {recorded}, which gmail-addon/.python-version pins for CI, or regenerate the data files and"
+                    " commit them together with the updated .python-version)"
+                )
+            print(message)
             return 1
         print("knowledge, PSL, CJK and URL-model data files are up to date")
         return 0
@@ -556,6 +574,8 @@ def main(argv: list[str] | None = None) -> int:
             total += target.stat().st_size
             print(f"{target.name:32s} {target.stat().st_size / 1024:9.1f} KB")
     print(f"{'total':32s} {total / 1024:9.1f} KB")
+    PYTHON_VERSION_FILE.write_text(platform.python_version() + NL, encoding="utf-8", newline=NL)
+    print(f"{PYTHON_VERSION_FILE.name:32s} generated with Python {platform.python_version()}")
     return 0
 
 
