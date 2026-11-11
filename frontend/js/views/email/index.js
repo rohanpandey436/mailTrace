@@ -6,8 +6,9 @@ import { Fragment, html, useState } from "../../react.js";
 import { preferences, session, setPreference } from "../../state.js";
 import { DecisionBar } from "../../ui/decision-bar.js";
 import { GraphLegend, RelationshipGraph } from "../../ui/graph.js";
+import { Menu } from "../../ui/menu.js";
 import { RetentionBar } from "../../ui/retention-bar.js";
-import { categoryChip, check, chip, errorState, gauge, loadingState, section } from "../../ui/primitives.js";
+import { Explained, categoryChip, check, chip, errorState, gauge, loadingState, section } from "../../ui/primitives.js";
 import { ContentTab } from "./content.js";
 import { CustodyTab } from "./custody.js";
 import { domainsTab } from "./domains.js";
@@ -55,8 +56,7 @@ function VerdictCards({ result }) {
       <p class="hint verdict__blurb">We are <b class="strong">${percent(verdict.confidence)}</b> sure of this.</p>
     </div>
     <div class="card card--pad">
-      <h3 class="section__title">Who really sent it</h3>
-      <p class="hint section__note">Our best assessment of the person or system behind this email.</p>
+      <${Explained} title="Who really sent it" note="Our best assessment of the person or system behind this email." />
       <div class="cluster">${chip(source.title, "brand")} <span class="hint">${percent(attribution.confidence)} sure</span></div>
       <p class="hint subsection">${source.detail}</p>
       ${attribution.reasoning.length > 0 &&
@@ -65,8 +65,7 @@ function VerdictCards({ result }) {
       </ul>`}
     </div>
     <div class="card card--pad">
-      <h3 class="section__title">Is the sender genuine?</h3>
-      <p class="hint section__note">Three standard checks every real company sets up (SPF, DKIM, DMARC).</p>
+      <${Explained} title="Is the sender genuine?" note="Three standard checks every real company sets up (SPF, DKIM, DMARC)." />
       <${SenderChecks} auth=${headers.auth} />
       <div class="cluster">
         ${headers.reply_to_mismatch && chip("Replies go somewhere else", "bad")}
@@ -154,7 +153,7 @@ export function EmailView({ emailId }) {
   return html`<${Fragment}>
     <a href="#/cases" class="back-link">← Back to checked emails</a>
     <div class="cluster cluster--between cluster--top section">
-      <div class="spread">
+      <div class="spread spread--wide">
         <h1 class="page-title page-title--sm">${email.subject || html`<span class="muted">(no subject)</span>`}</h1>
         <div class="hint cluster cluster--loose">
           <span>
@@ -163,31 +162,37 @@ export function EmailView({ emailId }) {
           </span>
           <span>Sent ${formatDate(email.date)}</span>
           <span class="mono">${result.filename}</span>
+          ${result.campaign_id &&
+          html`<a class="link" href=${`#/campaigns/${encodeURIComponent(result.campaign_id)}`}>See linked attacks →</a>`}
         </div>
       </div>
       <div class="cluster">
         <a class="btn btn--primary" target="_blank" rel="noopener" href=${urls.report(result.id, "pdf")} title="Section 65B compliant legal report">
           Legal PDF report
         </a>
-        <a class="btn" target="_blank" rel="noopener" href=${urls.report(result.id, "html")}>View in browser</a>
-        <a class="btn" href=${urls.report(result.id, "csv")} title="The verdict, the score breakdown, the origin, the indicators and every finding, as a spreadsheet">
-          Spreadsheet (CSV)
-        </a>
-        <a class="btn" href=${urls.rawMessage(result.id)}>Download original</a>
-        ${result.campaign_id &&
-        html`<a class="btn" href=${`#/campaigns/${encodeURIComponent(result.campaign_id)}`}>See linked attacks</a>`}
+        <${Menu} label="Export" caret>
+          <a class="menu__item" target="_blank" rel="noopener" href=${urls.report(result.id, "html")}>
+            View report in browser<span class="menu__hint">The full report as a web page</span>
+          </a>
+          <a class="menu__item" href=${urls.report(result.id, "csv")}>
+            Spreadsheet (CSV)<span class="menu__hint">Verdict, scores, origin, indicators and findings</span>
+          </a>
+          <a class="menu__item" href=${urls.rawMessage(result.id)}>
+            Download original<span class="menu__hint">The email exactly as it was received</span>
+          </a>
+        </${Menu}>
       </div>
     </div>
-    <${RetentionBar} emailId=${result.id} />
-    <div class="section"><${DecisionBar} emailId=${result.id} /></div>
+    <${VerdictCards} result=${result} />
     ${noHeaders &&
     html`<div class="note note--warn section">
       <b>This email carried no delivery headers, so we could not trace where it came from.</b> You most likely pasted only the visible
       message. Use <i>Download message</i> in Gmail, or <i>View message source</i> and copy everything from the very first line. The
       wording and link checks below still worked normally.
     </div>`}
-    <${VerdictCards} result=${result} />
     <${OriginStrip} result=${result} />
+    <${RetentionBar} emailId=${result.id} />
+    <div class="section"><${DecisionBar} emailId=${result.id} /></div>
     <div class="tabs-row">
       <div class="tabs">
         ${tabButtons(TABS)} ${advanced && html`<span class="tabs">${tabButtons(ADVANCED_TABS)}</span>`}

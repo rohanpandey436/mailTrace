@@ -2,6 +2,7 @@ import { api, friendlyError } from "../api.js";
 import { plural } from "../format.js";
 import { html, useEffect, useRef, useState } from "../react.js";
 import { navigate } from "../router.js";
+import { icon } from "./icons.js";
 import { toast } from "./toast.js";
 
 const QUEUE_FROM = 5;
@@ -121,7 +122,7 @@ export function Dropzone() {
     }}
   >
     ${busy && html`<span class="dropzone__scan"></span>`}
-    <div class="dropzone__icon">📩</div>
+    <div class="dropzone__icon">${icon("mail")}</div>
     <div class="dropzone__title">Drop email files here, or click to choose</div>
     <div class="hint">You can drop several at once. ${QUEUE_FROM} or more are checked in the background.</div>
     <div class="cluster cluster--center dropzone__actions">

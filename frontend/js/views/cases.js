@@ -49,7 +49,7 @@ export function CasesView() {
   };
 
   return html`<${Fragment}>
-    ${pageHead("Checked emails", "Every email you have run through MailTrace. Click any row to open the full report.")}
+    ${pageHead("Checked emails", "Every email you have run through MailTrace. Click any row to open the full report.", { fold: true })}
     <form
       class="card card--tight section grid grid--filters"
       onSubmit=${(event) => {

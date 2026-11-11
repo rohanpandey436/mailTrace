@@ -89,6 +89,7 @@
 
   --ring-brand: 0 0 0 3px rgba(217, 72, 15, 0.12);
 
+  --z-menu: 20;
   --z-topbar: 30;
   --z-rail: 40;
   --z-toast: 50;

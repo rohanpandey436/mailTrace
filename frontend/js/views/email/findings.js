@@ -7,8 +7,10 @@ function FindingRow({ finding }) {
   return html`<details class="card finding">
     <summary class="finding__summary">
       <span class="finding__sev">${severityChip(finding.severity)}</span>
-      <span class="finding__title">${finding.title}</span>
-      ${chip(MODULE[finding.module] ?? finding.module)}
+      <span class="finding__main">
+        <span class="finding__title">${finding.title}</span>
+        ${chip(MODULE[finding.module] ?? finding.module)}
+      </span>
       <span class="finding__caret">▾</span>
     </summary>
     <p class="finding__detail">${finding.detail}</p>

@@ -72,7 +72,7 @@ export function AlertsView() {
   };
 
   return html`<${Fragment}>
-    ${pageHead("Alerts", "Raised the moment a dangerous email is checked, so nobody has to be watching the screen.")}
+    ${pageHead("Alerts", "Raised the moment a dangerous email is checked, so nobody has to be watching the screen.", { fold: true })}
     <div class="stack">${body()}</div>
   </>`;
 }

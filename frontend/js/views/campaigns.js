@@ -36,6 +36,7 @@ export function CampaignsView() {
     ${pageHead(
       "Linked attacks",
       "When two emails share the same sending computer, sender, link or attachment, they were almost certainly sent by the same person. MailTrace groups them automatically so you can see the whole campaign instead of one email at a time.",
+      { fold: true },
     )}
     ${body()}
   </>`;

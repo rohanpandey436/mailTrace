@@ -6,6 +6,8 @@ import { resyncMask, subscribeToAlerts } from "./live-feed.js";
 import { Fragment, html, useEffect, useRef, useState } from "./react.js";
 import { navigate, useRoute } from "./router.js";
 import { preferences, session, setPreference, unreadAlerts } from "./state.js";
+import { icon } from "./ui/icons.js";
+import { Menu } from "./ui/menu.js";
 import { Toasts, toast } from "./ui/toast.js";
 import { AlertsView, refreshUnreadCount } from "./views/alerts.js";
 import { CampaignView, CampaignsView } from "./views/campaigns.js";
@@ -17,10 +19,10 @@ const MAX_TOAST_SUBJECT = 60;
 const HEALTH_RETRY_MS = 10000;
 
 const NAV = [
-  ["dashboard", "🏠", "Home", "#/dashboard"],
-  ["cases", "📥", "Checked emails", "#/cases"],
-  ["campaigns", "🔗", "Linked attacks", "#/campaigns"],
-  ["alerts", "🔔", "Alerts", "#/alerts"],
+  ["dashboard", "home", "Home", "#/dashboard"],
+  ["cases", "inbox", "Checked emails", "#/cases"],
+  ["campaigns", "link", "Linked attacks", "#/campaigns"],
+  ["alerts", "bell", "Alerts", "#/alerts"],
 ];
 
 function UnreadBadge({ count }) {
@@ -35,8 +37,13 @@ function Rail({ route, unread }) {
       <span><span class="brand-name">MailTrace</span><span class="brand-sub">Email threat forensics</span></span>
     </a>
     ${NAV.map(
-      ([name, icon, label, href]) => html`<a key=${name} class=${`rail__link${route === name ? " is-active" : ""}`} href=${href}>
-        <span>${icon}</span><span>${label}</span>${name === "alerts" && html`<${UnreadBadge} count=${unread} />`}
+      ([name, glyph, label, href]) => html`<a
+        key=${name}
+        class=${`rail__link${route === name ? " is-active" : ""}`}
+        href=${href}
+        aria-current=${route === name ? "page" : undefined}
+      >
+        ${icon(glyph)}<span>${label}</span>${name === "alerts" && html`<${UnreadBadge} count=${unread} />`}
       </a>`,
     )}
     <div class="rail__footer">SIH PS 26106<br />AI email threat detection, geolocation & forensics</div>
@@ -73,6 +80,26 @@ function ConnectionBanner({ online, reachable, checking, onRetry }) {
   </div>`;
 }
 
+function MaskSwitch({ mask, onToggle }) {
+  return html`<label class="switch-label" title="Hides names, email addresses, phone numbers and ID numbers everywhere on screen">
+    <span>Hide personal info</span>
+    <span
+      class=${`switch${mask ? " is-on" : ""}`}
+      role="switch"
+      tabIndex=${0}
+      aria-checked=${String(mask)}
+      aria-label="Hide personal information"
+      onClick=${onToggle}
+      onKeyDown=${(event) => {
+        if (event.key === " " || event.key === "Enter") {
+          event.preventDefault();
+          onToggle();
+        }
+      }}
+    ></span>
+  </label>`;
+}
+
 function TopBar({ health, checking, unread, onMaskChange }) {
   const [query, setQuery] = useState(session.listFilters.q);
   const [mask, setMask] = useState(preferences.mask);
@@ -105,28 +132,19 @@ function TopBar({ health, checking, unread, onMaskChange }) {
       />
     </form>
     <div class="topbar__tools">
-      <${NetworkBadge} health=${health} checking=${checking} />
-      <label
-        class="switch-label topbar__mask"
-        title="Hides names, email addresses, phone numbers and ID numbers everywhere on screen"
-      >
-        <span>Hide personal info</span>
-        <span
-          class=${`switch${mask ? " is-on" : ""}`}
-          role="switch"
-          tabIndex=${0}
-          aria-checked=${String(mask)}
-          aria-label="Hide personal information"
-          onClick=${toggleMask}
-          onKeyDown=${(event) => {
-            if (event.key === " " || event.key === "Enter") {
-              event.preventDefault();
-              toggleMask();
-            }
-          }}
-        ></span>
-      </label>
-      <a href="#/alerts" class="btn btn--icon topbar__bell" title="Alerts">🔔<${UnreadBadge} count=${unread} /></a>
+      <div class="topbar__inline">
+        <${NetworkBadge} health=${health} checking=${checking} />
+        <${MaskSwitch} mask=${mask} onToggle=${toggleMask} />
+      </div>
+      <a href="#/alerts" class="btn btn--icon topbar__bell" title="Alerts" aria-label="Alerts">
+        ${icon("bell")}<${UnreadBadge} count=${unread} />
+      </a>
+      <div class="topbar__more">
+        <${Menu} label=${icon("more", "icon--dots")} ariaLabel="Display options" buttonClass="btn btn--icon">
+          <div class="menu__row"><${NetworkBadge} health=${health} checking=${checking} /></div>
+          <div class="menu__row"><${MaskSwitch} mask=${mask} onToggle=${toggleMask} /></div>
+        </${Menu}>
+      </div>
     </div>
   </header>`;
 }

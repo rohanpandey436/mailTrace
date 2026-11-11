@@ -1,7 +1,7 @@
 import { flag, place, truncate } from "../../format.js";
 import { DOMAIN_ROLE } from "../../labels.js";
 import { Fragment, html } from "../../react.js";
-import { chip, kv, section } from "../../ui/primitives.js";
+import { Explained, chip, kv, section } from "../../ui/primitives.js";
 
 const BRAND_NEW_DAYS = 90;
 const MAX_SUBJECT_CHARS = 60;
@@ -89,8 +89,11 @@ function DomainCard({ domain }) {
 export function domainsTab(result) {
   return html`<${Fragment}>
     ${originComputer(result)} ${seenBefore(result)}
-    <h3 class="domains-title">The domains involved</h3>
-    <p class="hint section__note">A domain registered days ago is one of the strongest signs of an attack.</p>
+    <${Explained}
+      title="The domains involved"
+      note="A domain registered days ago is one of the strongest signs of an attack."
+      titleClass="domains-title"
+    />
     ${result.domains.length > 0
       ? html`<div class="grid grid--cards">
           ${result.domains.map((domain, index) => html`<${DomainCard} key=${domain.domain + index} domain=${domain} />`)}

@@ -1,8 +1,8 @@
 import { api, friendlyError, urls } from "../api.js";
 import { formatDate, plural } from "../format.js";
 import { DECISION } from "../labels.js";
-import { html, useEffect, useState } from "../react.js";
-import { chip } from "./primitives.js";
+import { Fragment, html, useEffect, useState } from "../react.js";
+import { ActionBar, chip } from "./primitives.js";
 import { toast } from "./toast.js";
 
 const ACTIONS = [
@@ -53,18 +53,18 @@ export function DecisionBar({ emailId }) {
     }
   }
 
-  return html`<div class="card card--tight cluster cluster--top cluster--loose">
-    <div class="spread">
-      <div class="decision__title">Your decision ${chip(state.label, state.tone)}</div>
-      <p class="hint">
-        These buttons <b>record what you decided</b> in the evidence log and gather the
-        ${plural(decision.indicators.length, "indicator")} from this case so you can hand them to your mail gateway, firewall or SOC
-        team. <b class="strong">MailTrace is not connected to your mail system</b>, so nothing here moves, deletes or blocks a message
-        on its own.
-      </p>
-      ${last && html`<p class="hint">Last recorded by <b class="strong">${last.actor}</b> on ${formatDate(last.timestamp)}.</p>`}
-    </div>
-    <div class="cluster">
+  return html`<${ActionBar}
+    title="Your decision"
+    status=${chip(state.label, state.tone)}
+    summary=${last &&
+    html`<span class="hint">Last recorded by <b class="strong">${last.actor}</b> on ${formatDate(last.timestamp)}</span>`}
+    detail=${html`<p class="hint">
+      These buttons <b>record what you decided</b> in the evidence log and gather
+      the ${plural(decision.indicators.length, "indicator")} from this case so you can hand them to your mail gateway, firewall or SOC
+      team. <b class="strong">MailTrace is not connected to your mail system</b>, so nothing here moves, deletes or blocks a message
+      on its own.
+    </p>`}
+    actions=${html`<${Fragment}>
       ${ACTIONS.map(
         (item) => html`<button
           key=${item.action}
@@ -78,6 +78,6 @@ export function DecisionBar({ emailId }) {
         </button>`,
       )}
       <a class="btn" href=${urls.report(emailId, "csv")} title="The indicators and every finding as a spreadsheet">Export indicators</a>
-    </div>
-  </div>`;
+    </>`}
+  />`;
 }

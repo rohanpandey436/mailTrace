@@ -1,8 +1,8 @@
 import { api, friendlyError } from "../api.js";
 import { formatDate, plural } from "../format.js";
 import { ORIGIN } from "../labels.js";
-import { html, useEffect, useState } from "../react.js";
-import { chip } from "./primitives.js";
+import { Fragment, html, useEffect, useState } from "../react.js";
+import { ActionBar, chip } from "./primitives.js";
 import { toast } from "./toast.js";
 
 const MINUTE = 60;
@@ -64,53 +64,50 @@ export function RetentionBar({ emailId }) {
 
   if (retention.state === "expiring") {
     return html`<div class="section">
-      <div class="card card--tight cluster cluster--top cluster--loose">
-        <div class="spread">
-          <div class="decision__title">
-            ${origin.title} ${chip(`Deletes itself in ${timeLeft(retention.seconds_left)}`, "warn")}
-          </div>
+      <${ActionBar}
+        title=${origin.title}
+        status=${chip(`Deletes itself in ${timeLeft(retention.seconds_left)}`, "warn")}
+        detail=${html`<${Fragment}>
           <p class="hint">
             ${origin.detail} ${visibility(retention)} The analysis, the original email and its indicators will be
             <b class="strong"> deleted on ${formatDate(retention.expires_at)}</b>. Only the entry in the evidence log stays, so the
             log remains complete.
           </p>
           <p class="hint">Freeze the case if it has to be kept for a complaint or an investigation.</p>
-        </div>
-        <div class="cluster">
-          <button
-            class=${`btn btn--primary${busy ? " is-busy" : ""}`}
-            type="button"
-            title="Cancels the automatic deletion and records who preserved the case"
-            disabled=${busy}
-            onClick=${() => void freeze()}
-          >
-            Freeze and preserve as evidence
-          </button>
-        </div>
-      </div>
+        </>`}
+        actions=${html`<button
+          class=${`btn btn--primary${busy ? " is-busy" : ""}`}
+          type="button"
+          title="Cancels the automatic deletion and records who preserved the case"
+          disabled=${busy}
+          onClick=${() => void freeze()}
+        >
+          Freeze and preserve as evidence
+        </button>`}
+      />
     </div>`;
   }
 
   if (retention.state === "frozen") {
     return html`<div class="section">
-      <div class="card card--tight cluster cluster--top cluster--loose">
-        <div class="spread">
-          <div class="decision__title">${origin.title} ${chip("Preserved as evidence", "ok")}</div>
-          <p class="hint">
-            Frozen by <b class="strong">${retention.frozen_by || "an analyst"}</b> on ${formatDate(retention.frozen_at)}. Automatic
-            deletion is cancelled and the case is kept until an administrator removes it. ${visibility(retention)}
-          </p>
-        </div>
-      </div>
+      <${ActionBar}
+        title=${origin.title}
+        status=${chip("Preserved as evidence", "ok")}
+        summary=${html`<span class="hint">
+          Frozen by <b class="strong">${retention.frozen_by || "an analyst"}</b> on ${formatDate(retention.frozen_at)}
+        </span>`}
+        detail=${html`<p class="hint">
+          Automatic deletion is cancelled and the case is kept until an administrator removes it. ${visibility(retention)}
+        </p>`}
+      />
     </div>`;
   }
 
   return html`<div class="section">
-    <div class="card card--tight cluster cluster--top cluster--loose">
-      <div class="spread">
-        <div class="decision__title">${origin.title} ${chip("Kept", "neutral")}</div>
-        <p class="hint">${origin.detail} ${visibility(retention)}</p>
-      </div>
-    </div>
+    <${ActionBar}
+      title=${origin.title}
+      status=${chip("Kept", "neutral")}
+      detail=${html`<p class="hint">${origin.detail} ${visibility(retention)}</p>`}
+    />
   </div>`;
 }

@@ -1,7 +1,7 @@
 import { clampPercent } from "../format.js";
 import { useCountUp } from "../hooks.js";
 import { categoryOf, severityOf } from "../labels.js";
-import { Fragment, html } from "../react.js";
+import { Fragment, html, useState } from "../react.js";
 
 const GAUGE_ARC = "M 20 100 A 80 80 0 0 1 180 100";
 const GAUGE_ARC_LENGTH = Math.PI * 80;
@@ -61,16 +61,77 @@ export function gauge(score, severity) {
   </svg>`;
 }
 
-export function section(title, body, { aside = null, note = "" } = {}) {
+export function InfoButton({ open, onToggle }) {
+  const label = open ? "Hide the explanation" : "What is this?";
+  return html`<button
+    type="button"
+    class=${`info${open ? " is-open" : ""}`}
+    aria-expanded=${String(open)}
+    aria-label=${label}
+    title=${label}
+    onClick=${onToggle}
+  >
+    i
+  </button>`;
+}
+
+export function Explained({ title, note, titleClass = "section__title" }) {
+  const [open, setOpen] = useState(false);
+  return html`<${Fragment}>
+    <h3 class=${`${titleClass} section__title--info`}>
+      ${title}<${InfoButton} open=${open} onToggle=${() => setOpen(!open)} />
+    </h3>
+    ${open ? html`<p class="hint section__note reveal">${note}</p>` : html`<div class="section__spacer"></div>`}
+  </>`;
+}
+
+function Section({ title, aside, note, children }) {
+  const [open, setOpen] = useState(false);
   return html`<section class="card card--pad section">
-    <div class="section__head"><h3 class="section__title">${title}</h3>${aside}</div>
-    ${note ? html`<p class="hint section__note">${note}</p>` : html`<div class="section__spacer"></div>`}
-    ${body}
+    <div class="section__head">
+      <h3 class="section__title section__title--info">
+        ${title}${note && html`<${InfoButton} open=${open} onToggle=${() => setOpen(!open)} />`}
+      </h3>
+      ${aside}
+    </div>
+    ${note && open ? html`<p class="hint section__note reveal">${note}</p>` : html`<div class="section__spacer"></div>`}
+    ${children}
   </section>`;
 }
 
-export function pageHead(title, intro) {
-  return html`<div class="page-head"><h1 class="page-title">${title}</h1><p class="page-intro">${intro}</p></div>`;
+export function section(title, body, { aside = null, note = "" } = {}) {
+  return html`<${Section} title=${title} aside=${aside} note=${note}>${body}</${Section}>`;
+}
+
+function PageHead({ title, intro, fold }) {
+  const [open, setOpen] = useState(!fold);
+  return html`<div class="page-head">
+    <h1 class="page-title page-title--info">
+      ${title}${fold && html`<${InfoButton} open=${open} onToggle=${() => setOpen(!open)} />`}
+    </h1>
+    ${open && html`<p class=${`page-intro${fold ? " reveal" : ""}`}>${intro}</p>`}
+  </div>`;
+}
+
+export function pageHead(title, intro, { fold = false } = {}) {
+  return html`<${PageHead} title=${title} intro=${intro} fold=${fold} />`;
+}
+
+export function ActionBar({ title, status, summary = null, detail, actions = null }) {
+  const [open, setOpen] = useState(false);
+  return html`<div class="card card--tight actionbar">
+    <div class="actionbar__row">
+      <div class="actionbar__lead">
+        <span class="decision__title">${title}</span>
+        ${status} ${summary}
+        <button type="button" class="linkbtn" aria-expanded=${String(open)} onClick=${() => setOpen(!open)}>
+          ${open ? "Hide details" : "What is this?"}
+        </button>
+      </div>
+      ${actions && html`<div class="cluster">${actions}</div>`}
+    </div>
+    ${open && html`<div class="actionbar__detail reveal">${detail}</div>`}
+  </div>`;
 }
 
 export function kpi(label, value, tone) {
