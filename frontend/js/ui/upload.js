@@ -120,6 +120,7 @@ export function Dropzone() {
       analyseFiles(event.dataTransfer?.files ?? null);
     }}
   >
+    ${busy && html`<span class="dropzone__scan"></span>`}
     <div class="dropzone__icon">📩</div>
     <div class="dropzone__title">Drop email files here, or click to choose</div>
     <div class="hint">You can drop several at once. ${QUEUE_FROM} or more are checked in the background.</div>

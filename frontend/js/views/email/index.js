@@ -209,6 +209,6 @@ export function EmailView({ emailId }) {
         ></span>
       </label>
     </div>
-    <${TabPanel} result=${result} tab=${tab} />
+    <div class="tab-panel" key=${tab}><${TabPanel} result=${result} tab=${tab} /></div>
   </>`;
 }

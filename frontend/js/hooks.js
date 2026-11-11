@@ -1,7 +1,10 @@
 import { friendlyError } from "./api.js";
-import { useCallback, useEffect, useState } from "./react.js";
+import { useCallback, useEffect, useRef, useState } from "./react.js";
 
 const SLOW_AFTER_MS = 4000;
+const COUNT_MS = 600;
+
+export const prefersReducedMotion = () => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 export function useAsync(load, deps) {
   const [data, setData] = useState((null));
@@ -52,6 +55,33 @@ export function useOnline() {
     };
   }, []);
   return online;
+}
+
+export function useCountUp(target, duration = COUNT_MS) {
+  const goal = Number.isFinite(target) ? Number(target) : 0;
+  const [shown, setShown] = useState(() => (prefersReducedMotion() ? goal : 0));
+  const current = useRef(shown);
+  useEffect(() => {
+    if (prefersReducedMotion() || current.current === goal) {
+      current.current = goal;
+      setShown(goal);
+      return undefined;
+    }
+    const from = current.current;
+    const started = performance.now();
+    let frame = 0;
+    const step = (now) => {
+      const progress = Math.min(1, (now - started) / duration);
+      const eased = 1 - (1 - progress) ** 3;
+      const value = Math.round(from + (goal - from) * eased);
+      current.current = value;
+      setShown(value);
+      if (progress < 1) frame = requestAnimationFrame(step);
+    };
+    frame = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(frame);
+  }, [goal, duration]);
+  return shown;
 }
 
 export function useStore(store) {

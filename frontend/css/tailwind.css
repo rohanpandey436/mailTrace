@@ -99,9 +99,11 @@
   --map-height: 400px;
   --graph-height: 480px;
   --graph-height-tall: 520px;
-  --gauge-width: 11rem;
+  --gauge-width: 17rem;
 
   --duration: 150ms;
+  --gauge-ms: 900ms;
+  --ease-out-cubic: cubic-bezier(0.215, 0.61, 0.355, 1);
 }
 
 @layer base {

@@ -16,7 +16,7 @@ export async function refreshUnreadCount() {
   }
 }
 
-function AlertRow({ alert, onAcknowledged }) {
+function AlertRow({ alert, fresh, onAcknowledged }) {
   const [busy, setBusy] = useState(false);
   async function acknowledge() {
     setBusy(true);
@@ -29,7 +29,7 @@ function AlertRow({ alert, onAcknowledged }) {
       toast(html`Could not update: ${friendlyError(error)}`, "error");
     }
   }
-  return html`<div class="card card--tight alert-row">
+  return html`<div class=${`card card--tight alert-row${fresh ? " is-fresh" : ""}`}>
     <div>${riskBar(alert.risk_score, alert.severity)}</div>
     <div class="spread">
       <div class="alert-row__title">
@@ -57,6 +57,7 @@ export function AlertsView() {
   if (error) return errorState(error, reload);
 
   const alerts = loading || !data ? [] : [...live, ...data];
+  const liveIds = new Set(live.map((alert) => alert.id));
   const body = () => {
     if (loading || !data) return loadingState(3, slow);
     if (alerts.length === 0) return emptyState("No alerts", "Anything scoring above the alert level will show up here straight away.");
@@ -64,6 +65,7 @@ export function AlertsView() {
       (alert) => html`<${AlertRow}
         key=${alert.id}
         alert=${seen.has(alert.id) ? { ...alert, acknowledged: true } : alert}
+        fresh=${liveIds.has(alert.id)}
         onAcknowledged=${(id) => setSeen((current) => new Set(current).add(id))}
       />`,
     );

@@ -1,8 +1,22 @@
 import { clampPercent } from "../format.js";
+import { useCountUp } from "../hooks.js";
 import { categoryOf, severityOf } from "../labels.js";
 import { Fragment, html } from "../react.js";
 
+const GAUGE_ARC = "M 20 100 A 80 80 0 0 1 180 100";
 const GAUGE_ARC_LENGTH = Math.PI * 80;
+const GAUGE_MS = 900;
+const GAUGE_LEVEL = {
+  critical: "Critical risk",
+  high: "High risk",
+  medium: "Medium risk",
+  low: "Low risk",
+  info: "Minimal risk",
+};
+
+export function Count({ value, duration }) {
+  return useCountUp(value, duration);
+}
 
 export function chip(text, tone = "neutral", { mono = false, title = "", key = undefined } = {}) {
   return html`<span key=${key} class="chip tone-${tone}${mono ? " chip--mono" : ""}" title=${title || undefined}>${text}</span>`;
@@ -33,12 +47,17 @@ export function riskBar(score, severity) {
 }
 
 export function gauge(score, severity) {
-  const filled = (GAUGE_ARC_LENGTH * clampPercent(score)) / 100;
-  return html`<svg class="gauge tone-${severityOf(severity).tone}" viewBox="0 0 200 120" role="img" aria-label=${`Risk ${score} out of 100`}>
-    <path class="gauge__track" d="M 20 100 A 80 80 0 0 1 180 100" />
-    <path class="gauge__value" d="M 20 100 A 80 80 0 0 1 180 100" stroke-dasharray=${`${filled} ${GAUGE_ARC_LENGTH}`} />
-    <text class="gauge__score" x="100" y="90" text-anchor="middle">${score}</text>
-    <text class="gauge__caption" x="100" y="112" text-anchor="middle">RISK OUT OF 100</text>
+  const level = severityOf(severity);
+  const value = clampPercent(score);
+  const filled = (GAUGE_ARC_LENGTH * value) / 100;
+  const caption = GAUGE_LEVEL[severity] ?? `${level.label} risk`;
+  return html`<svg class="gauge tone-${level.tone}" viewBox="0 0 200 128" role="img" aria-label=${`Risk ${score} out of 100, ${caption.toLowerCase()}`}>
+    <path class="gauge__track" d=${GAUGE_ARC} />
+    <path class="gauge__value" d=${GAUGE_ARC} stroke-dasharray=${`${filled} ${GAUGE_ARC_LENGTH}`} />
+    <circle class="gauge__tip" cx="20" cy="100" r="6" style=${{ "--value": String(value) }} />
+    <text class="gauge__score" x="100" y="86" text-anchor="middle"><${Count} value=${score} duration=${GAUGE_MS} /></text>
+    <text class="gauge__level" x="100" y="104" text-anchor="middle">${caption.toUpperCase()}</text>
+    <text class="gauge__caption" x="100" y="122" text-anchor="middle">OUT OF 100</text>
   </svg>`;
 }
 
@@ -55,7 +74,7 @@ export function pageHead(title, intro) {
 }
 
 export function kpi(label, value, tone) {
-  return html`<div class="card card--tight kpi tone-${tone}"><div class="kpi__label">${label}</div><div class="kpi__value">${value ?? 0}</div></div>`;
+  return html`<div class="card card--tight kpi tone-${tone}"><div class="kpi__label">${label}</div><div class="kpi__value"><${Count} value=${value ?? 0} /></div></div>`;
 }
 
 export function kv(pairs) {
