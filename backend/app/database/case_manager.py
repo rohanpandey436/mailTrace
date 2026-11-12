@@ -27,6 +27,7 @@ from ..schemas import (
     CustodyChain,
     CustodyEvent,
     DashboardStats,
+    OriginPoint,
     Severity,
     ThreatCategory,
 )
@@ -38,6 +39,8 @@ log = logging.getLogger("mailtrace.db")
 
 GENESIS_HASH = "0" * 64
 HIGH_RISK_THRESHOLD = 70
+ORIGIN_SCAN_LIMIT = 500
+_ORIGIN_GEO = ("infrastructure", "origin_geo")
 DEFAULT_CASE_STATUS: CaseStatus = "open"
 _STATUS_BY_NAME: dict[str, CaseStatus] = {str(name): name for name in CASE_STATUSES}
 
@@ -239,6 +242,10 @@ class _SqliteDialect:
         names, placeholders = _insert_columns(columns)
         return f"INSERT OR IGNORE INTO {table} ({names}) VALUES ({placeholders})"
 
+    @staticmethod
+    def json_field(column: str, path: tuple[str, ...]) -> str:
+        return f"json_extract({column}, '$.{'.'.join(path)}')"
+
 
 class _PgRow:
 
@@ -359,6 +366,10 @@ class _PostgresDialect:
     def insert_ignore(table: str, columns: list[str]) -> str:
         names, placeholders = _insert_columns(columns)
         return f"INSERT INTO {table} ({names}) VALUES ({placeholders}) ON CONFLICT DO NOTHING"
+
+    @staticmethod
+    def json_field(column: str, path: tuple[str, ...]) -> str:
+        return f"({column}::jsonb #>> '{{{','.join(path)}}}')"
 
 
 def _make_dialect(target: str, database_url: str, *, on_disk: bool) -> Any:
@@ -997,6 +1008,37 @@ class Store:
         expires = time.time() + lifetime
         with self._tx() as conn:
             conn.execute(self._dialect.upsert("cache", ["key", "value_json", "expires_at"], ("key",)), (key, payload, expires))
+
+    def origins(self, limit: int = ORIGIN_SCAN_LIMIT) -> list[OriginPoint]:
+        field = self._dialect.json_field
+        sql = (
+            "SELECT originating_ip, origin_country, risk_score, "
+            f"{field('result_json', (*_ORIGIN_GEO, 'lat'))} AS lat, "
+            f"{field('result_json', (*_ORIGIN_GEO, 'lon'))} AS lon, "
+            f"{field('result_json', (*_ORIGIN_GEO, 'city'))} AS city "
+            f"FROM emails WHERE {_LISTED} AND originating_ip != '' AND origin_country != '' "
+            "ORDER BY analyzed_at DESC, id DESC LIMIT ?"
+        )
+        with self._lock:
+            rows = self._conn.execute(sql, (max(1, int(limit)),)).fetchall()
+        points: dict[str, OriginPoint] = {}
+        for row in rows:
+            if row["lat"] is None or row["lon"] is None:
+                continue
+            ip = str(row["originating_ip"])
+            point = points.get(ip)
+            if point is None:
+                point = OriginPoint(
+                    ip=ip,
+                    lat=float(row["lat"]),
+                    lon=float(row["lon"]),
+                    city=str(row["city"] or ""),
+                    country=str(row["origin_country"]),
+                )
+                points[ip] = point
+            point.emails += 1
+            point.max_risk = max(point.max_risk, int(row["risk_score"]))
+        return sorted(points.values(), key=lambda point: (-point.emails, -point.max_risk, point.ip))
 
     def stats(self) -> DashboardStats:
         with self._lock:

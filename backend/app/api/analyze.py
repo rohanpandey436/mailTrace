@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from pathlib import Path
 from typing import Annotated, get_args
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
@@ -24,6 +25,7 @@ from ..schemas import (
     DashboardStats,
     JobStatus,
     LimeReport,
+    OriginPoint,
     RawSubmission,
     Retention,
     SourceType,
@@ -174,6 +176,39 @@ async def analyze_raw(
     except retention.RetentionLimit as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     result, alert, kept = await run_in_threadpool(_process, raw, filename, actor, mask, store, settings, plan)
+    return AnalyzeResponse(
+        results=[result],
+        alerts=[alert] if alert is not None else [],
+        retention=[kept] if kept is not None else [],
+    )
+
+
+def _sample_files(settings: Settings) -> dict[str, Path]:
+    directory = settings.samples_dir
+    if not directory.is_dir():
+        return {}
+    return {path.stem: path for path in sorted(directory.glob("*.eml"))}
+
+
+@router.get("/samples")
+def list_samples(settings: SettingsDep) -> list[str]:
+    return list(_sample_files(settings))
+
+
+@router.post("/samples/{name}")
+async def analyze_sample(
+    name: str,
+    store: StoreDep,
+    settings: SettingsDep,
+    mask: MaskDep,
+    actor: ActorParam = DEFAULT_ACTOR,
+) -> AnalyzeResponse:
+    path = _sample_files(settings).get(name)
+    if path is None:
+        raise NotFound(f"sample {name[:64]} not found")
+    raw = await run_in_threadpool(path.read_bytes)
+    plan = retention.plan("sample", None, None, settings)
+    result, alert, kept = await run_in_threadpool(_process, raw, path.name, actor, mask, store, settings, plan)
     return AnalyzeResponse(
         results=[result],
         alerts=[alert] if alert is not None else [],
@@ -342,3 +377,8 @@ async def get_explanation(email_id: str, store: StoreDep, settings: SettingsDep)
 @router.get("/stats")
 def get_stats(store: StoreDep) -> DashboardStats:
     return store.stats()
+
+
+@router.get("/origins")
+def get_origins(store: StoreDep) -> list[OriginPoint]:
+    return store.origins()

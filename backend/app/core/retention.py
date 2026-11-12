@@ -16,7 +16,7 @@ RETAIN_ACTION = "retention_set"
 FREEZE_ACTION = "evidence_frozen"
 PURGE_ACTION = "purged"
 
-_ORIGINS: dict[str, CaseOrigin] = {"dashboard": "dashboard", "gmail": "gmail"}
+_ORIGINS: dict[str, CaseOrigin] = {"dashboard": "dashboard", "gmail": "gmail", "sample": "sample"}
 _REMOVED = ["analysis", "original message", "indicators", "alerts", "analyst decision"]
 
 
@@ -37,14 +37,14 @@ class Plan:
 
 
 def plan(origin: CaseOrigin, listed: bool | None, hours: int | None, cfg: Settings) -> Plan:
-    from_gmail = origin == "gmail"
+    temporary = origin != "dashboard"
     if hours is not None and hours > cfg.retention_max_hours:
         raise RetentionLimit(
             f"retention_hours is {hours}; the longest period this server accepts is {cfg.retention_max_hours}"
         )
-    if hours is None and from_gmail:
+    if hours is None and temporary:
         hours = cfg.retention_default_hours
-    return Plan(origin=origin, listed=(not from_gmail) if listed is None else bool(listed), hours=hours)
+    return Plan(origin=origin, listed=(not temporary) if listed is None else bool(listed), hours=hours)
 
 
 def _moment(value: Any) -> datetime | None:

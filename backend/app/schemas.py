@@ -58,7 +58,7 @@ NodeType = Literal["email", "address", "domain", "ip", "asn", "url", "attachment
 CaseStatus = Literal["open", "quarantined", "blocked"]
 CASE_STATUSES: tuple[CaseStatus, ...] = ("open", "quarantined", "blocked")
 
-CaseOrigin = Literal["dashboard", "gmail"]
+CaseOrigin = Literal["dashboard", "gmail", "sample"]
 RetentionState = Literal["permanent", "expiring", "frozen", "purged"]
 DomainRole = Literal["sender", "reply_to", "return_path", "message_id", "url"]
 
@@ -606,6 +606,16 @@ class CountryCount(BaseModel):
     count: int
 
 
+class OriginPoint(BaseModel):
+    ip: str
+    lat: float
+    lon: float
+    city: str = ""
+    country: str = ""
+    emails: int = Field(default=0, description="Listed cases whose first public hop is this address")
+    max_risk: int = Field(default=0, description="Highest risk score among those cases")
+
+
 class DashboardStats(BaseModel):
     total_emails: int = 0
     high_risk: int = 0
@@ -623,11 +633,12 @@ class RawSubmission(BaseModel):
     origin: CaseOrigin = Field(default="dashboard", description="Where the message was submitted from")
     listed: bool | None = Field(
         default=None,
-        description="Show the case in lists, statistics and campaigns; defaults to false for origin 'gmail'",
+        description="Show the case in lists, statistics and campaigns; defaults to false for origins 'gmail' and 'sample'",
     )
     retention_hours: int | None = Field(
         default=None, ge=1,
-        description="Delete the case this many hours after analysis unless it is frozen; defaults to 24 for origin 'gmail'",
+        description="Delete the case this many hours after analysis unless it is frozen; "
+        "defaults to 24 for origins 'gmail' and 'sample'",
     )
 
 
