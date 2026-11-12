@@ -69,6 +69,11 @@ def _env_list(name: str, default: list[str]) -> list[str]:
     return [item.strip().lower() for item in raw.split(",") if item.strip()]
 
 
+def _keepawake_url() -> str:
+    value = os.environ.get(ENV_PREFIX + "KEEPAWAKE_URL", "").strip().rstrip("/")
+    return "" if value.lower() in {"0", "off", "false", "no"} else value
+
+
 @dataclass
 class Settings:
     data_dir: Path = field(default_factory=lambda: BASE_DIR / "data")
@@ -113,6 +118,9 @@ class Settings:
     intel_max_ips: int = 12
     intel_max_fingerprints: int = 64
     intel_cache_entries: int = 2048
+    keepawake_url: str = ""
+    keepawake_seconds: int = 600
+    keepawake_rest_days: int = 3
     log_level: str = "info"
 
     @property
@@ -199,6 +207,9 @@ class Settings:
             intel_max_ips=max(1, _env_int("INTEL_MAX_IPS", 12)),
             intel_max_fingerprints=max(1, _env_int("INTEL_MAX_FINGERPRINTS", 64)),
             intel_cache_entries=max(16, _env_int("INTEL_CACHE_ENTRIES", 2048)),
+            keepawake_url=_keepawake_url(),
+            keepawake_seconds=max(60, _env_int("KEEPAWAKE_SECONDS", 600)),
+            keepawake_rest_days=max(0, _env_int("KEEPAWAKE_REST_DAYS", 3)),
             log_level=_env("LOG_LEVEL", "info"),
         )
 

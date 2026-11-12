@@ -34,9 +34,13 @@ the dashboard and forwards API calls. It does not run any Python.
 
 Two consequences:
 
-- **Cold starts still apply.** The Render free tier sleeps an idle service, so
-  the first request after a quiet period waits for it to wake, whether it
-  arrives through Vercel or directly.
+- **Cold starts still apply.** The Render free tier sleeps a service after 15
+  idle minutes, so the first request after a quiet period waits for it to wake,
+  whether it arrives through Vercel or directly. Setting
+  `MAILTRACE_KEEPAWAKE_URL` to the service's public address makes the backend
+  request its own `/api/health` every ten minutes and stay awake, except on the
+  last three days of each month, when it rests so the free monthly hours cannot
+  run out. Render's free plan has hours for one always-on service per workspace.
 - **The alert stream is a proxied `text/event-stream`.** It works, but a
   platform proxy may buffer more than a direct connection does, so a live alert
   can arrive a moment later than it would against Render directly.

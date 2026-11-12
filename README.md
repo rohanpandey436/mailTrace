@@ -337,7 +337,10 @@ is unaffected.
 
 The Python service moved into `backend/` and the dashboard into `frontend/`.
 `render.yaml` stays at the repository root because Render only reads a Blueprint
-from there; it sets `rootDir: backend`.
+from there; it sets `rootDir: backend`. With a root directory Render ignores
+pushes that change nothing inside it, so the Blueprint's `buildFilter` also
+lists `frontend/` and `engine/`: a dashboard-only commit now redeploys the
+service that serves it.
 
 ```
 mailtrace/
@@ -758,6 +761,9 @@ with a comment in `deploy/.env.example`. See `backend/app/config.py`.
 | `MAILTRACE_PORT` | `8000` (or `PORT`) | Bind port |
 | `MAILTRACE_MAX_UPLOAD_BYTES` | `15728640` | Per-file upload limit (15 MiB); larger files get HTTP 413 |
 | `MAILTRACE_LOG_LEVEL` | `info` | `critical`, `error`, `warning`, `info` or `debug` |
+| `MAILTRACE_KEEPAWAKE_URL` | (empty, so off) | The service's own public address. When set, the service requests `/api/health` there so a free host does not put it to sleep, and `/api/health` reports the last request under `keep_awake`. Leave it empty unless this is the one always-on service in the Render workspace |
+| `MAILTRACE_KEEPAWAKE_SECONDS` | `600` | Seconds between those requests. Render sleeps a free service after 15 idle minutes |
+| `MAILTRACE_KEEPAWAKE_REST_DAYS` | `3` | Days at the end of each month with no keep-awake requests, so one always-on service stays inside Render's 750 free instance hours. `0` never rests |
 
 The five weight names are the only ones read. `config.Settings.from_env` builds
 each variable as `"MAILTRACE_WEIGHT_" + key.upper()` over the keys of

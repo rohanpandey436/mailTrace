@@ -15,6 +15,8 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.requests import ClientDisconnect
+from starlette.responses import Response
+from starlette.types import Scope
 
 from . import tasks
 from .api import alerts, analyze, cases, intel, reports
@@ -23,6 +25,7 @@ from .config import settings as default_settings
 from .core import retention
 from .core.errors import NotFound
 from .database.case_manager import Store
+from .keepawake import KeepAwake
 from .schemas import ENGINE_VERSION, HealthStatus
 
 log = logging.getLogger("mailtrace.main")
@@ -94,6 +97,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         tasks.configure(cfg)
         tasks.start_embedded_worker(cfg)
         _warm_model(cfg)
+        keeper = KeepAwake.from_settings(cfg)
+        app.state.keepawake = keeper
+        if keeper is not None:
+            keeper.start()
         sweeper = asyncio.create_task(_sweep_retention(app.state.store, cfg), name="mt-retention-sweep")
         if cfg.zero_persistence:
             log.warning(
@@ -115,6 +122,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             sweeper.cancel()
             with suppress(asyncio.CancelledError):
                 await sweeper
+            if keeper is not None:
+                keeper.stop()
             alerts.shutdown_webhooks()
             tasks.unbind_store()
             app.state.store.close()
@@ -144,6 +153,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         from .core import geoip_mapper, parser
 
         store: Store | None = getattr(app.state, "store", None)
+        keeper: KeepAwake | None = getattr(app.state, "keepawake", None)
         return HealthStatus(
             network=cfg.enable_network,
             pii_mask_default=cfg.pii_mask_default,
@@ -159,16 +169,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             native_engine_sha256=parser.NATIVE_ENGINE_SHA256,
             queue=tasks.queue_status(cfg),
             retention=retention.summary(store, cfg) if store is not None else "",
+            keep_awake=keeper.summary() if keeper is not None else "off",
         )
 
     _mount_dashboard(app, cfg.static_dir)
     return app
 
 
+class _Dashboard(StaticFiles):
+
+    async def get_response(self, path: str, scope: Scope) -> Response:
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
 def _mount_dashboard(app: FastAPI, static_dir: Path) -> None:
     page = static_dir / "index.html"
     if page.is_file():
-        app.mount("/", StaticFiles(directory=static_dir, html=True), name="dashboard")
+        app.mount("/", _Dashboard(directory=static_dir, html=True), name="dashboard")
         return
 
     @app.get("/", include_in_schema=False)

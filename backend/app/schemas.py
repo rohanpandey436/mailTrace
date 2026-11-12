@@ -771,6 +771,9 @@ class HealthStatus(BaseModel):
     native_engine_status: str
     queue: str = Field(default="", description="How background tasks execute: eager, or Redis with embedded/external workers")
     retention: str = Field(default="", description="How often expired cases are deleted and how many are waiting")
+    keep_awake: str = Field(
+        default="", description="Whether the service requests its own public address to stay awake, and how the last request went"
+    )
     native_engine_sha256: str = Field(
         default="",
         description='Which SHA-256 the engine links: "openssl", "builtin", or "" when the engine is not in use',

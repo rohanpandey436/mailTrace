@@ -125,8 +125,9 @@ handful of combining classes that later Unicode versions corrected.
 - The MailTrace API runs on Render's free tier, which sleeps after 15 minutes
   without traffic. The first Connected-mode lookup or Investigate after a pause
   can fail with a "server did not answer" message; the card says so and the next
-  tap succeeds. Keeping the server awake (an uptime monitor pinging
-  `/api/health` every five minutes, or a paid instance) removes this.
+  tap succeeds. Keeping the server awake removes this: set
+  `MAILTRACE_KEEPAWAKE_URL` to the service's public address and it requests its
+  own `/api/health` every ten minutes, or use a paid instance.
 - Messages over 15 MB are analysed locally but cannot be sent to the dashboard
   (`MAX_UPLOAD_BYTES`).
 - Gmail's own `Authentication-Results` header is what the add-on reads for SPF,
