@@ -54,7 +54,7 @@ function PatternCard({ pattern }) {
       <b>${BEC_PATTERN[pattern.pattern] ?? pattern.pattern}</b><span class="mono">${percent(pattern.confidence)}</span>
     </div>
     ${bar(pattern.confidence * 100, tone)}
-    <div class="hint subsection">Spotted: ${pattern.evidence.slice(0, MAX_EVIDENCE).join(" · ") || "—"}</div>
+    <div class="hint subsection">Spotted: ${pattern.evidence.slice(0, MAX_EVIDENCE).join(" · ") || "no single phrase"}</div>
   </div>`;
 }
 
@@ -87,7 +87,7 @@ function LimeSection({ emailId, predicted }) {
     </>`;
   }
   return html`<${Fragment}>
-    <div class="subsection__title">Second opinion (LIME) — how the answer changes when words are removed</div>
+    <div class="subsection__title">Second opinion (LIME): how the answer changes when words are removed</div>
     <div class="cluster">
       ${data.weights
         .slice(0, MAX_WEIGHTS)
@@ -95,8 +95,8 @@ function LimeSection({ emailId, predicted }) {
     </div>
     <p class="hint subsection">
       SHAP reads the model's own weights. LIME instead rewrites this email many times with words taken out, watches what changes, and
-      fits a simple local model to that — here it matches the real model with R² ${data.fidelity.toFixed(2)}. Red pushed toward
-      <b>${predicted}</b>, green pushed away.
+      fits a simple local model to that. Here it matches the real model with R² ${data.fidelity.toFixed(2)}.
+      Red pushed toward <b>${predicted}</b>, green pushed away.
       ${data.agreement_with_shap.length > 0 &&
       ` ${data.agreement_with_shap.length} of its top ${data.weights.length} words also appear in the SHAP list, which is corroboration.`}
     </p>
@@ -127,10 +127,9 @@ function ModelView({ result }) {
           <p class="hint subsection">Red pushes toward <b>${predicted}</b>, green pushes away from it.</p>
         </div>`
       : html`<p class="hint subsection">
-          Words that pushed the decision:
-          ${nlp.ml_top_terms.length > 0
+          Words that pushed the decision: ${nlp.ml_top_terms.length > 0
             ? nlp.ml_top_terms.slice(0, MAX_TOP_TERMS).map((term, index) => chip(term, "info", { key: index }))
-            : "—"}
+            : "none stood out"}
         </p>`}
     <div class="subsection subsection--divided">
       <${LimeSection} emailId=${result.id} predicted=${predicted} />

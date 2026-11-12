@@ -45,7 +45,7 @@ export function DecisionBar({ emailId }) {
     setBusy(true);
     try {
       setDecision(await api.recordDecision(emailId, action));
-      toast("Decision saved to the evidence log. Nothing was sent to your mail system — pass the indicators to whoever enforces.");
+      toast("Decision saved to the evidence log. Nothing was sent to your mail system, so pass the indicators to whoever enforces it.");
     } catch (error) {
       toast(html`Could not record that: ${friendlyError(error)}`, "error");
     } finally {

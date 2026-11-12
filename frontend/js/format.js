@@ -3,13 +3,13 @@ const MEGABYTE = KILOBYTE * KILOBYTE;
 const REGIONAL_INDICATOR_BASE = 0x1f1e6;
 
 export function formatDate(iso) {
-  if (!iso) return "—";
+  if (!iso) return "time not recorded";
   const date = new Date(iso);
   return Number.isNaN(date.getTime()) ? iso : date.toLocaleString();
 }
 
 export function formatBytes(bytes) {
-  if (bytes === null || bytes === undefined) return "—";
+  if (bytes === null || bytes === undefined) return "size not known";
   if (bytes < KILOBYTE) return `${bytes} B`;
   if (bytes < MEGABYTE) return `${(bytes / KILOBYTE).toFixed(1)} KB`;
   return `${(bytes / MEGABYTE).toFixed(1)} MB`;

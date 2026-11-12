@@ -34,7 +34,7 @@ export function severityChip(severity) {
 
 export function check(label, value, outcome, why) {
   const tone = outcome === true ? "ok" : outcome === false ? "bad" : "neutral";
-  const mark = outcome === true ? "✓" : outcome === false ? "✕" : "–";
+  const mark = outcome === true ? "✓" : outcome === false ? "✕" : "○";
   return html`<span class="chip tone-${tone}" title=${why}>${mark} ${label} <span class="chip__value">${value}</span></span>`;
 }
 
@@ -61,6 +61,12 @@ export function gauge(score, severity) {
   </svg>`;
 }
 
+export function Switch({ label, on, onToggle, title = "" }) {
+  return html`<button type="button" class="switch-label" role="switch" aria-checked=${String(on)} title=${title || undefined} onClick=${onToggle}>
+    <span>${label}</span><span class=${`switch${on ? " is-on" : ""}`}></span>
+  </button>`;
+}
+
 export function InfoButton({ open, onToggle }) {
   const label = open ? "Hide the explanation" : "What is this?";
   return html`<button
@@ -78,9 +84,9 @@ export function InfoButton({ open, onToggle }) {
 export function Explained({ title, note, titleClass = "section__title" }) {
   const [open, setOpen] = useState(false);
   return html`<${Fragment}>
-    <h3 class=${`${titleClass} section__title--info`}>
+    <h2 class=${`${titleClass} section__title--info`}>
       ${title}<${InfoButton} open=${open} onToggle=${() => setOpen(!open)} />
-    </h3>
+    </h2>
     ${open ? html`<p class="hint section__note reveal">${note}</p>` : html`<div class="section__spacer"></div>`}
   </>`;
 }
@@ -89,9 +95,9 @@ function Section({ title, aside, note, children }) {
   const [open, setOpen] = useState(false);
   return html`<section class="card card--pad section">
     <div class="section__head">
-      <h3 class="section__title section__title--info">
+      <h2 class="section__title section__title--info">
         ${title}${note && html`<${InfoButton} open=${open} onToggle=${() => setOpen(!open)} />`}
-      </h3>
+      </h2>
       ${aside}
     </div>
     ${note && open ? html`<p class="hint section__note reveal">${note}</p>` : html`<div class="section__spacer"></div>`}
@@ -139,11 +145,11 @@ export function kpi(label, value, tone) {
 }
 
 export function kv(pairs) {
-  return html`<dl class="kv">${pairs.map(
+  return html`<dl class="kv">${pairs.filter(Boolean).map(
     ([key, value], index) =>
       html`<${Fragment} key=${key + index}
         ><dt>${key}</dt>
-        <dd>${value === null || value === undefined || value === "" ? html`<span class="muted">—</span>` : value}</dd></${Fragment}
+        <dd>${value === null || value === undefined || value === "" ? html`<span class="muted">not known</span>` : value}</dd></${Fragment}
       >`,
   )}</dl>`;
 }
@@ -152,8 +158,16 @@ export function skeleton(count = 3) {
   return html`${Array.from({ length: count }, (_, index) => html`<div key=${index} class="skeleton"></div>`)}`;
 }
 
-export function emptyState(title, hint = "") {
-  return html`<div class="card empty"><div class="empty__title">${title}</div><div class="hint empty__hint">${hint}</div></div>`;
+export function emptyState(title, hint = "", action = null) {
+  return html`<div class="card empty">
+    <div class="empty__title">${title}</div>
+    <div class="hint empty__hint">${hint}</div>
+    ${action}
+  </div>`;
+}
+
+export function missingState(title, hint, href, label) {
+  return emptyState(title, hint, html`<a class="btn btn--primary" href=${href}>${label}</a>`);
 }
 
 export function loadingState(count = 3, slow = false) {

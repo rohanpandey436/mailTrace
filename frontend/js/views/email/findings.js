@@ -1,29 +1,55 @@
 import { plural } from "../../format.js";
-import { MODULE, PILLARS, categoryOf, toneForScore } from "../../labels.js";
-import { Fragment, html } from "../../react.js";
+import { MODULE, PILLARS, categoryOf, plain, toneForScore } from "../../labels.js";
+import { Fragment, html, useState } from "../../react.js";
+import { session } from "../../state.js";
+import { icon } from "../../ui/icons.js";
 import { bar, chip, section, severityChip } from "../../ui/primitives.js";
+
+const SERIOUS = new Set(["critical", "high"]);
 
 function FindingRow({ finding }) {
   return html`<details class="card finding">
     <summary class="finding__summary">
       <span class="finding__sev">${severityChip(finding.severity)}</span>
       <span class="finding__main">
-        <span class="finding__title">${finding.title}</span>
+        <span class="finding__title">${plain(finding.title)}</span>
         ${chip(MODULE[finding.module] ?? finding.module)}
       </span>
-      <span class="finding__caret">▾</span>
+      ${icon("chevron", "finding__caret")}
     </summary>
-    <p class="finding__detail">${finding.detail}</p>
+    <p class="finding__detail">${plain(finding.detail)}</p>
   </details>`;
+}
+
+function FindingList({ warnings }) {
+  const [showRest, setShowRest] = useState(session.showLesserFindings);
+  const rows = (list) => list.map((finding) => html`<${FindingRow} key=${finding.id} finding=${finding} />`);
+  const serious = warnings.filter((finding) => SERIOUS.has(finding.severity));
+  const rest = warnings.filter((finding) => !SERIOUS.has(finding.severity));
+  if (serious.length === 0 || rest.length === 0) return html`<div class="stack">${rows(warnings)}</div>`;
+
+  const toggle = () => {
+    session.showLesserFindings = !showRest;
+    setShowRest(!showRest);
+  };
+  return html`<div class="stack">
+    ${rows(serious)}
+    <button class=${`more-toggle${showRest ? " is-open" : ""}`} type="button" aria-expanded=${String(showRest)} onClick=${toggle}>
+      <span>${showRest ? "Hide" : "Show"} ${plural(rest.length, "lower-risk finding")}</span>${icon("chevron", "more-toggle__caret")}
+    </button>
+    ${showRest && html`<div class="stack reveal">${rows(rest)}</div>`}
+  </div>`;
 }
 
 function Agreement({ verdict }) {
   if (verdict.dual_validation_agreement) {
     return html`<${Fragment}><b class="text-ok">They agreed</b>, which raises our confidence.</>`;
   }
+  const rules = categoryOf(verdict.rule_category).label;
+  const model = categoryOf(verdict.ml_category).label;
   return html`<${Fragment}>
-    <b class="text-warn">They disagreed</b> (the rules said ${categoryOf(verdict.rule_category).label}, the model said
-    ${categoryOf(verdict.ml_category).label}), so we deliberately lowered the confidence instead of hiding it.
+    <b class="text-warn">They disagreed</b> (the rules said ${rules}, the model said ${model}), so we deliberately lowered the
+    confidence instead of hiding it.
   </>`;
 }
 
@@ -35,7 +61,7 @@ export function findingsTab(result) {
   const found = section(
     "What we found",
     warnings.length > 0
-      ? html`<div class="stack">${warnings.map((finding) => html`<${FindingRow} key=${finding.id} finding=${finding} />`)}</div>`
+      ? html`<${FindingList} warnings=${warnings} />`
       : html`<div class="note note--info">No warning signs were found in this email.</div>`,
     {
       aside: html`<span class="hint">${plural(warnings.length, "thing")} worth knowing</span>`,
@@ -71,10 +97,12 @@ export function findingsTab(result) {
 
   const background =
     notes.length > 0
-      ? html`<details class="card card--tight notes-toggle">
-          <summary>Show ${plural(notes.length, "background note")} ▾</summary>
+      ? html`<details class="card notes-toggle">
+          <summary class="more-toggle more-toggle--plain">
+            <span>Show ${plural(notes.length, "background note")}</span>${icon("chevron", "more-toggle__caret")}
+          </summary>
           <ul class="stack">
-            ${notes.map((note) => html`<li key=${note.id}><b>${note.title}</b><div class="hint">${note.detail}</div></li>`)}
+            ${notes.map((note) => html`<li key=${note.id}><b>${plain(note.title)}</b><div class="hint">${plain(note.detail)}</div></li>`)}
           </ul>
         </details>`
       : null;

@@ -1,4 +1,5 @@
 import { formatBytes, truncate } from "../../format.js";
+import { plain } from "../../labels.js";
 import { Fragment, html } from "../../react.js";
 import { chip, section, severityChip } from "../../ui/primitives.js";
 
@@ -13,10 +14,10 @@ function UrlRow({ url }) {
       <div class="mono break">${truncate(url.url, MAX_URL_CHARS)}</div>
       ${url.anchor_text &&
       html`<div class=${`url__anchor${url.anchor_mismatch ? " is-mismatch" : ""}`}>
-        shown as: ${truncate(url.anchor_text, MAX_ANCHOR_CHARS)}${url.anchor_mismatch && " — but it does not go there!"}
+        shown as: ${truncate(url.anchor_text, MAX_ANCHOR_CHARS)}${url.anchor_mismatch && ", but it does not go there!"}
       </div>`}
     </td>
-    <td class="hint">${url.reasons.join("; ") || "nothing unusual"}</td>
+    <td class="hint">${plain(url.reasons.join("; ")) || "nothing unusual"}</td>
   </tr>`;
 }
 

@@ -43,8 +43,7 @@ export function CustodyTab({ result }) {
     html`<div class="cluster cluster--loose custody-status">
         ${data.valid ? chip("✓ Untampered", "ok") : chip("✕ ALTERED", "bad")}
         <span class="hint">
-          Original email fingerprint (SHA-256):
-          <span class="mono">${truncate(result.email.raw_sha256, FINGERPRINT_PREVIEW_CHARS)}</span>
+          Original email fingerprint (SHA-256): <span class="mono">${truncate(result.email.raw_sha256, FINGERPRINT_PREVIEW_CHARS)}</span>
         </span>
       </div>
       <div class="table-wrap"><table class="table">

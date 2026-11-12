@@ -1,5 +1,5 @@
 import { flag, place, truncate } from "../../format.js";
-import { DOMAIN_ROLE } from "../../labels.js";
+import { DOMAIN_ROLE, LOOKALIKE, REPUTATION, sharedNouns } from "../../labels.js";
 import { Fragment, html } from "../../react.js";
 import { Explained, chip, kv, section } from "../../ui/primitives.js";
 
@@ -33,6 +33,11 @@ function originComputer(result) {
   );
 }
 
+function seenLine(incident) {
+  const shared = sharedNouns(incident.shared_indicators.slice(0, MAX_SHARED_INDICATORS));
+  return `from ${incident.sender} · risk ${incident.risk_score}${shared ? ` · same ${shared}` : ""}`;
+}
+
 function seenBefore(result) {
   const incidents = result.intel.related_incidents;
   if (incidents.length === 0) return null;
@@ -44,10 +49,7 @@ function seenBefore(result) {
           <a class="link" href=${`#/email/${encodeURIComponent(incident.email_id)}`}>
             ${truncate(incident.subject, MAX_SUBJECT_CHARS) || incident.email_id}
           </a>
-          <div class="hint">
-            from ${incident.sender} · risk ${incident.risk_score} · shares
-            ${incident.shared_indicators.slice(0, MAX_SHARED_INDICATORS).join(", ")}
-          </div>
+          <div class="hint">${seenLine(incident)}</div>
         </li>`,
       )}
     </ul>`,
@@ -57,11 +59,13 @@ function seenBefore(result) {
 
 function age(domain) {
   if (domain.age_days === null) return domain.source === "offline" ? "not checked (offline)" : "unknown";
-  if (domain.age_days < BRAND_NEW_DAYS) return html`<b class="text-bad">${domain.age_days} days — brand new</b>`;
+  if (domain.age_days < BRAND_NEW_DAYS) return html`<b class="text-bad">${domain.age_days} days, brand new</b>`;
   return `${domain.age_days} days`;
 }
 
 function DomainCard({ domain }) {
+  const tags = domain.reputation.filter((tag) => !(tag === "disposable" && domain.is_disposable));
+  const noted = domain.is_free_mail || domain.is_disposable || tags.length > 0;
   return html`<div class="card card--tight">
     <div class="domain-card__head">
       <span class="domain-card__name">${domain.domain}</span>${chip(DOMAIN_ROLE[domain.role] ?? domain.role, "teal")}
@@ -69,17 +73,20 @@ function DomainCard({ domain }) {
     ${kv([
       ["How old", age(domain)],
       ["Registered with", domain.registrar],
-      ["Can receive mail", domain.source === "offline" ? "" : domain.has_mx ? "yes" : "no — unusual for a real company"],
-      [
+      ["Can receive mail", domain.source === "offline" ? "" : domain.has_mx ? "yes" : "no, unusual for a real company"],
+      domain.lookalike_of && [
         "Copycat of",
-        domain.lookalike_of && html`<span class="text-bad strong">${domain.lookalike_of} (${domain.lookalike_technique})</span>`,
+        html`<${Fragment}>
+          <span class="text-bad strong">${domain.lookalike_of}</span>${" "}
+          <span class="hint">(${LOOKALIKE[domain.lookalike_technique] ?? domain.lookalike_technique})</span>
+        </>`,
       ],
-      [
+      noted && [
         "Notes",
         html`<span class="cluster">
-          ${domain.is_free_mail && chip("free mailbox (Gmail etc.)")}
+          ${domain.is_free_mail && chip("free mailbox service")}
           ${domain.is_disposable && chip("throwaway address", "bad")}
-          ${domain.reputation.map((tag, index) => chip(tag, "bad", { key: index }))}
+          ${tags.map((tag, index) => chip(REPUTATION[tag] ?? tag, "bad", { key: index }))}
         </span>`,
       ],
     ])}

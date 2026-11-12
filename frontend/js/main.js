@@ -4,10 +4,12 @@ import { useOnline, useStore } from "./hooks.js";
 import { categoryOf } from "./labels.js";
 import { resyncMask, subscribeToAlerts } from "./live-feed.js";
 import { Fragment, html, useEffect, useRef, useState } from "./react.js";
-import { navigate, useRoute } from "./router.js";
+import { useRoute } from "./router.js";
 import { preferences, session, setPreference, unreadAlerts } from "./state.js";
 import { icon } from "./ui/icons.js";
 import { Menu } from "./ui/menu.js";
+import { Switch } from "./ui/primitives.js";
+import { SearchBox } from "./ui/search.js";
 import { Toasts, toast } from "./ui/toast.js";
 import { AlertsView, refreshUnreadCount } from "./views/alerts.js";
 import { CampaignView, CampaignsView } from "./views/campaigns.js";
@@ -31,6 +33,8 @@ function UnreadBadge({ count }) {
 }
 
 function Rail({ route, unread }) {
+  const section = route === "email" ? "cases" : route;
+  const current = (name) => (route === name ? "page" : section === name ? "true" : undefined);
   return html`<nav class="rail" aria-label="Main">
     <a class="rail__brand" href="#/dashboard">
       <span class="brand-mark">M</span>
@@ -39,9 +43,9 @@ function Rail({ route, unread }) {
     ${NAV.map(
       ([name, glyph, label, href]) => html`<a
         key=${name}
-        class=${`rail__link${route === name ? " is-active" : ""}`}
+        class=${`rail__link${section === name ? " is-active" : ""}`}
         href=${href}
-        aria-current=${route === name ? "page" : undefined}
+        aria-current=${current(name)}
       >
         ${icon(glyph)}<span>${label}</span>${name === "alerts" && html`<${UnreadBadge} count=${unread} />`}
       </a>`,
@@ -81,27 +85,15 @@ function ConnectionBanner({ online, reachable, checking, onRetry }) {
 }
 
 function MaskSwitch({ mask, onToggle }) {
-  return html`<label class="switch-label" title="Hides names, email addresses, phone numbers and ID numbers everywhere on screen">
-    <span>Hide personal info</span>
-    <span
-      class=${`switch${mask ? " is-on" : ""}`}
-      role="switch"
-      tabIndex=${0}
-      aria-checked=${String(mask)}
-      aria-label="Hide personal information"
-      onClick=${onToggle}
-      onKeyDown=${(event) => {
-        if (event.key === " " || event.key === "Enter") {
-          event.preventDefault();
-          onToggle();
-        }
-      }}
-    ></span>
-  </label>`;
+  return html`<${Switch}
+    label="Hide personal info"
+    on=${mask}
+    onToggle=${onToggle}
+    title="Hides names, email addresses, phone numbers and ID numbers everywhere on screen"
+  />`;
 }
 
-function TopBar({ health, checking, unread, onMaskChange }) {
-  const [query, setQuery] = useState(session.listFilters.q);
+function TopBar({ health, checking, unread, onMaskChange, onSearch }) {
   const [mask, setMask] = useState(preferences.mask);
 
   const toggleMask = () => {
@@ -113,24 +105,7 @@ function TopBar({ health, checking, unread, onMaskChange }) {
   };
 
   return html`<header class="topbar">
-    <form
-      class="topbar__search"
-      role="search"
-      onSubmit=${(event) => {
-        event.preventDefault();
-        session.listFilters = { ...session.listFilters, q: query.trim(), page: 0 };
-        navigate("#/cases");
-      }}
-    >
-      <input
-        class="input"
-        value=${query}
-        placeholder="Search by subject, sender, IP address or domain…"
-        autoComplete="off"
-        aria-label="Search checked emails"
-        onChange=${(event) => setQuery(event.target.value)}
-      />
-    </form>
+    <${SearchBox} onSearch=${onSearch} />
     <div class="topbar__tools">
       <div class="topbar__inline">
         <${NetworkBadge} health=${health} checking=${checking} />
@@ -222,6 +197,7 @@ function App() {
   const online = useOnline();
   const { health, reachable, checking, recoveries, retry } = useServerHealth(online);
   const [maskEpoch, setMaskEpoch] = useState(0);
+  const [searchEpoch, setSearchEpoch] = useState(0);
 
   useEffect(() => {
     void refreshUnreadCount();
@@ -245,6 +221,7 @@ function App() {
   );
 
   return html`<${Fragment}>
+    <button class="skip-link" type="button" onClick=${() => document.getElementById("main")?.focus()}>Skip to content</button>
     <div class="app">
       <${Rail} route=${route.name} unread=${unread} />
       <div class="app__main">
@@ -256,10 +233,11 @@ function App() {
             resyncMask();
             setMaskEpoch((value) => value + 1);
           }}
+          onSearch=${() => setSearchEpoch((value) => value + 1)}
         />
         <${ConnectionBanner} online=${online} reachable=${reachable} checking=${checking} onRetry=${retry} />
-        <main class="view">
-          <div class="view__content" key=${`${route.name}/${route.param}/${maskEpoch}/${recoveries}`}>
+        <main class="view" id="main" tabIndex=${-1}>
+          <div class="view__content" key=${`${route.name}/${route.param}/${maskEpoch}/${recoveries}/${searchEpoch}`}>
             <${CurrentView} route=${route} />
           </div>
         </main>

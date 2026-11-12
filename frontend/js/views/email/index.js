@@ -1,14 +1,15 @@
 import { api, urls } from "../../api.js";
 import { flag, formatDate, percent, place } from "../../format.js";
-import { useAsync } from "../../hooks.js";
-import { SOURCE_TYPE, categoryOf } from "../../labels.js";
-import { Fragment, html, useState } from "../../react.js";
-import { preferences, session, setPreference } from "../../state.js";
+import { useAsync, usePageTitle } from "../../hooks.js";
+import { SOURCE_TYPE, categoryOf, plain } from "../../labels.js";
+import { loadCytoscape, loadLeaflet, warmUp } from "../../libs.js";
+import { Fragment, html, useEffect, useRef, useState } from "../../react.js";
+import { session } from "../../state.js";
 import { DecisionBar } from "../../ui/decision-bar.js";
 import { GraphLegend, RelationshipGraph } from "../../ui/graph.js";
 import { Menu } from "../../ui/menu.js";
 import { RetentionBar } from "../../ui/retention-bar.js";
-import { Explained, categoryChip, check, chip, errorState, gauge, loadingState, section } from "../../ui/primitives.js";
+import { Explained, categoryChip, check, chip, errorState, gauge, loadingState, missingState, section } from "../../ui/primitives.js";
 import { ContentTab } from "./content.js";
 import { CustodyTab } from "./custody.js";
 import { domainsTab } from "./domains.js";
@@ -22,17 +23,12 @@ const TABS = [
   ["content", "How it tries to trick you"],
   ["links", "Links & files"],
   ["domains", "Domains & servers"],
-];
-const ADVANCED_TABS = [
   ["graph", "Connections"],
   ["custody", "Evidence log"],
 ];
-const DEFAULT_TAB = "findings";
 const MAX_REASONS = 2;
-
-function isAdvanced(tab) {
-  return ADVANCED_TABS.some(([name]) => name === tab);
-}
+const TAB_EDGE_PX = 8;
+const TAB_KEYS = { ArrowRight: 1, ArrowLeft: -1, Home: "first", End: "last" };
 
 function SenderChecks({ auth }) {
   const outcome = (value, failures) => (value === "pass" ? true : failures.includes(value) ? false : null);
@@ -61,7 +57,7 @@ function VerdictCards({ result }) {
       <p class="hint subsection">${source.detail}</p>
       ${attribution.reasoning.length > 0 &&
       html`<ul class="hint">
-        ${attribution.reasoning.slice(0, MAX_REASONS).map((reason, index) => html`<li key=${index}>${reason}</li>`)}
+        ${attribution.reasoning.slice(0, MAX_REASONS).map((reason, index) => html`<li key=${index}>${plain(reason)}</li>`)}
       </ul>`}
     </div>
     <div class="card card--pad">
@@ -116,39 +112,105 @@ function TabPanel({ result, tab }) {
   }
 }
 
+function Tabs({ tabs, current, onChoose }) {
+  const strip = useRef((null));
+  const moveFocus = useRef(false);
+  const [more, setMore] = useState("");
+
+  useEffect(() => {
+    const element = strip.current;
+    if (!element) return undefined;
+    const measure = () => {
+      const before = element.scrollLeft > 1;
+      const after = element.scrollLeft + element.clientWidth < element.scrollWidth - 1;
+      setMore(before && after ? "both" : before ? "start" : after ? "end" : "");
+    };
+    measure();
+    element.addEventListener("scroll", measure, { passive: true });
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => {
+      element.removeEventListener("scroll", measure);
+      observer.disconnect();
+    };
+  }, [tabs.length]);
+
+  useEffect(() => {
+    const element = strip.current;
+    const chosen = element?.querySelector('[aria-selected="true"]');
+    if (!element || !(chosen instanceof HTMLElement)) return;
+    const start = chosen.offsetLeft;
+    const end = start + chosen.offsetWidth;
+    if (start < element.scrollLeft) element.scrollLeft = start - TAB_EDGE_PX;
+    else if (end > element.scrollLeft + element.clientWidth) element.scrollLeft = end - element.clientWidth + TAB_EDGE_PX;
+    if (moveFocus.current) chosen.focus({ preventScroll: true });
+    moveFocus.current = false;
+  }, [current]);
+
+  const onKeyDown = (event) => {
+    const step = TAB_KEYS[event.key];
+    if (step === undefined) return;
+    event.preventDefault();
+    const last = tabs.length - 1;
+    const index = tabs.findIndex(([name]) => name === current);
+    const next = step === "first" ? 0 : step === "last" ? last : (index + step + tabs.length) % tabs.length;
+    moveFocus.current = true;
+    onChoose(tabs[next][0]);
+  };
+
+  return html`<div
+    class=${`tabs${more ? ` tabs--more-${more}` : ""}`}
+    role="tablist"
+    aria-label="Parts of this report"
+    ref=${strip}
+    onKeyDown=${onKeyDown}
+  >
+    ${tabs.map(
+      ([name, label]) => html`<button
+        key=${name}
+        id=${`tab-${name}`}
+        class=${`tab${current === name ? " is-active" : ""}`}
+        type="button"
+        role="tab"
+        aria-selected=${String(current === name)}
+        aria-controls="tab-panel"
+        tabIndex=${current === name ? 0 : -1}
+        onClick=${() => onChoose(name)}
+      >
+        ${label}
+      </button>`,
+    )}
+  </div>`;
+}
+
 export function EmailView({ emailId }) {
-  const { data: result, error, loading, slow, reload } = useAsync(() => api.getEmail(emailId), [emailId]);
-  const [advanced, setAdvanced] = useState(preferences.advanced);
-  const [tab, setTab] = useState(() => (isAdvanced(session.emailTab) && !preferences.advanced ? DEFAULT_TAB : session.emailTab));
+  const { data: result, error, missing, loading, slow, reload } = useAsync(() => api.getEmail(emailId), [emailId]);
+  const [tab, setTab] = useState(session.emailTab);
 
   const choose = (next) => {
     session.emailTab = next;
     setTab(next);
   };
 
-  const toggleAdvanced = () => {
-    const next = !advanced;
-    setPreference("advanced", next);
-    setAdvanced(next);
-    if (!next && isAdvanced(tab)) choose(DEFAULT_TAB);
-  };
+  usePageTitle(result ? result.email.subject || "Email with no subject" : "Checked email");
+  useEffect(() => {
+    warmUp(loadLeaflet);
+    warmUp(loadCytoscape);
+  }, []);
 
+  if (missing) {
+    return missingState(
+      "This email is not here",
+      "It may have been deleted when its keeping period ended, or the link is incomplete.",
+      "#/cases",
+      "Back to checked emails",
+    );
+  }
   if (error) return errorState(error, reload);
   if (loading || !result) return loadingState(4, slow);
 
   const { email } = result;
   const noHeaders = result.headers.hops.length === 0;
-  const tabButtons = (tabs) =>
-    tabs.map(
-      ([name, label]) => html`<button
-        key=${name}
-        class=${`tab${tab === name ? " is-active" : ""}`}
-        type="button"
-        onClick=${() => choose(name)}
-      >
-        ${label}
-      </button>`,
-    );
 
   return html`<${Fragment}>
     <a href="#/cases" class="back-link">← Back to checked emails</a>
@@ -157,10 +219,10 @@ export function EmailView({ emailId }) {
         <h1 class="page-title page-title--sm">${email.subject || html`<span class="muted">(no subject)</span>`}</h1>
         <div class="hint cluster cluster--loose">
           <span>
-            From <b class="strong">${email.sender.display_name || "unnamed"}</b>
+            From <b class="strong">${email.sender.display_name || "unnamed"}</b>${" "}
             <span class="mono">${`<${email.sender.address}>`}</span>
           </span>
-          <span>Sent ${formatDate(email.date)}</span>
+          <span>${email.date ? `Sent ${formatDate(email.date)}` : "Send time not recorded"}</span>
           <span class="mono">${result.filename}</span>
           ${result.campaign_id &&
           html`<a class="link" href=${`#/campaigns/${encodeURIComponent(result.campaign_id)}`}>See linked attacks →</a>`}
@@ -194,26 +256,10 @@ export function EmailView({ emailId }) {
     <${RetentionBar} emailId=${result.id} />
     <div class="section"><${DecisionBar} emailId=${result.id} /></div>
     <div class="tabs-row">
-      <div class="tabs">
-        ${tabButtons(TABS)} ${advanced && html`<span class="tabs">${tabButtons(ADVANCED_TABS)}</span>`}
-      </div>
-      <label class="switch-label" title="Shows the connection map and the tamper-proof evidence log">
-        <span>Advanced view</span>
-        <span
-          class=${`switch${advanced ? " is-on" : ""}`}
-          role="switch"
-          tabIndex=${0}
-          aria-checked=${String(advanced)}
-          onClick=${toggleAdvanced}
-          onKeyDown=${(event) => {
-            if (event.key === " " || event.key === "Enter") {
-              event.preventDefault();
-              toggleAdvanced();
-            }
-          }}
-        ></span>
-      </label>
+      <${Tabs} tabs=${TABS} current=${tab} onChoose=${choose} />
     </div>
-    <div class="tab-panel" key=${tab}><${TabPanel} result=${result} tab=${tab} /></div>
+    <div class="tab-panel" id="tab-panel" role="tabpanel" aria-labelledby=${`tab-${tab}`} key=${tab}>
+      <${TabPanel} result=${result} tab=${tab} />
+    </div>
   </>`;
 }

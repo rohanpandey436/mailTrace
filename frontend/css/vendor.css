@@ -28,3 +28,32 @@
 .graph--tall {
   height: var(--graph-height-tall);
 }
+
+.map.is-loading,
+.graph.is-loading {
+  background: linear-gradient(90deg, var(--color-neutral-soft) 25%, var(--color-line-soft) 50%, var(--color-neutral-soft) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite;
+}
+
+.map--note {
+  display: grid;
+  place-items: center;
+  padding: var(--space-4);
+  text-align: center;
+}
+
+@media (pointer: coarse) {
+  .leaflet-touch .leaflet-bar a {
+    width: 44px;
+    height: 44px;
+    line-height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .map.is-loading,
+  .graph.is-loading {
+    animation: none;
+  }
+}

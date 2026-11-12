@@ -58,6 +58,20 @@ textarea {
   color: inherit;
 }
 
+::placeholder {
+  color: var(--color-muted);
+  opacity: 1;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}
+
+main:focus {
+  outline: none;
+}
+
 img,
 svg {
   max-width: 100%;
@@ -134,8 +148,13 @@ details > summary::-webkit-details-marker {
 }
 
 .link {
-  color: var(--color-brand);
+  color: var(--color-brand-ink);
   font-weight: 500;
+}
+
+.link:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .text-ok {

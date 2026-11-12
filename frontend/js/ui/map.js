@@ -1,5 +1,7 @@
 import { esc } from "../dom.js";
 import { place } from "../format.js";
+import { useVendor } from "../hooks.js";
+import { loadLeaflet } from "../libs.js";
 import { html, useEffect, useRef } from "../react.js";
 import { color } from "../theme.js";
 
@@ -28,10 +30,11 @@ export function RouteMap({ hops, originIndex, selected, onSelect }) {
   const pins = useRef((new Map()));
   const select = useRef(onSelect);
   select.current = onSelect;
+  const library = useVendor(loadLeaflet);
 
   useEffect(() => {
     const element = container.current;
-    if (!element || typeof L === "undefined") return undefined;
+    if (!element || library !== "ready" || typeof L === "undefined") return undefined;
 
     const instance = L.map(element, { zoomControl: true, scrollWheelZoom: false });
     map.current = instance;
@@ -74,7 +77,7 @@ export function RouteMap({ hops, originIndex, selected, onSelect }) {
       map.current = null;
       pins.current = new Map();
     };
-  }, [hops, originIndex]);
+  }, [hops, originIndex, library]);
 
   useEffect(() => {
     if (selected === null) return;
@@ -84,5 +87,8 @@ export function RouteMap({ hops, originIndex, selected, onSelect }) {
     pin.openPopup();
   }, [selected]);
 
-  return html`<div class="map" ref=${container}></div>`;
+  if (library === "failed") {
+    return html`<div class="map map--note hint">The map could not be loaded. Check your internet connection and open this tab again.</div>`;
+  }
+  return html`<div class=${`map${library === "loading" ? " is-loading" : ""}`} ref=${container}></div>`;
 }

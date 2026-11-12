@@ -19,7 +19,20 @@ function location(geo) {
 }
 
 function HopRow({ hop, origin, active, onSelect }) {
-  return html`<div class=${`hop${origin ? " is-origin" : ""}${active ? " is-active" : ""}`} onClick=${onSelect}>
+  const onKeyDown = (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    onSelect();
+  };
+  return html`<div
+    class=${`hop${origin ? " is-origin" : ""}${active ? " is-active" : ""}`}
+    role="button"
+    tabIndex=${0}
+    aria-pressed=${String(active)}
+    title="Show this step on the map"
+    onClick=${onSelect}
+    onKeyDown=${onKeyDown}
+  >
     <div class="hop__head">
       <span class="mono muted">Step ${hop.index + 1}</span>
       ${origin && chip("STARTED HERE", "brand")}
@@ -52,7 +65,7 @@ export function TraceTab({ result }) {
 
   return html`<div class="grid grid--2">
     <section class="card card--pad">
-      <h3 class="section__title">The journey this email took</h3>
+      <h2 class="section__title">The journey this email took</h2>
       <p class="hint section__note">Read top to bottom. Each step is one mail server passing it along. ${reasoning}</p>
       ${hops.length > 0
         ? html`<div class="hops">
@@ -69,7 +82,7 @@ export function TraceTab({ result }) {
         : html`<div class="hint">This email carried no delivery record, so there is no path to show.</div>`}
     </section>
     <section class="card card--pad">
-      <h3 class="section__title">On the map</h3>
+      <h2 class="section__title">On the map</h2>
       <p class="hint section__note">${mapNote(hops.length, located, session.health)}</p>
       <${RouteMap} hops=${hops} originIndex=${originIndex} selected=${selected} onSelect=${setSelected} />
     </section>

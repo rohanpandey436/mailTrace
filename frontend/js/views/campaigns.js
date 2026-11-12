@@ -1,11 +1,11 @@
 import { api } from "../api.js";
 import { formatDate, plural } from "../format.js";
-import { useAsync } from "../hooks.js";
-import { severityForScore } from "../labels.js";
+import { useAsync, usePageTitle } from "../hooks.js";
+import { indicatorOf, severityForScore } from "../labels.js";
 import { Fragment, html } from "../react.js";
 import { CasesTable } from "../ui/cases-table.js";
 import { GraphLegend, RelationshipGraph } from "../ui/graph.js";
-import { categoryChip, chip, emptyState, errorState, loadingState, pageHead, riskBar, section } from "../ui/primitives.js";
+import { categoryChip, emptyState, errorState, loadingState, missingState, pageHead, riskBar, section } from "../ui/primitives.js";
 
 function CampaignCard({ campaign }) {
   return html`<a class="card card--pad card--link campaign-card" href=${`#/campaigns/${encodeURIComponent(campaign.id)}`}>
@@ -19,7 +19,24 @@ function CampaignCard({ campaign }) {
   </a>`;
 }
 
+function SharedParts({ indicators }) {
+  const parts = new Map();
+  for (const raw of indicators) {
+    const part = indicatorOf(raw);
+    parts.set(`${part.label}|${part.value}`, part);
+  }
+  if (parts.size === 0) return html`<span class="hint">Nothing shared was recorded for this group.</span>`;
+  return html`<div class="cluster">
+    ${[...parts.entries()].map(
+      ([key, part]) => html`<span key=${key} class="chip tone-neutral chip--pair">
+        ${part.label && html`<span>${part.label}</span>`}${part.value && html`<span class="chip__value mono">${part.value}</span>`}
+      </span>`,
+    )}
+  </div>`;
+}
+
 export function CampaignsView() {
+  usePageTitle("Linked attacks");
   const { data, error, loading, slow, reload } = useAsync(() => api.listCampaigns(), []);
   const body = () => {
     if (error) return errorState(error, reload);
@@ -43,7 +60,16 @@ export function CampaignsView() {
 }
 
 export function CampaignView({ campaignId }) {
-  const { data, error, loading, slow, reload } = useAsync(() => api.getCampaign(campaignId), [campaignId]);
+  const { data, error, missing, loading, slow, reload } = useAsync(() => api.getCampaign(campaignId), [campaignId]);
+  usePageTitle(data ? data.campaign.name : "Linked attack");
+  if (missing) {
+    return missingState(
+      "This group is not here",
+      "It may have been removed, or the link is incomplete.",
+      "#/campaigns",
+      "Back to linked attacks",
+    );
+  }
   if (error) return errorState(error, reload);
   if (loading || !data) return loadingState(3, slow);
 
@@ -56,11 +82,7 @@ export function CampaignView({ campaignId }) {
     )}
     ${section(
       "What links them",
-      html`<div class="cluster">
-        ${campaign.indicators.length > 0
-          ? campaign.indicators.map((indicator, index) => chip(indicator, "neutral", { mono: true, key: index }))
-          : html`<span class="hint">—</span>`}
-      </div>`,
+      html`<${SharedParts} indicators=${campaign.indicators} />`,
       { note: "These exact things appear in more than one of the emails below." },
     )}
     ${section("The emails", html`<${CasesTable} items=${emails} />`)}

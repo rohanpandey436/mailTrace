@@ -1,14 +1,42 @@
-import { friendlyError } from "./api.js";
+import { ApiError, friendlyError } from "./api.js";
 import { useCallback, useEffect, useRef, useState } from "./react.js";
 
 const SLOW_AFTER_MS = 4000;
 const COUNT_MS = 600;
+const SITE_NAME = "MailTrace";
+const NOT_FOUND = 404;
 
 export const prefersReducedMotion = () => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+export function usePageTitle(title) {
+  useEffect(() => {
+    document.title = title ? `${title} · ${SITE_NAME}` : SITE_NAME;
+  }, [title]);
+}
+
+export function useVendor(load) {
+  const [state, setState] = useState("loading");
+  useEffect(() => {
+    let cancelled = false;
+    load().then(
+      () => {
+        if (!cancelled) setState("ready");
+      },
+      () => {
+        if (!cancelled) setState("failed");
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [load]);
+  return state;
+}
 
 export function useAsync(load, deps) {
   const [data, setData] = useState((null));
   const [error, setError] = useState((null));
+  const [missing, setMissing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [slow, setSlow] = useState(false);
   const [attempt, setAttempt] = useState(0);
@@ -18,6 +46,7 @@ export function useAsync(load, deps) {
     let cancelled = false;
     setLoading(true);
     setError(null);
+    setMissing(false);
     setSlow(false);
     const timer = window.setTimeout(() => {
       if (!cancelled) setSlow(true);
@@ -31,6 +60,7 @@ export function useAsync(load, deps) {
       .catch((cause) => {
         if (cancelled) return;
         setError(friendlyError(cause));
+        setMissing(cause instanceof ApiError && cause.status === NOT_FOUND);
         setLoading(false);
       });
     return () => {
@@ -39,7 +69,7 @@ export function useAsync(load, deps) {
     };
   }, [...deps, attempt]);
 
-  return { data, error, loading, slow, reload };
+  return { data, error, missing, loading, slow, reload };
 }
 
 export function useOnline() {

@@ -1,26 +1,36 @@
 import { api, urls } from "../api.js";
 import { plural } from "../format.js";
-import { useAsync } from "../hooks.js";
+import { useAsync, usePageTitle } from "../hooks.js";
 import { CATEGORY } from "../labels.js";
 import { Fragment, html, useState } from "../react.js";
-import { session } from "../state.js";
+import { session, setListFilters } from "../state.js";
 import { CasesTable } from "../ui/cases-table.js";
 import { emptyState, errorState, loadingState, pageHead } from "../ui/primitives.js";
 
 const PAGE_SIZE = 25;
 
+const NO_FILTERS = { q: "", category: "", minRisk: 0, page: 0 };
+
 export function CasesView() {
+  usePageTitle("Checked emails");
   const [filters, setFilters] = useState(session.listFilters);
   const [riskDraft, setRiskDraft] = useState(session.listFilters.minRisk);
   const [draftQuery, setDraftQuery] = useState(session.listFilters.q);
 
   const apply = (patch) => {
     const next = { ...filters, ...patch, page: patch.page ?? 0 };
-    session.listFilters = next;
+    setListFilters(next);
     setFilters(next);
   };
 
+  const clear = () => {
+    setDraftQuery("");
+    setRiskDraft(0);
+    apply(NO_FILTERS);
+  };
+
   const query = { q: filters.q, category: filters.category, minRisk: filters.minRisk };
+  const filtered = Boolean(filters.q || filters.category || filters.minRisk);
   const { data, error, loading, slow, reload } = useAsync(
     () => api.listEmails({ ...query, limit: PAGE_SIZE, offset: filters.page * PAGE_SIZE }),
     [filters.q, filters.category, filters.minRisk, filters.page],
@@ -29,7 +39,20 @@ export function CasesView() {
   const results = () => {
     if (error) return errorState(error, reload);
     if (loading || !data) return loadingState(3, slow);
-    if (data.items.length === 0) return emptyState("Nothing matches", "Try clearing the search box or lowering the risk filter.");
+    if (data.items.length === 0 && filtered) {
+      return emptyState(
+        "Nothing matches",
+        "No checked email fits the search and filters above.",
+        html`<button class="btn btn--primary" type="button" onClick=${clear}>Clear search and filters</button>`,
+      );
+    }
+    if (data.items.length === 0) {
+      return emptyState(
+        "No emails checked yet",
+        "Emails appear here as soon as you check them.",
+        html`<a class="btn btn--primary" href="#/dashboard">Check an email</a>`,
+      );
+    }
     const pages = Math.max(1, Math.ceil(data.total / PAGE_SIZE));
     return html`<${Fragment}>
       <div class="card card--table"><${CasesTable} items=${data.items} /></div>
@@ -39,7 +62,7 @@ export function CasesView() {
           <button class="btn" type="button" disabled=${filters.page === 0} onClick=${() => apply({ page: filters.page - 1 })}>
             ← Back
           </button>
-          <span>Page ${filters.page + 1} of ${pages}</span>
+          <span aria-live="polite">Page ${filters.page + 1} of ${pages}</span>
           <button class="btn" type="button" disabled=${filters.page + 1 >= pages} onClick=${() => apply({ page: filters.page + 1 })}>
             Next →
           </button>

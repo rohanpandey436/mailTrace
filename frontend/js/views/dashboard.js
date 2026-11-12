@@ -1,9 +1,9 @@
 import { api } from "../api.js";
-import { useAsync } from "../hooks.js";
-import { categoryOf } from "../labels.js";
+import { useAsync, usePageTitle } from "../hooks.js";
+import { ADDON_GUIDE_URL, categoryOf } from "../labels.js";
 import { Fragment, html } from "../react.js";
 import { CasesTable } from "../ui/cases-table.js";
-import { errorState, kpi, loadingState, pageHead, section, skeleton } from "../ui/primitives.js";
+import { chip, errorState, kpi, loadingState, pageHead, section, skeleton } from "../ui/primitives.js";
 import { Dropzone } from "../ui/upload.js";
 
 const RECENT_LIMIT = 8;
@@ -53,7 +53,19 @@ function Countries({ stats }) {
   </div>`;
 }
 
+function GmailAddon() {
+  return html`<${Fragment}>
+    <div class="cluster">${chip("Google Workspace add-on", "teal")}</div>
+    <p class="hint subsection">
+      MailTrace also runs inside Gmail. It puts a risk label on every email in the inbox, and one press of Investigate sends a suspicious
+      one here.
+    </p>
+    <a class="link small addon__link" href=${ADDON_GUIDE_URL} target="_blank" rel="noopener">How to add it to Gmail →</a>
+  </>`;
+}
+
 export function DashboardView() {
+  usePageTitle("Check an email");
   const { data, error, loading, slow, reload } = useAsync(
     () => Promise.all([api.stats(), api.listEmails({ limit: RECENT_LIMIT })]),
     [],
@@ -74,8 +86,8 @@ export function DashboardView() {
             recent.items.length > 0
               ? html`<${CasesTable} items=${recent.items} />`
               : html`<div class="hint">
-                  Nothing here yet. Drop an email above, or try the ready-made examples in the
-                  <span class="mono">samples</span> folder of the project.
+                  Nothing here yet. Drop an email above, or try the ready-made examples in the <span class="mono">samples</span> folder
+                  of the project.
                 </div>`,
             { aside: html`<a class="link small" href="#/cases">See all →</a>` },
           )}
@@ -83,6 +95,7 @@ export function DashboardView() {
         <div>
           ${section("What we found", html`<${Distribution} stats=${stats} />`, { note: "How the checked emails break down." })}
           ${section("Where they came from", html`<${Countries} stats=${stats} />`, { note: "Countries of the sending servers." })}
+          ${section("Works inside Gmail", html`<${GmailAddon} />`)}
         </div>
       </div>
     </>`;

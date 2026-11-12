@@ -1,6 +1,6 @@
 import { api, friendlyError } from "../api.js";
 import { formatDate } from "../format.js";
-import { useAsync } from "../hooks.js";
+import { useAsync, usePageTitle } from "../hooks.js";
 import { subscribeToAlerts } from "../live-feed.js";
 import { Fragment, html, useEffect, useState } from "../react.js";
 import { unreadAlerts } from "../state.js";
@@ -30,21 +30,24 @@ function AlertRow({ alert, fresh, onAcknowledged }) {
     }
   }
   return html`<div class=${`card card--tight alert-row${fresh ? " is-fresh" : ""}`}>
-    <div>${riskBar(alert.risk_score, alert.severity)}</div>
-    <div class="spread">
-      <div class="alert-row__title">
-        ${categoryChip(alert.category)}
-        <a class="truncate" href=${`#/email/${encodeURIComponent(alert.email_id)}`}>${alert.subject || "(no subject)"}</a>
-      </div>
+    <div class="alert-row__risk">${riskBar(alert.risk_score, alert.severity)}</div>
+    <div class="alert-row__type">${categoryChip(alert.category)}</div>
+    <div class="alert-row__body">
+      <a class="alert-row__subject" href=${`#/email/${encodeURIComponent(alert.email_id)}`}>${alert.subject || "(no subject)"}</a>
       <div class="hint truncate">${alert.sender} · ${formatDate(alert.created_at)}</div>
     </div>
-    ${alert.acknowledged
-      ? chip("seen")
-      : html`<button class=${`btn${busy ? " is-busy" : ""}`} type="button" disabled=${busy} onClick=${() => void acknowledge()}>Mark as seen</button>`}
+    <div class="alert-row__action">
+      ${alert.acknowledged
+        ? chip("seen")
+        : html`<button class=${`btn${busy ? " is-busy" : ""}`} type="button" disabled=${busy} onClick=${() => void acknowledge()}>
+            Mark as seen
+          </button>`}
+    </div>
   </div>`;
 }
 
 export function AlertsView() {
+  usePageTitle("Alerts");
   const { data, error, loading, slow, reload } = useAsync(() => api.listAlerts({ limit: LIST_LIMIT }), []);
   const [live, setLive] = useState(([]));
   const [seen, setSeen] = useState((new Set()));

@@ -101,6 +101,65 @@ export const DOMAIN_ROLE = {
   message_id: "message id",
 };
 
+export const ADDON_GUIDE_URL = "https://github.com/rohanpandey436/mailTrace/blob/main/docs/gmail-addon.md#installing-it";
+
+export const LOOKALIKE = {
+  typosquat: "one or two letters changed",
+  homoglyph: "look-alike letters swapped in",
+  punycode: "foreign letters that look the same",
+  tld_swap: "same name with a different ending",
+  extra_token: "extra words added to the real name",
+  subdomain_abuse: "real name used as a prefix",
+};
+
+export const REPUTATION = {
+  disposable: "throwaway address service",
+  suspicious_tld: "risky domain ending",
+  urlhaus: "listed for spreading malware",
+};
+
+const INDICATOR = {
+  ip: ["Same sending computer", "sending computer"],
+  sender: ["Same sender", "sender"],
+  domain: ["Same sender domain", "sender domain"],
+  replyto: ["Same reply address", "reply address"],
+  urlhost: ["Same linked site", "linked site"],
+  file: ["Same attached file", "attached file"],
+  subject: ["Same subject line", "subject line"],
+  asn: ["Same network owner", "network owner"],
+  mailer: ["Same mail program", "mail program"],
+  simhash: ["Nearly identical wording", "wording"],
+  tlsh: ["Nearly identical wording", "wording"],
+};
+
+const FINGERPRINT_KINDS = new Set(["simhash", "tlsh"]);
+const FILE_HASH_CHARS = 12;
+const LOOKALIKE_CODES = Object.keys(LOOKALIKE).join("|");
+const LOOKALIKE_CODE = new RegExp(`\\((${LOOKALIKE_CODES})\\)`, "g");
+const LOOKALIKE_PHRASE = new RegExp(` using the (${LOOKALIKE_CODES.replaceAll("_", " ")}) technique`, "g");
+
+export function indicatorOf(raw) {
+  const match = /^([a-z0-9]+)([:~])(.*)$/s.exec(raw);
+  const known = match ? INDICATOR[match[1]] : undefined;
+  if (!match || !known) return { label: "", value: raw, noun: raw };
+  const [, kind, , rest] = match;
+  if (FINGERPRINT_KINDS.has(kind)) return { label: known[0], value: "", noun: known[1] };
+  const value = kind === "file" && rest.length > FILE_HASH_CHARS ? `${rest.slice(0, FILE_HASH_CHARS)}…` : rest;
+  return { label: known[0], value, noun: known[1] };
+}
+
+export function sharedNouns(indicators) {
+  const nouns = [...new Set(indicators.map((raw) => indicatorOf(raw).noun))];
+  if (nouns.length <= 1) return nouns.join("");
+  return `${nouns.slice(0, -1).join(", ")} and ${nouns[nouns.length - 1]}`;
+}
+
+export function plain(text) {
+  return (text ?? "")
+    .replace(LOOKALIKE_CODE, (_, code) => `(${LOOKALIKE[code]})`)
+    .replace(LOOKALIKE_PHRASE, (_, words) => ` (${LOOKALIKE[words.replaceAll(" ", "_")]})`);
+}
+
 export const NODE_TYPE = {
   email: { label: "this email", tone: "brand" },
   address: { label: "email address", tone: "teal" },

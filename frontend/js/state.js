@@ -1,4 +1,4 @@
-const STORAGE_KEYS = { mask: "mailtrace.mask", advanced: "mailtrace.advanced" };
+const STORAGE_KEYS = { mask: "mailtrace.mask" };
 
 function readFlag(key) {
   try {
@@ -17,7 +17,6 @@ function writeFlag(key, value) {
 
 export const preferences = {
   mask: readFlag("mask"),
-  advanced: readFlag("advanced"),
 };
 
 export function setPreference(key, value) {
@@ -29,7 +28,22 @@ export const session = {
   health: null,
   listFilters: { q: "", category: "", minRisk: 0, page: 0 },
   emailTab: "findings",
+  showLesserFindings: false,
 };
+
+const filterListeners = new Set();
+
+export function setListFilters(next) {
+  session.listFilters = next;
+  for (const listener of filterListeners) listener(next);
+}
+
+export function onListFilters(listener) {
+  filterListeners.add(listener);
+  return () => {
+    filterListeners.delete(listener);
+  };
+}
 
 function createUnreadStore() {
   let count = 0;
