@@ -202,8 +202,13 @@
 
 .topbar__bell .chip {
   position: absolute;
-  top: -0.4rem;
-  right: -0.4rem;
+  top: -0.45rem;
+  left: calc(100% - 1.1rem);
+  justify-content: center;
+  min-width: 1.2rem;
+  padding: 0 0.35rem;
+  font-size: 0.66rem;
+  line-height: 1.6;
 }
 
 .view {

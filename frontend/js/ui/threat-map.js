@@ -18,13 +18,41 @@ const RADIUS_STEP = 3;
 const MAX_EXTRA_RADIUS = 13;
 const LAYOUT_SETTLE_MS = 60;
 const LIST_LIMIT = 6;
+const POPUP_LIMIT = 4;
 
-function toneOf(origin) {
-  return severityOf(severityForScore(origin.max_risk)).tone;
+function toneOf(group) {
+  return severityOf(severityForScore(group.max_risk)).tone;
 }
 
 function nameOf(origin) {
   return place([origin.city, origin.country]) || origin.ip;
+}
+
+function spotOf(origin) {
+  return `${origin.lat},${origin.lon}`;
+}
+
+function grouped(origins, keyOf) {
+  const groups = new Map();
+  for (const origin of origins) {
+    const key = keyOf(origin);
+    const group = groups.get(key);
+    if (group) {
+      group.origins.push(origin);
+      group.emails += origin.emails;
+      group.max_risk = Math.max(group.max_risk, origin.max_risk);
+    } else {
+      groups.set(key, {
+        name: nameOf(origin),
+        lat: origin.lat,
+        lon: origin.lon,
+        origins: [origin],
+        emails: origin.emails,
+        max_risk: origin.max_risk,
+      });
+    }
+  }
+  return [...groups.values()].sort((a, b) => b.emails - a.emails || b.max_risk - a.max_risk);
 }
 
 function showEmails(origin) {
@@ -32,22 +60,41 @@ function showEmails(origin) {
   navigate("#/cases");
 }
 
-function popup(origin) {
-  const node = document.createElement("div");
-  node.className = "map-popup";
-  const title = document.createElement("b");
-  title.textContent = nameOf(origin);
-  const address = document.createElement("div");
-  address.className = "mono";
-  address.textContent = origin.ip;
-  const count = document.createElement("div");
-  count.textContent = `${plural(origin.emails, "email")} · worst risk ${origin.max_risk}`;
+function emailsLink(origin, label) {
   const open = document.createElement("button");
   open.type = "button";
   open.className = "linkbtn";
-  open.textContent = origin.emails === 1 ? "See this email" : "See these emails";
+  open.textContent = label;
   open.addEventListener("click", () => showEmails(origin));
-  node.append(title, address, count, open);
+  return open;
+}
+
+function popup(spot) {
+  const node = document.createElement("div");
+  node.className = "map-popup";
+  const title = document.createElement("b");
+  title.textContent = spot.name;
+  const count = document.createElement("div");
+  count.textContent = `${plural(spot.emails, "email")} · worst risk ${spot.max_risk}`;
+  if (spot.origins.length === 1) {
+    const [origin] = spot.origins;
+    const address = document.createElement("div");
+    address.className = "mono";
+    address.textContent = origin.ip;
+    node.append(title, address, count, emailsLink(origin, origin.emails === 1 ? "See this email" : "See these emails"));
+    return node;
+  }
+  node.append(title, count);
+  for (const origin of spot.origins.slice(0, POPUP_LIMIT)) {
+    const row = document.createElement("div");
+    row.append(emailsLink(origin, `${origin.ip}: ${plural(origin.emails, "email")}`));
+    node.append(row);
+  }
+  if (spot.origins.length > POPUP_LIMIT) {
+    const more = document.createElement("div");
+    more.textContent = `and ${plural(spot.origins.length - POPUP_LIMIT, "more address", "more addresses")}`;
+    node.append(more);
+  }
   return node;
 }
 
@@ -61,17 +108,18 @@ export function ThreatMap({ origins }) {
 
     const map = L.map(element, { zoomControl: true, scrollWheelZoom: false, worldCopyJump: true, minZoom: 1 });
     L.tileLayer(TILE_URL, { attribution: ATTRIBUTION, maxZoom: TILE_MAX_ZOOM }).addTo(map);
-    const points = origins.map((origin) => ([origin.lat, origin.lon]));
-    for (const origin of origins) {
-      L.circleMarker([origin.lat, origin.lon], {
-        radius: BASE_RADIUS + Math.min(MAX_EXTRA_RADIUS, Math.sqrt(origin.emails) * RADIUS_STEP),
+    const spots = grouped(origins, spotOf);
+    const points = spots.map((spot) => ([spot.lat, spot.lon]));
+    for (const spot of spots) {
+      L.circleMarker([spot.lat, spot.lon], {
+        radius: BASE_RADIUS + Math.min(MAX_EXTRA_RADIUS, Math.sqrt(spot.emails) * RADIUS_STEP),
         color: color("card"),
         weight: 2,
-        fillColor: color(toneOf(origin)),
+        fillColor: color(toneOf(spot)),
         fillOpacity: 0.9,
       })
         .addTo(map)
-        .bindPopup(popup(origin));
+        .bindPopup(popup(spot));
     }
     if (points.length === 0) map.setView(WORLD_CENTRE, WORLD_ZOOM);
     else if (points.length === 1) map.setView(points[0], SINGLE_POINT_ZOOM);
@@ -91,18 +139,19 @@ export function ThreatMap({ origins }) {
 }
 
 export function OriginList({ origins }) {
-  const emails = origins.reduce((sum, origin) => sum + origin.emails, 0);
+  const places = grouped(origins, nameOf);
+  const emails = places.reduce((sum, entry) => sum + entry.emails, 0);
   return html`<div class="origins">
     <div class="origins__total">
-      <b class="strong">${plural(emails, "email")}</b> traced to <b class="strong">${plural(origins.length, "place")}</b>
+      <b class="strong">${plural(emails, "email")}</b> traced to <b class="strong">${plural(places.length, "place")}</b>
     </div>
     <div class="stack">
-      ${origins.slice(0, LIST_LIMIT).map(
-        (origin) => html`<div key=${origin.ip} class="dist__row">
-          <span class=${`dot tone-${toneOf(origin)}`}></span><span class="spread truncate" title=${origin.ip}>${nameOf(origin)}</span><b>${origin.emails}</b>
+      ${places.slice(0, LIST_LIMIT).map(
+        (entry) => html`<div key=${entry.name} class="dist__row">
+          <span class=${`dot tone-${toneOf(entry)}`}></span><span class="spread truncate" title=${entry.name}>${entry.name}</span><b>${entry.emails}</b>
         </div>`,
       )}
     </div>
-    ${origins.length > LIST_LIMIT && html`<div class="hint origins__more">and ${plural(origins.length - LIST_LIMIT, "more place")} on the map</div>`}
+    ${places.length > LIST_LIMIT && html`<div class="hint origins__more">and ${plural(places.length - LIST_LIMIT, "more place")} on the map</div>`}
   </div>`;
 }
