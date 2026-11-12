@@ -9,6 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import tasks
+from app.config import settings as default_settings
 from app.main import create_app
 
 REDIS_URL = os.environ.get("MAILTRACE_REDIS_URL", "").strip()
@@ -21,6 +22,13 @@ def client(cfg):
     app = create_app(cfg)
     with TestClient(app) as test_client:
         yield test_client
+
+
+@pytest.fixture
+def bound_store(cfg, store):
+    tasks.bind_store(store, cfg)
+    yield store
+    tasks.unbind_store()
 
 
 def _submit(client, sample, *names):
@@ -38,11 +46,17 @@ def test_eager_mode_is_the_default(cfg):
     assert "eager" in tasks.queue_status(cfg)
 
 
-def test_reconfiguring_moves_the_live_connections(cfg):
+def test_reconfiguring_moves_the_live_connections(cfg, bound_store):
     tasks.configure(cfg)
     assert type(tasks.celery_app.backend).__name__ == "CacheBackend"
-    tasks.enqueue(b"From: a@b\r\nSubject: warm\r\n\r\nx\r\n", "warm.eml", "analyst")
+    job_id = tasks.enqueue(b"From: a@b\r\nSubject: warm\r\n\r\nx\r\n", "warm.eml", "analyst")
     assert tasks.celery_app.amqp.producer_pool.connections.connection.as_uri().startswith("memory://")
+
+    job = tasks.job_state(job_id)
+    assert job["state"] == "SUCCESS", job
+    email_id = job["result"]["email_id"]
+    assert bound_store.case_exists(email_id)
+    assert not (default_settings.evidence_dir / f"{email_id}.eml").exists()
 
     with_broker = replace(cfg, redis_url="redis://127.0.0.1:6379/0")
     tasks.configure(with_broker)
