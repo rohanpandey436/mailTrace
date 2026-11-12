@@ -31,3 +31,5 @@ services:
         value: /opt/render/project/src/backend/data/GeoLite2-City.mmdb
       - key: MAILTRACE_REDIS_URL
         sync: false
+      - key: MAILTRACE_KEEPAWAKE_URL
+        value: https://mailtrace-t9vo.onrender.com

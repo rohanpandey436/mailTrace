@@ -340,7 +340,8 @@ The Python service moved into `backend/` and the dashboard into `frontend/`.
 from there; it sets `rootDir: backend`. With a root directory Render ignores
 pushes that change nothing inside it, so the Blueprint's `buildFilter` also
 lists `frontend/` and `engine/`: a dashboard-only commit now redeploys the
-service that serves it.
+service that serves it. The Blueprint also sets `MAILTRACE_KEEPAWAKE_URL`, so
+this service is the one always-on service in its Render workspace.
 
 ```
 mailtrace/
