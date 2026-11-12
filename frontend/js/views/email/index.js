@@ -4,6 +4,7 @@ import { useAsync, usePageTitle } from "../../hooks.js";
 import { SOURCE_TYPE, categoryOf, plain } from "../../labels.js";
 import { loadCytoscape, loadLeaflet, warmUp } from "../../libs.js";
 import { Fragment, html, useEffect } from "../../react.js";
+import { allFindings } from "../../state.js";
 import { DecisionBar } from "../../ui/decision-bar.js";
 import { GraphLegend, RelationshipGraph } from "../../ui/graph.js";
 import { Menu } from "../../ui/menu.js";
@@ -44,6 +45,11 @@ const HERO_REASONS = 3;
 const HERO_STEPS = 2;
 const CARD_HEADINGS = 3;
 
+function showAllFindings() {
+  allFindings.set(true);
+  jumpTo("findings");
+}
+
 function VerdictHero({ result }) {
   const { verdict } = result;
   const category = categoryOf(verdict.category);
@@ -66,9 +72,7 @@ function VerdictHero({ result }) {
               </ul>`
             : html`<p class="hero__none">No warning signs were found in this email.</p>`}
           ${warnings.length > HERO_REASONS &&
-          html`<button type="button" class="linkbtn" onClick=${() => jumpTo("findings")}>
-            See all ${plural(warnings.length, "finding")}
-          </button>`}
+          html`<button type="button" class="linkbtn" onClick=${showAllFindings}>See all ${plural(warnings.length, "finding")}</button>`}
         </div>
         ${steps.length > 0 &&
         html`<div>

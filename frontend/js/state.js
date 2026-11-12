@@ -27,7 +27,6 @@ export function setPreference(key, value) {
 export const session = {
   health: null,
   listFilters: { q: "", category: "", minRisk: 0, page: 0 },
-  showLesserFindings: false,
 };
 
 const filterListeners = new Set();
@@ -63,5 +62,7 @@ function createStore(initial) {
 }
 
 export const unreadAlerts = createStore(0);
+
+export const allFindings = createStore(false);
 
 export const pageSections = createStore({ items: [], active: "" });

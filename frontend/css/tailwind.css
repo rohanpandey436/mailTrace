@@ -12,39 +12,39 @@
 @source "../js/**/*.js";
 
 @theme static {
-  --color-paper: #f9f7f4;
+  --color-paper: #f5f2ed;
   --color-card: #ffffff;
-  --color-shell: #f2efea;
-  --color-shell-hover: #e9e5df;
-  --color-line: #e7e3dc;
-  --color-line-soft: #f2efea;
-  --color-line-strong: #d3cec5;
+  --color-shell: #ece8e1;
+  --color-shell-hover: #e1dcd3;
+  --color-line: #e1dcd3;
+  --color-line-soft: #ece8e1;
+  --color-line-strong: #cbc5ba;
 
   --color-ink: #201d1a;
-  --color-ink-soft: #4a443e;
-  --color-muted: #655e56;
+  --color-ink-soft: #48423c;
+  --color-muted: #615a52;
   --color-on-brand: #ffffff;
 
   --color-brand: #d0440e;
-  --color-brand-strong: #b83a0a;
-  --color-brand-ink: #b83a0a;
+  --color-brand-strong: #b4390a;
+  --color-brand-ink: #b4390a;
   --color-brand-soft: #fff1e8;
   --color-brand-tint: #fff9f5;
 
-  --color-ok: #127539;
+  --color-ok: #117238;
   --color-ok-soft: #ecfdf3;
-  --color-warn: #8f5f00;
+  --color-warn: #8a5b00;
   --color-warn-soft: #fff8e1;
-  --color-bad: #cf1f1f;
+  --color-bad: #cb1e1e;
   --color-bad-soft: #fef3f2;
   --color-purple: #6d28d9;
   --color-purple-soft: #f5f3ff;
   --color-teal: #0e7490;
   --color-teal-soft: #ecfeff;
-  --color-orange: #bd3f0b;
+  --color-orange: #b93d0b;
   --color-orange-soft: #fff1e8;
-  --color-neutral: #655e56;
-  --color-neutral-soft: #f2efea;
+  --color-neutral: #615a52;
+  --color-neutral-soft: #f0ece6;
 
   --color-note-warn-bg: #fffbeb;
   --color-note-warn-line: #fde68a;

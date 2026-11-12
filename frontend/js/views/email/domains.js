@@ -1,11 +1,14 @@
-import { flag, place, truncate } from "../../format.js";
+import { flag, place, plural, truncate } from "../../format.js";
+import { useFold } from "../../hooks.js";
 import { DOMAIN_ROLE, LOOKALIKE, REPUTATION, sharedNouns } from "../../labels.js";
 import { Fragment, html } from "../../react.js";
-import { Explained, chip, kv, section } from "../../ui/primitives.js";
+import { Explained, chip, kv, moreToggle, section } from "../../ui/primitives.js";
 
 const BRAND_NEW_DAYS = 90;
 const MAX_SUBJECT_CHARS = 60;
 const MAX_SHARED_INDICATORS = 3;
+const SHOWN_INCIDENTS = 4;
+const SHOWN_DOMAINS = 3;
 
 export function originComputer(result) {
   const infra = result.infrastructure;
@@ -38,13 +41,11 @@ function seenLine(incident) {
   return `from ${incident.sender} · risk ${incident.risk_score}${shared ? ` · same ${shared}` : ""}`;
 }
 
-export function seenBefore(result) {
-  const incidents = result.intel.related_incidents;
-  if (incidents.length === 0) return null;
-  return section(
-    "Seen before",
-    html`<ul class="stack">
-      ${incidents.map(
+function SeenList({ incidents }) {
+  const fold = useFold(incidents, SHOWN_INCIDENTS);
+  return html`<div class="stack">
+    <ul class="stack">
+      ${fold.shown.map(
         (incident) => html`<li key=${incident.email_id}>
           <a class="link" href=${`#/email/${encodeURIComponent(incident.email_id)}`}>
             ${truncate(incident.subject, MAX_SUBJECT_CHARS) || incident.email_id}
@@ -52,9 +53,19 @@ export function seenBefore(result) {
           <div class="hint">${seenLine(incident)}</div>
         </li>`,
       )}
-    </ul>`,
-    { note: "Earlier emails that share a server, sender or link with this one." },
-  );
+    </ul>
+    ${fold.hidden > 0 &&
+    moreToggle(fold.open, fold.toggle, `Show ${plural(fold.hidden, "more earlier email")}`, "Show fewer earlier emails")}
+  </div>`;
+}
+
+export function seenBefore(result) {
+  const incidents = result.intel.related_incidents;
+  if (incidents.length === 0) return null;
+  return section("Seen before", html`<${SeenList} incidents=${incidents} />`, {
+    aside: html`<span class="hint">${plural(incidents.length, "earlier email")}</span>`,
+    note: "Earlier emails that share a server, sender or link with this one.",
+  });
 }
 
 function age(domain) {
@@ -93,17 +104,32 @@ function DomainCard({ domain }) {
   </div>`;
 }
 
+function suspicion(domain) {
+  const brandNew = domain.age_days !== null && domain.age_days < BRAND_NEW_DAYS;
+  return Number(Boolean(domain.lookalike_of)) + Number(brandNew) + Number(domain.is_disposable || domain.reputation.length > 0);
+}
+
+function DomainGrid({ domains }) {
+  const fold = useFold(domains, SHOWN_DOMAINS);
+  return html`<${Fragment}>
+    <div class="grid grid--cards">
+      ${fold.shown.map((domain, index) => html`<${DomainCard} key=${domain.domain + index} domain=${domain} />`)}
+    </div>
+    ${fold.hidden > 0 &&
+    html`<div class="story__gap">
+      ${moreToggle(fold.open, fold.toggle, `Show ${plural(fold.hidden, "more domain")}`, "Show fewer domains")}
+    </div>`}
+  </>`;
+}
+
 export function domainCards(result) {
+  const domains = [...result.domains].sort((first, second) => suspicion(second) - suspicion(first));
   return html`<${Fragment}>
     <${Explained}
       title="The domains involved"
-      note="A domain registered days ago is one of the strongest signs of an attack."
+      note="A domain registered days ago is one of the strongest signs of an attack. The most suspicious ones come first."
       titleClass="domains-title"
     />
-    ${result.domains.length > 0
-      ? html`<div class="grid grid--cards">
-          ${result.domains.map((domain, index) => html`<${DomainCard} key=${domain.domain + index} domain=${domain} />`)}
-        </div>`
-      : html`<div class="hint">No domains were checked.</div>`}
+    ${domains.length > 0 ? html`<${DomainGrid} domains=${domains} />` : html`<div class="hint">No domains were checked.</div>`}
   </>`;
 }

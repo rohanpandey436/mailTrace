@@ -1,11 +1,12 @@
 import { plural } from "../../format.js";
+import { useStore } from "../../hooks.js";
 import { MODULE, PILLARS, categoryOf, plain, toneForScore } from "../../labels.js";
-import { Fragment, html, useState } from "../../react.js";
-import { session } from "../../state.js";
+import { Fragment, html } from "../../react.js";
+import { allFindings } from "../../state.js";
 import { icon } from "../../ui/icons.js";
-import { bar, chip, section, severityChip } from "../../ui/primitives.js";
+import { bar, chip, moreToggle, section, severityChip } from "../../ui/primitives.js";
 
-const SERIOUS = new Set(["critical", "high"]);
+const SHOWN_FINDINGS = 5;
 
 function FindingRow({ finding }) {
   return html`<details class="card finding">
@@ -22,22 +23,15 @@ function FindingRow({ finding }) {
 }
 
 function FindingList({ warnings }) {
-  const [showRest, setShowRest] = useState(session.showLesserFindings);
+  const open = useStore(allFindings);
   const rows = (list) => list.map((finding) => html`<${FindingRow} key=${finding.id} finding=${finding} />`);
-  const serious = warnings.filter((finding) => SERIOUS.has(finding.severity));
-  const rest = warnings.filter((finding) => !SERIOUS.has(finding.severity));
-  if (serious.length === 0 || rest.length === 0) return html`<div class="stack">${rows(warnings)}</div>`;
+  if (warnings.length <= SHOWN_FINDINGS + 1) return html`<div class="stack">${rows(warnings)}</div>`;
 
-  const toggle = () => {
-    session.showLesserFindings = !showRest;
-    setShowRest(!showRest);
-  };
+  const rest = warnings.slice(SHOWN_FINDINGS);
   return html`<div class="stack">
-    ${rows(serious)}
-    <button class=${`more-toggle${showRest ? " is-open" : ""}`} type="button" aria-expanded=${String(showRest)} onClick=${toggle}>
-      <span>${showRest ? "Hide" : "Show"} ${plural(rest.length, "lower-risk finding")}</span>${icon("chevron", "more-toggle__caret")}
-    </button>
-    ${showRest && html`<div class="stack reveal">${rows(rest)}</div>`}
+    ${rows(warnings.slice(0, SHOWN_FINDINGS))}
+    ${moreToggle(open, () => allFindings.set(!open), `Show ${plural(rest.length, "more warning sign")}`, "Show fewer warning signs")}
+    ${open && html`<div class="stack reveal">${rows(rest)}</div>`}
   </div>`;
 }
 
@@ -65,7 +59,7 @@ export function findingsTab(result) {
       : html`<div class="note note--info">No warning signs were found in this email.</div>`,
     {
       aside: html`<span class="hint">${plural(warnings.length, "thing")} worth knowing</span>`,
-      note: "Click any row to read the detail. Worst first.",
+      note: "Click any row to read the detail. Worst first; the rest open with the button under the list.",
     },
   );
 

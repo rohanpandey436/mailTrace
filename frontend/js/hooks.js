@@ -119,3 +119,14 @@ export function useStore(store) {
   useEffect(() => store.subscribe(() => setValue(store.get())), [store]);
   return value;
 }
+
+export function useFold(items, limit) {
+  const [open, setOpen] = useState(false);
+  const folds = items.length > limit + 1;
+  return {
+    shown: folds && !open ? items.slice(0, limit) : items,
+    hidden: folds ? items.length - limit : 0,
+    open,
+    toggle: () => setOpen((value) => !value),
+  };
+}

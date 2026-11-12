@@ -2,6 +2,7 @@ import { clampPercent } from "../format.js";
 import { useCountUp } from "../hooks.js";
 import { categoryOf, severityOf } from "../labels.js";
 import { Fragment, createContext, html, useContext, useState } from "../react.js";
+import { icon } from "./icons.js";
 
 const GAUGE_ARC = "M 20 100 A 80 80 0 0 1 180 100";
 const GAUGE_ARC_LENGTH = Math.PI * 80;
@@ -71,6 +72,12 @@ export function gauge(score, severity) {
 export function Switch({ label, on, onToggle, title = "" }) {
   return html`<button type="button" class="switch-label" role="switch" aria-checked=${String(on)} title=${title || undefined} onClick=${onToggle}>
     <span>${label}</span><span class=${`switch${on ? " is-on" : ""}`}></span>
+  </button>`;
+}
+
+export function moreToggle(open, onToggle, more, fewer) {
+  return html`<button class=${`more-toggle${open ? " is-open" : ""}`} type="button" aria-expanded=${String(open)} onClick=${onToggle}>
+    <span>${open ? fewer : more}</span>${icon("chevron", "more-toggle__caret")}
   </button>`;
 }
 
