@@ -399,7 +399,10 @@ mailtrace/
     data/                   runtime, git-ignored: mailtrace.db, evidence/, model.joblib,
                             url_model.joblib  (the default MAILTRACE_DATA_DIR)
   frontend/                 the analyst UI: React 18, no build step, served by FastAPI as static files
-    index.html              loads React/ReactDOM/htm as UMD bundles and mounts the app into #root
+    index.html              loads React/ReactDOM/htm as UMD bundles and mounts the app into #root; it lists
+                            every script with a version taken from the file's content, so the browser
+                            fetches them all at once and keeps each one until it changes
+    build_index.py          writes that list (python frontend/build_index.py); CI fails when it is stale
     css/                    tokens.css (every colour, size and radius), base, layout, components, vendor
     js/react.js             React bound to htm, so components are tagged templates and need no transpiler
     js/                     api.js, router.js (useRoute), hooks.js, state.js, labels.js, ui/, views/

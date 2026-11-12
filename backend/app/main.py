@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import threading
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
+from urllib.parse import parse_qs
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
@@ -29,6 +31,10 @@ from .keepawake import KeepAwake
 from .schemas import ENGINE_VERSION, HealthStatus
 
 log = logging.getLogger("mailtrace.main")
+
+ASSET_VERSION_CHARS = 12
+CACHE_FOREVER = "public, max-age=31536000, immutable"
+CACHE_REVALIDATE = "no-cache"
 
 
 def _warm_model(cfg: Settings) -> None:
@@ -178,9 +184,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
 class _Dashboard(StaticFiles):
 
+    def __init__(self, *, directory: Path, html: bool) -> None:
+        super().__init__(directory=directory, html=html)
+        self._versions: dict[str, tuple[int, int, str]] = {}
+
+    def _version(self, path: str) -> str:
+        full_path, stat_result = self.lookup_path(path)
+        if stat_result is None:
+            return ""
+        known = self._versions.get(full_path)
+        if known is not None and known[:2] == (stat_result.st_mtime_ns, stat_result.st_size):
+            return known[2]
+        content = Path(full_path).read_bytes().replace(b"\r\n", b"\n")
+        digest = hashlib.sha256(content).hexdigest()[:ASSET_VERSION_CHARS]
+        self._versions[full_path] = (stat_result.st_mtime_ns, stat_result.st_size, digest)
+        return digest
+
     async def get_response(self, path: str, scope: Scope) -> Response:
         response = await super().get_response(path, scope)
-        response.headers["Cache-Control"] = "no-cache"
+        wanted = parse_qs(scope.get("query_string", b"").decode("latin-1")).get("v", [""])[0]
+        current = await run_in_threadpool(self._version, path) if wanted else ""
+        response.headers["Cache-Control"] = CACHE_FOREVER if wanted and wanted == current else CACHE_REVALIDATE
         return response
 
 

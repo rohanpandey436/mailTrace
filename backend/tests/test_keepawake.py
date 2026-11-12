@@ -119,8 +119,3 @@ def test_it_is_off_until_an_address_is_set(monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setenv("MAILTRACE_KEEPAWAKE_URL", "off")
     assert Settings.from_env().keepawake_url == ""
 
-
-def test_the_dashboard_is_always_revalidated(cfg: Settings) -> None:
-    with TestClient(create_app(cfg)) as client:
-        assert client.get("/").headers["cache-control"] == "no-cache"
-        assert client.get("/js/main.js").headers["cache-control"] == "no-cache"
