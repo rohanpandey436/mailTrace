@@ -101,6 +101,12 @@ export const api = {
 
   analyzeRaw: (raw) => (postJson("/api/analyze/raw", { raw, filename: "pasted.eml" })),
 
+  listSamples: () => (request("/api/samples")),
+
+  analyzeSample: (name) => (request(`/api/samples/${encodeURIComponent(name)}`, { method: "POST" })),
+
+  origins: () => (request("/api/origins")),
+
   getExplanation: (id) =>
     (request(`/api/emails/${encodeURIComponent(id)}/explanation`)),
 

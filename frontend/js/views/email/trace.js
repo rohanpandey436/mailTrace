@@ -2,7 +2,7 @@ import { flag, formatDate, place } from "../../format.js";
 import { html, useState } from "../../react.js";
 import { session } from "../../state.js";
 import { RouteMap } from "../../ui/map.js";
-import { chip } from "../../ui/primitives.js";
+import { Heading, chip } from "../../ui/primitives.js";
 
 function delay(seconds) {
   if (seconds === null) return null;
@@ -65,7 +65,7 @@ export function TraceTab({ result }) {
 
   return html`<div class="grid grid--2">
     <section class="card card--pad">
-      <h2 class="section__title">The journey this email took</h2>
+      <${Heading} class="section__title">The journey this email took</${Heading}>
       <p class="hint section__note">Read top to bottom. Each step is one mail server passing it along. ${reasoning}</p>
       ${hops.length > 0
         ? html`<div class="hops">
@@ -82,7 +82,7 @@ export function TraceTab({ result }) {
         : html`<div class="hint">This email carried no delivery record, so there is no path to show.</div>`}
     </section>
     <section class="card card--pad">
-      <h2 class="section__title">On the map</h2>
+      <${Heading} class="section__title">On the map</${Heading}>
       <p class="hint section__note">${mapNote(hops.length, located, session.health)}</p>
       <${RouteMap} hops=${hops} originIndex=${originIndex} selected=${selected} onSelect=${setSelected} />
     </section>

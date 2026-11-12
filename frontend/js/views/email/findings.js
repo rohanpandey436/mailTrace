@@ -59,7 +59,7 @@ export function findingsTab(result) {
   const verdict = result.verdict;
 
   const found = section(
-    "What we found",
+    "Warning signs",
     warnings.length > 0
       ? html`<${FindingList} warnings=${warnings} />`
       : html`<div class="note note--info">No warning signs were found in this email.</div>`,

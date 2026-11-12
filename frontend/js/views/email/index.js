@@ -1,34 +1,88 @@
 import { api, urls } from "../../api.js";
-import { flag, formatDate, percent, place } from "../../format.js";
+import { flag, formatDate, percent, place, plural } from "../../format.js";
 import { useAsync, usePageTitle } from "../../hooks.js";
 import { SOURCE_TYPE, categoryOf, plain } from "../../labels.js";
 import { loadCytoscape, loadLeaflet, warmUp } from "../../libs.js";
-import { Fragment, html, useEffect, useRef, useState } from "../../react.js";
-import { session } from "../../state.js";
+import { Fragment, html, useEffect } from "../../react.js";
 import { DecisionBar } from "../../ui/decision-bar.js";
 import { GraphLegend, RelationshipGraph } from "../../ui/graph.js";
 import { Menu } from "../../ui/menu.js";
 import { RetentionBar } from "../../ui/retention-bar.js";
-import { Explained, categoryChip, check, chip, errorState, gauge, loadingState, missingState, section } from "../../ui/primitives.js";
+import {
+  Explained,
+  HeadingLevel,
+  categoryChip,
+  check,
+  chip,
+  errorState,
+  gauge,
+  loadingState,
+  missingState,
+  section,
+} from "../../ui/primitives.js";
+import { JumpBar, LazyMount, StorySection, jumpTo, useSections } from "../../ui/story.js";
 import { ContentTab } from "./content.js";
 import { CustodyTab } from "./custody.js";
-import { domainsTab } from "./domains.js";
+import { domainCards, originComputer, seenBefore } from "./domains.js";
 import { findingsTab } from "./findings.js";
 import { linksTab } from "./links.js";
 import { TraceTab } from "./trace.js";
 
-const TABS = [
-  ["findings", "What we found"],
-  ["trace", "Where it came from"],
-  ["content", "How it tries to trick you"],
-  ["links", "Links & files"],
-  ["domains", "Domains & servers"],
-  ["graph", "Connections"],
-  ["custody", "Evidence log"],
+const SECTIONS = [
+  { id: "summary", label: "Verdict" },
+  { id: "findings", label: "What we found" },
+  { id: "sender", label: "Who sent it" },
+  { id: "route", label: "Where it came from" },
+  { id: "wording", label: "How it tricks you" },
+  { id: "links", label: "Links & files" },
+  { id: "domains", label: "Domains" },
+  { id: "graph", label: "Connections" },
+  { id: "evidence", label: "Evidence log" },
 ];
 const MAX_REASONS = 2;
-const TAB_EDGE_PX = 8;
-const TAB_KEYS = { ArrowRight: 1, ArrowLeft: -1, Home: "first", End: "last" };
+const HERO_REASONS = 3;
+const HERO_STEPS = 2;
+const CARD_HEADINGS = 3;
+
+function VerdictHero({ result }) {
+  const { verdict } = result;
+  const category = categoryOf(verdict.category);
+  const warnings = result.findings.filter((finding) => finding.severity !== "info");
+  const steps = verdict.recommended_actions;
+  return html`<div class="card hero">
+    <div class="hero__gauge">${gauge(verdict.risk_score, verdict.severity)}</div>
+    <div class="hero__body">
+      <div class="cluster">
+        ${categoryChip(verdict.category)}
+        <span class="hint">We are <b class="strong">${percent(verdict.confidence)}</b> sure of this.</span>
+      </div>
+      <p class="hero__headline">${category.blurb || category.label}</p>
+      <div class="hero__cols">
+        <div>
+          <h2 class="hero__label">${category.tone === "ok" ? "What we noticed" : "Why we think so"}</h2>
+          ${warnings.length > 0
+            ? html`<ul class="hero__list">
+                ${warnings.slice(0, HERO_REASONS).map((finding) => html`<li key=${finding.id}>${plain(finding.title)}</li>`)}
+              </ul>`
+            : html`<p class="hero__none">No warning signs were found in this email.</p>`}
+          ${warnings.length > HERO_REASONS &&
+          html`<button type="button" class="linkbtn" onClick=${() => jumpTo("findings")}>
+            See all ${plural(warnings.length, "finding")}
+          </button>`}
+        </div>
+        ${steps.length > 0 &&
+        html`<div>
+          <h2 class="hero__label">What to do first</h2>
+          <ol class="hero__list">
+            ${steps.slice(0, HERO_STEPS).map((step, index) => html`<li key=${index}>${step}</li>`)}
+          </ol>
+          ${steps.length > HERO_STEPS &&
+          html`<button type="button" class="linkbtn" onClick=${() => jumpTo("findings")}>See all ${plural(steps.length, "step")}</button>`}
+        </div>`}
+      </div>
+    </div>
+  </div>`;
+}
 
 function SenderChecks({ auth }) {
   const outcome = (value, failures) => (value === "pass" ? true : failures.includes(value) ? false : null);
@@ -39,18 +93,11 @@ function SenderChecks({ auth }) {
   </div>`;
 }
 
-function VerdictCards({ result }) {
-  const { verdict, attribution, headers } = result;
-  const category = categoryOf(verdict.category);
+function SenderCards({ result }) {
+  const { attribution, headers } = result;
   const source = SOURCE_TYPE[attribution.source_type] ?? SOURCE_TYPE.undetermined;
   const addressesClean = !headers.reply_to_mismatch && !headers.return_path_mismatch && !headers.display_name_spoof;
-  return html`<div class="grid grid--verdict section">
-    <div class="card card--pad verdict">
-      ${gauge(verdict.risk_score, verdict.severity)}
-      <div>${categoryChip(verdict.category)}</div>
-      <p class="hint verdict__blurb">${category.blurb}</p>
-      <p class="hint verdict__blurb">We are <b class="strong">${percent(verdict.confidence)}</b> sure of this.</p>
-    </div>
+  return html`<div class="grid grid--2">
     <div class="card card--pad">
       <${Explained} title="Who really sent it" note="Our best assessment of the person or system behind this email." />
       <div class="cluster">${chip(source.title, "brand")} <span class="hint">${percent(attribution.confidence)} sure</span></div>
@@ -91,112 +138,104 @@ function OriginStrip({ result }) {
   </div>`;
 }
 
-function TabPanel({ result, tab }) {
-  switch (tab) {
-    case "trace":
-      return html`<${TraceTab} result=${result} />`;
-    case "content":
-      return html`<${ContentTab} result=${result} />`;
-    case "links":
-      return linksTab(result);
-    case "domains":
-      return domainsTab(result);
-    case "graph":
-      return section("Connections", html`<${Fragment}><${RelationshipGraph} graph=${result.graph} /><${GraphLegend} /></>`, {
-        note: "Everything this email touches, drawn as a map. Useful for spotting the same server or address turning up in other attacks.",
-      });
-    case "custody":
-      return html`<${CustodyTab} result=${result} />`;
-    default:
-      return findingsTab(result);
-  }
-}
-
-function Tabs({ tabs, current, onChoose }) {
-  const strip = useRef((null));
-  const moveFocus = useRef(false);
-  const [more, setMore] = useState("");
-
-  useEffect(() => {
-    const element = strip.current;
-    if (!element) return undefined;
-    const measure = () => {
-      const before = element.scrollLeft > 1;
-      const after = element.scrollLeft + element.clientWidth < element.scrollWidth - 1;
-      setMore(before && after ? "both" : before ? "start" : after ? "end" : "");
-    };
-    measure();
-    element.addEventListener("scroll", measure, { passive: true });
-    const observer = new ResizeObserver(measure);
-    observer.observe(element);
-    return () => {
-      element.removeEventListener("scroll", measure);
-      observer.disconnect();
-    };
-  }, [tabs.length]);
-
-  useEffect(() => {
-    const element = strip.current;
-    const chosen = element?.querySelector('[aria-selected="true"]');
-    if (!element || !(chosen instanceof HTMLElement)) return;
-    const start = chosen.offsetLeft;
-    const end = start + chosen.offsetWidth;
-    if (start < element.scrollLeft) element.scrollLeft = start - TAB_EDGE_PX;
-    else if (end > element.scrollLeft + element.clientWidth) element.scrollLeft = end - element.clientWidth + TAB_EDGE_PX;
-    if (moveFocus.current) chosen.focus({ preventScroll: true });
-    moveFocus.current = false;
-  }, [current]);
-
-  const onKeyDown = (event) => {
-    const step = TAB_KEYS[event.key];
-    if (step === undefined) return;
-    event.preventDefault();
-    const last = tabs.length - 1;
-    const index = tabs.findIndex(([name]) => name === current);
-    const next = step === "first" ? 0 : step === "last" ? last : (index + step + tabs.length) % tabs.length;
-    moveFocus.current = true;
-    onChoose(tabs[next][0]);
-  };
-
-  return html`<div
-    class=${`tabs${more ? ` tabs--more-${more}` : ""}`}
-    role="tablist"
-    aria-label="Parts of this report"
-    ref=${strip}
-    onKeyDown=${onKeyDown}
-  >
-    ${tabs.map(
-      ([name, label]) => html`<button
-        key=${name}
-        id=${`tab-${name}`}
-        class=${`tab${current === name ? " is-active" : ""}`}
-        type="button"
-        role="tab"
-        aria-selected=${String(current === name)}
-        aria-controls="tab-panel"
-        tabIndex=${current === name ? 0 : -1}
-        onClick=${() => onChoose(name)}
-      >
-        ${label}
-      </button>`,
-    )}
+function CaseHead({ result }) {
+  const { email } = result;
+  return html`<div class="cluster cluster--between cluster--top section">
+    <div class="spread spread--wide">
+      <h1 class="page-title page-title--sm">${email.subject || html`<span class="muted">(no subject)</span>`}</h1>
+      <div class="hint cluster cluster--loose">
+        <span>
+          From <b class="strong">${email.sender.display_name || "unnamed"}</b>${" "}
+          <span class="mono">${`<${email.sender.address}>`}</span>
+        </span>
+        <span>${email.date ? `Sent ${formatDate(email.date)}` : "Send time not recorded"}</span>
+        <span class="mono">${result.filename}</span>
+        ${result.campaign_id &&
+        html`<a class="link" href=${`#/campaigns/${encodeURIComponent(result.campaign_id)}`}>See linked attacks →</a>`}
+      </div>
+    </div>
+    <div class="cluster">
+      <a class="btn btn--primary" target="_blank" rel="noopener" href=${urls.report(result.id, "pdf")} title="Section 65B compliant legal report">
+        Legal PDF report
+      </a>
+      <${Menu} label="Export" caret>
+        <a class="menu__item" target="_blank" rel="noopener" href=${urls.report(result.id, "html")}>
+          View report in browser<span class="menu__hint">The full report as a web page</span>
+        </a>
+        <a class="menu__item" href=${urls.report(result.id, "csv")}>
+          Spreadsheet (CSV)<span class="menu__hint">Verdict, scores, origin, indicators and findings</span>
+        </a>
+        <a class="menu__item" href=${urls.rawMessage(result.id)}>
+          Download original<span class="menu__hint">The email exactly as it was received</span>
+        </a>
+      </${Menu}>
+    </div>
   </div>`;
 }
 
-export function EmailView({ emailId }) {
-  const { data: result, error, missing, loading, slow, reload } = useAsync(() => api.getEmail(emailId), [emailId]);
-  const [tab, setTab] = useState(session.emailTab);
-
-  const choose = (next) => {
-    session.emailTab = next;
-    setTab(next);
-  };
-
-  usePageTitle(result ? result.email.subject || "Email with no subject" : "Checked email");
+function Report({ result }) {
+  useSections(SECTIONS);
   useEffect(() => {
     warmUp(loadLeaflet);
     warmUp(loadCytoscape);
   }, []);
+  const noHeaders = result.headers.hops.length === 0;
+
+  return html`<${Fragment}>
+    <a href="#/cases" class="back-link">← Back to checked emails</a>
+    <${CaseHead} result=${result} />
+    <${JumpBar} />
+    <${StorySection} id="summary">
+      <${VerdictHero} result=${result} />
+      ${noHeaders &&
+      html`<div class="note note--warn section">
+        <b>This email carried no delivery headers, so we could not trace where it came from.</b> You most likely pasted only the
+        visible message. Use <i>Download message</i> in Gmail, or <i>View message source</i> and copy everything from the very first
+        line. The wording and link checks below still worked normally.
+      </div>`}
+      <${RetentionBar} emailId=${result.id} />
+    </${StorySection}>
+    <${HeadingLevel.Provider} value=${CARD_HEADINGS}>
+      <${StorySection} id="findings" title="What we found" intro="Every warning sign, how the score was worked out, and what to do about it.">
+        ${findingsTab(result)}
+      </${StorySection}>
+      <${StorySection} id="sender" title="Who sent it" intro="Whether the sender is who they claim to be.">
+        <${SenderCards} result=${result} />
+      </${StorySection}>
+      <${StorySection} id="route" title="Where it came from" intro="The path the email took across the internet, traced from its hidden headers.">
+        <${OriginStrip} result=${result} />
+        <${LazyMount} height="30rem"><${TraceTab} result=${result} /></${LazyMount}>
+        <div class="story__gap">${originComputer(result)}</div>
+      </${StorySection}>
+      <${StorySection} id="wording" title="How it tries to trick you" intro="What the message says, and how the rules and the trained model read it.">
+        <${LazyMount} height="40rem"><${ContentTab} result=${result} /></${LazyMount}>
+      </${StorySection}>
+      <${StorySection} id="links" title="Links & files" intro="Where the links really lead and what is inside the attachments.">
+        ${linksTab(result)}
+      </${StorySection}>
+      <${StorySection} id="domains" title="Domains" intro="The web addresses involved, and earlier emails that share something with this one.">
+        ${seenBefore(result)} ${domainCards(result)}
+      </${StorySection}>
+      <${StorySection} id="graph" title="Connections" intro="How this email, its sender, its servers and its links are tied together.">
+        <${LazyMount} height="32rem">
+          ${section(
+            "Everything this email touches",
+            html`<${Fragment}><${RelationshipGraph} graph=${result.graph} /><${GraphLegend} /></>`,
+            { note: "Useful for spotting the same server or address turning up in other attacks." },
+          )}
+        </${LazyMount}>
+      </${StorySection}>
+      <${StorySection} id="evidence" title="Evidence and decision" intro="Your decision on this case, and the tamper-proof record of everything done with it.">
+        <div class="section"><${DecisionBar} emailId=${result.id} /></div>
+        <${LazyMount} height="14rem"><${CustodyTab} result=${result} /></${LazyMount}>
+      </${StorySection}>
+    </${HeadingLevel.Provider}>
+  </>`;
+}
+
+export function EmailView({ emailId }) {
+  const { data: result, error, missing, loading, slow, reload } = useAsync(() => api.getEmail(emailId), [emailId]);
+  usePageTitle(result ? result.email.subject || "Email with no subject" : "Checked email");
 
   if (missing) {
     return missingState(
@@ -208,58 +247,5 @@ export function EmailView({ emailId }) {
   }
   if (error) return errorState(error, reload);
   if (loading || !result) return loadingState(4, slow);
-
-  const { email } = result;
-  const noHeaders = result.headers.hops.length === 0;
-
-  return html`<${Fragment}>
-    <a href="#/cases" class="back-link">← Back to checked emails</a>
-    <div class="cluster cluster--between cluster--top section">
-      <div class="spread spread--wide">
-        <h1 class="page-title page-title--sm">${email.subject || html`<span class="muted">(no subject)</span>`}</h1>
-        <div class="hint cluster cluster--loose">
-          <span>
-            From <b class="strong">${email.sender.display_name || "unnamed"}</b>${" "}
-            <span class="mono">${`<${email.sender.address}>`}</span>
-          </span>
-          <span>${email.date ? `Sent ${formatDate(email.date)}` : "Send time not recorded"}</span>
-          <span class="mono">${result.filename}</span>
-          ${result.campaign_id &&
-          html`<a class="link" href=${`#/campaigns/${encodeURIComponent(result.campaign_id)}`}>See linked attacks →</a>`}
-        </div>
-      </div>
-      <div class="cluster">
-        <a class="btn btn--primary" target="_blank" rel="noopener" href=${urls.report(result.id, "pdf")} title="Section 65B compliant legal report">
-          Legal PDF report
-        </a>
-        <${Menu} label="Export" caret>
-          <a class="menu__item" target="_blank" rel="noopener" href=${urls.report(result.id, "html")}>
-            View report in browser<span class="menu__hint">The full report as a web page</span>
-          </a>
-          <a class="menu__item" href=${urls.report(result.id, "csv")}>
-            Spreadsheet (CSV)<span class="menu__hint">Verdict, scores, origin, indicators and findings</span>
-          </a>
-          <a class="menu__item" href=${urls.rawMessage(result.id)}>
-            Download original<span class="menu__hint">The email exactly as it was received</span>
-          </a>
-        </${Menu}>
-      </div>
-    </div>
-    <${VerdictCards} result=${result} />
-    ${noHeaders &&
-    html`<div class="note note--warn section">
-      <b>This email carried no delivery headers, so we could not trace where it came from.</b> You most likely pasted only the visible
-      message. Use <i>Download message</i> in Gmail, or <i>View message source</i> and copy everything from the very first line. The
-      wording and link checks below still worked normally.
-    </div>`}
-    <${OriginStrip} result=${result} />
-    <${RetentionBar} emailId=${result.id} />
-    <div class="section"><${DecisionBar} emailId=${result.id} /></div>
-    <div class="tabs-row">
-      <${Tabs} tabs=${TABS} current=${tab} onChoose=${choose} />
-    </div>
-    <div class="tab-panel" id="tab-panel" role="tabpanel" aria-labelledby=${`tab-${tab}`} key=${tab}>
-      <${TabPanel} result=${result} tab=${tab} />
-    </div>
-  </>`;
+  return html`<${Report} result=${result} />`;
 }

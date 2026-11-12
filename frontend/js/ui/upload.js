@@ -1,5 +1,6 @@
 import { api, friendlyError } from "../api.js";
 import { formatBytes, plural } from "../format.js";
+import { SAMPLES } from "../labels.js";
 import { html, useEffect, useRef, useState } from "../react.js";
 import { navigate } from "../router.js";
 import { icon } from "./icons.js";
@@ -31,6 +32,15 @@ const OUTLOOK_MESSAGE =
 const HEADER_LINE = /^(received|from|to|subject|date|message-id|return-path|delivered-to):/im;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function offered(names) {
+  const known = SAMPLES.filter(([name]) => names.includes(name));
+  const listed = new Set(SAMPLES.map(([name]) => name));
+  const extra = names
+    .filter((name) => !listed.has(name))
+    .map((name) => [name, name.replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase())]);
+  return [...known, ...extra];
+}
 
 const startsWith = (bytes, signature) => signature.every((value, index) => bytes[index] === value);
 
@@ -77,9 +87,18 @@ export function Dropzone() {
   const [problems, setProblems] = useState(([]));
   const [over, setOver] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [samples, setSamples] = useState(([]));
   const gone = useRef(false);
   useEffect(() => () => {
     gone.current = true;
+  }, []);
+  useEffect(() => {
+    api
+      .listSamples()
+      .then((names) => {
+        if (!gone.current) setSamples(offered(names));
+      })
+      .catch(() => {});
   }, []);
 
   async function run(call, label) {
@@ -232,6 +251,24 @@ export function Dropzone() {
         How do I save an email?
       </button>
     </div>
+
+    ${samples.length > 0 &&
+    html`<div class="samples">
+      <div class="samples__label">No email at hand? Try one of ours</div>
+      <div class="cluster cluster--center">
+        ${samples.map(
+          ([name, label]) => html`<button
+            key=${name}
+            class="btn btn--pill"
+            type="button"
+            disabled=${busy}
+            onClick=${() => void run(() => api.analyzeSample(name), `the sample “${label}”`)}
+          >
+            ${label}
+          </button>`,
+        )}
+      </div>
+    </div>`}
 
     <${Problems} problems=${problems} />
 

@@ -81,7 +81,7 @@ from an earlier run.
 | Requirement area | How MailTrace covers it | Where |
 |---|---|---|
 | Ingest suspicious emails as raw evidence | Multipart upload of one or many `.eml` / `.txt` files, or pasted RFC 822 source; the exact bytes are hashed and stored once in the `evidence` table of the case database (mirrored under `<data dir>/evidence/<id>.eml`), so the original survives a redeploy of a host with no persistent disk | `POST /api/analyze`, `POST /api/analyze/raw`, `backend/app/core/parser.py`, `backend/app/database/case_manager.py` |
-| Header forensics and origin tracing | Every `Received` hop parsed (hosts, IP, protocol, TLS, timestamp), ordered chronologically, per-hop delay and anomalies (negative delay, private IP, missing TLS, forged order), originating IP with confidence and reasoning, `X-Originating-IP` handling | `backend/app/core/header_analyzer.py`, Trace tab |
+| Header forensics and origin tracing | Every `Received` hop parsed (hosts, IP, protocol, TLS, timestamp), ordered chronologically, per-hop delay and anomalies (negative delay, private IP, missing TLS, forged order), originating IP with confidence and reasoning, `X-Originating-IP` handling | `backend/app/core/header_analyzer.py`, the "Where it came from" section of a case |
 | Spoofing detection (SPF / DKIM / DMARC) | `Authentication-Results` parsing plus live SPF evaluation, DKIM signature verification and DMARC policy lookup; relaxed alignment; Return-Path, Reply-To, Message-ID and display-name mismatch checks | `backend/app/core/auth_checker.py`, `backend/app/core/header_analyzer.py` |
 | Geolocation and infrastructure intelligence | City / region / country, ISP, organisation, ASN and reverse DNS per public hop; Tor exit, VPN / proxy, hosting-provider, DNSBL, open-relay and botnet heuristics; AbuseIPDB with a key; route drawn on a map | `backend/app/core/geoip_mapper.py`, Leaflet map in the UI |
 | Malicious link analysis | URL extraction from text and HTML (anchor text vs. href), lookalike / homoglyph / typosquat / punycode detection, shorteners, IP literals, userinfo tricks, open redirects, obfuscation, suspicious TLDs and keywords, plus an XGBoost link model that can only raise the rule score | `backend/app/core/link_analyzer.py`, `backend/app/ai/url_model.py` |
@@ -403,7 +403,7 @@ mailtrace/
                             every script with a version taken from the file's content, so the browser
                             fetches them all at once and keeps each one until it changes
     build_index.py          writes that list (python frontend/build_index.py); CI fails when it is stale
-    css/                    tokens.css (every colour, size and radius), base, layout, components, vendor
+    css/                    tailwind.css (every colour, size and radius), base, layout, components, vendor
     js/react.js             React bound to htm, so components are tagged templates and need no transpiler
     js/                     api.js, router.js (useRoute), hooks.js, state.js, labels.js, ui/, views/
     jsconfig.json           the JavaScript is type-checked (strict) against the contracts in js/types.js
@@ -792,14 +792,19 @@ The five messages in `samples/` are described one by one in
    `impersonation_ceo_gift_cards` **Impersonated 45** (medium),
    `legit_transactional` **Legitimate 4** (low). Live enrichment can raise these
    (the Tor flag on the BEC origin, for instance); it does not lower them.
-4. Open the SBI case: the risk gauge, category badge and dual-validation chip
-   (rules say Phishing, the model says Impersonated at p=0.52, confidence 0.70);
-   the spoofing badge row (SPF fail, DMARC fail, Reply-To on Gmail, display-name
-   spoof); the Trace tab with four hops, the origin `45.148.10.72` on hop 1 and
-   the route on the map; Links & Files showing `sbi-online-kyc-verify.xyz` behind
-   the anchor text `https://onlinesbi.sbi`; the Content tab with the urgency meter
-   and the `credential_harvesting` pattern at 0.95; Domains & Infra; the Graph
-   tab; and the Custody tab, where "Verify ledger" returns `valid: true`.
+   The buttons under the drop zone open any one of the five straight away as a
+   temporary case that is not added to the list.
+4. Open the SBI case. It is one scrolling report with a menu of its sections on
+   the left: the verdict with the risk gauge, the category and the confidence;
+   What we found, where the rule book and the trained model are compared (rules
+   say Phishing, the model says Impersonated at p=0.52, confidence 0.70); Who
+   sent it, with the spoofing checks (SPF fail, DMARC fail, Reply-To on Gmail,
+   display-name spoof); Where it came from, with four hops, the origin
+   `45.148.10.72` on hop 1 and the route on the map; How it tricks you, with the
+   urgency meter and the `credential_harvesting` pattern at 0.95; Links & files,
+   showing `sbi-online-kyc-verify.xyz` behind the anchor text
+   `https://onlinesbi.sbi`; Domains; Connections, the relationship graph; and the
+   Evidence log, where "Check it was not tampered with" answers "Untampered".
 5. Open the BEC case: the `payment_diversion` pattern at confidence 1.00 with its
    evidence phrases, the lookalike `acme-corp-in.com`, the Proton Mail Reply-To,
    the `185.220.101.45` origin (a Tor exit range, flagged as such only with the
@@ -848,7 +853,9 @@ On Windows PowerShell use `curl.exe`; plain `curl` is an alias of `Invoke-WebReq
 | GET | `/` | - | the analyst UI (`frontend/`, served as static files) |
 | GET | `/api/health` | - | `{"status", "engine_version", "network", "pii_mask_default", "zero_persistence", "webhooks", "database", "native_engine", "native_engine_version", "native_engine_status"}` |
 | POST | `/api/analyze` | multipart `files` (one or more), query `actor`, `mask` | `{"results": [AnalysisResult], "alerts": [Alert]}` |
-| POST | `/api/analyze/raw` | JSON `{"raw", "filename", "origin", "listed", "retention_hours"}`, query `actor`, `mask`. `origin` is `dashboard` (default) or `gmail`; a `gmail` case is unlisted and expires after 24 hours unless the other two fields say otherwise | same shape with one result, plus `"retention": [Retention]` for a case that is unlisted or due for deletion |
+| POST | `/api/analyze/raw` | JSON `{"raw", "filename", "origin", "listed", "retention_hours"}`, query `actor`, `mask`. `origin` is `dashboard` (default), `gmail` or `sample`; a `gmail` or `sample` case is unlisted and expires after 24 hours unless the other two fields say otherwise | same shape with one result, plus `"retention": [Retention]` for a case that is unlisted or due for deletion |
+| GET | `/api/samples` | - | the names of the example emails shipped in `samples/`, without the `.eml` ending |
+| POST | `/api/samples/{name}` | query `actor`, `mask` | the same shape as `/api/analyze/raw`: the example is analysed as an unlisted `sample` case that expires after 24 hours. Behind the "Try one of ours" buttons on the home page |
 | GET | `/api/emails/{id}/retention` | - | `Retention`: origin, listed, state (`permanent`, `expiring`, `frozen`, `purged`), `expires_at`, `seconds_left`, `frozen_at`, `frozen_by` |
 | POST | `/api/emails/{id}/freeze` | `actor` | `Retention`; cancels the deletion and records an `evidence_frozen` custody event |
 | POST | `/api/intel/lookup` | JSON `{"domains": [{"domain", "role"}], "ips", "origin_ip"}` | `{"domains": [DomainIntel], "ips": [GeoInfo], "network", "stored": false}`; answered from a memory cache, never written to the case store. Used by the Gmail add-on's Connected mode |
@@ -861,6 +868,7 @@ On Windows PowerShell use `curl.exe`; plain `curl` is an alias of `Invoke-WebReq
 | POST | `/api/emails/{id}/block` | `actor` | `CaseDecision`; records a `block_decision` in the ledger and sets the case status. Records a decision, does not touch a mail gateway |
 | GET | `/api/emails/{id}/decision` | - | `CaseDecision`: current status, the IOCs to export and the decision history |
 | GET | `/api/stats` | - | `DashboardStats` |
+| GET | `/api/origins` | - | `[OriginPoint]`: one entry per originating IP among the 500 most recent listed cases that were geolocated, with `lat`, `lon`, `city`, `country`, `emails` and `max_risk`. Feeds the map on the home page |
 | GET | `/api/campaigns` | - | `[Campaign]`, newest first |
 | GET | `/api/campaigns/{id}` | `mask` | `{"campaign", "emails": [CaseSummary], "graph": AttributionGraph}` |
 | GET | `/api/graph` | `email_id` or `campaign_id`, `mask` | `AttributionGraph` |

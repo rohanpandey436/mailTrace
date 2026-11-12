@@ -12,48 +12,46 @@
 @source "../js/**/*.js";
 
 @theme static {
-  --color-paper: #f7f8fa;
+  --color-paper: #f9f7f4;
   --color-card: #ffffff;
-  --color-line: #e3e6eb;
-  --color-line-soft: #eef1f5;
-  --color-line-strong: #cdd3dc;
+  --color-shell: #f2efea;
+  --color-shell-hover: #e9e5df;
+  --color-line: #e7e3dc;
+  --color-line-soft: #f2efea;
+  --color-line-strong: #d3cec5;
 
-  --color-ink: #1a2130;
-  --color-ink-soft: #4a5568;
-  --color-muted: #5e6a7b;
+  --color-ink: #201d1a;
+  --color-ink-soft: #4a443e;
+  --color-muted: #655e56;
   --color-on-brand: #ffffff;
 
   --color-brand: #d0440e;
-  --color-brand-strong: #c03d0b;
-  --color-brand-ink: #c03d0b;
-  --color-brand-soft: #fff4ed;
+  --color-brand-strong: #b83a0a;
+  --color-brand-ink: #b83a0a;
+  --color-brand-soft: #fff1e8;
   --color-brand-tint: #fff9f5;
 
-  --color-ok: #147d3b;
+  --color-ok: #127539;
   --color-ok-soft: #ecfdf3;
-  --color-warn: #b05108;
-  --color-warn-soft: #fffaeb;
-  --color-bad: #d42121;
+  --color-warn: #8f5f00;
+  --color-warn-soft: #fff8e1;
+  --color-bad: #cf1f1f;
   --color-bad-soft: #fef3f2;
-  --color-info: #1d4ed8;
-  --color-info-soft: #f0f6ff;
   --color-purple: #6d28d9;
   --color-purple-soft: #f5f3ff;
   --color-teal: #0e7490;
   --color-teal-soft: #ecfeff;
-  --color-orange: #c2410c;
-  --color-orange-soft: #fff4ed;
-  --color-neutral: #5e6a7b;
-  --color-neutral-soft: #f1f3f7;
+  --color-orange: #bd3f0b;
+  --color-orange-soft: #fff1e8;
+  --color-neutral: #655e56;
+  --color-neutral-soft: #f2efea;
 
   --color-note-warn-bg: #fffbeb;
   --color-note-warn-line: #fde68a;
   --color-note-warn-ink: #78350f;
-  --color-note-info-bg: #f0f6ff;
-  --color-note-info-line: #c7dbff;
-  --color-note-info-ink: #1e3a8a;
 
   --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Red Hat Display", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
   --text-2xs: 0.68rem;
   --text-xs: 0.78rem;
@@ -69,9 +67,9 @@
   --radius-xl: 16px;
   --radius-pill: 999px;
 
-  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.05);
-  --shadow-md: 0 8px 20px rgba(16, 24, 40, 0.12);
-  --shadow-lg: 0 12px 28px rgba(16, 24, 40, 0.12);
+  --shadow-sm: 0 1px 2px rgba(32, 29, 26, 0.05);
+  --shadow-md: 0 8px 20px rgba(32, 29, 26, 0.1);
+  --shadow-lg: 0 12px 28px rgba(32, 29, 26, 0.12);
 }
 
 :root {

@@ -34,8 +34,10 @@ export const html = htm.bind(h);
 
 export const {
   Fragment,
+  createContext,
   createElement,
   useCallback,
+  useContext,
   useEffect,
   useLayoutEffect,
   useMemo,

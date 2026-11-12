@@ -7,9 +7,11 @@ import { Fragment, html, useEffect, useRef, useState } from "./react.js";
 import { useRoute } from "./router.js";
 import { preferences, session, setPreference, unreadAlerts } from "./state.js";
 import { icon } from "./ui/icons.js";
+import { logo } from "./ui/logo.js";
 import { Menu } from "./ui/menu.js";
 import { Switch } from "./ui/primitives.js";
 import { SearchBox } from "./ui/search.js";
+import { SectionMenu } from "./ui/story.js";
 import { Toasts, toast } from "./ui/toast.js";
 import { AlertsView, refreshUnreadCount } from "./views/alerts.js";
 import { CampaignView, CampaignsView } from "./views/campaigns.js";
@@ -37,7 +39,7 @@ function Rail({ route, unread }) {
   const current = (name) => (route === name ? "page" : section === name ? "true" : undefined);
   return html`<nav class="rail" aria-label="Main">
     <a class="rail__brand" href="#/dashboard">
-      <span class="brand-mark">M</span>
+      ${logo()}
       <span><span class="brand-name">MailTrace</span><span class="brand-sub">Email threat forensics</span></span>
     </a>
     ${NAV.map(
@@ -50,6 +52,7 @@ function Rail({ route, unread }) {
         ${icon(glyph)}<span>${label}</span>${name === "alerts" && html`<${UnreadBadge} count=${unread} />`}
       </a>`,
     )}
+    <${SectionMenu} />
     <div class="rail__footer">SIH PS 26106<br />AI email threat detection, geolocation & forensics</div>
   </nav>`;
 }
@@ -105,6 +108,7 @@ function TopBar({ health, checking, unread, onMaskChange, onSearch }) {
   };
 
   return html`<header class="topbar">
+    <a class="topbar__brand" href="#/dashboard" aria-label="MailTrace home">${logo()}</a>
     <${SearchBox} onSearch=${onSearch} />
     <div class="topbar__tools">
       <div class="topbar__inline">
@@ -202,6 +206,10 @@ function App() {
   useEffect(() => {
     void refreshUnreadCount();
   }, []);
+
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [route.name, route.param]);
 
   useEffect(
     () =>

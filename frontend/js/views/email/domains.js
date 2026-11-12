@@ -7,7 +7,7 @@ const BRAND_NEW_DAYS = 90;
 const MAX_SUBJECT_CHARS = 60;
 const MAX_SHARED_INDICATORS = 3;
 
-function originComputer(result) {
+export function originComputer(result) {
   const infra = result.infrastructure;
   const geo = infra.origin_geo;
   const clean = !infra.blacklisted && !infra.tor_exit && !infra.vpn_or_proxy && !infra.hosting_provider;
@@ -38,7 +38,7 @@ function seenLine(incident) {
   return `from ${incident.sender} · risk ${incident.risk_score}${shared ? ` · same ${shared}` : ""}`;
 }
 
-function seenBefore(result) {
+export function seenBefore(result) {
   const incidents = result.intel.related_incidents;
   if (incidents.length === 0) return null;
   return section(
@@ -68,7 +68,7 @@ function DomainCard({ domain }) {
   const noted = domain.is_free_mail || domain.is_disposable || tags.length > 0;
   return html`<div class="card card--tight">
     <div class="domain-card__head">
-      <span class="domain-card__name">${domain.domain}</span>${chip(DOMAIN_ROLE[domain.role] ?? domain.role, "teal")}
+      <span class="domain-card__name">${domain.domain}</span>${chip(DOMAIN_ROLE[domain.role] ?? domain.role)}
     </div>
     ${kv([
       ["How old", age(domain)],
@@ -93,9 +93,8 @@ function DomainCard({ domain }) {
   </div>`;
 }
 
-export function domainsTab(result) {
+export function domainCards(result) {
   return html`<${Fragment}>
-    ${originComputer(result)} ${seenBefore(result)}
     <${Explained}
       title="The domains involved"
       note="A domain registered days ago is one of the strongest signs of an attack."

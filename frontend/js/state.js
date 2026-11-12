@@ -27,7 +27,6 @@ export function setPreference(key, value) {
 export const session = {
   health: null,
   listFilters: { q: "", category: "", minRisk: 0, page: 0 },
-  emailTab: "findings",
   showLesserFindings: false,
 };
 
@@ -45,15 +44,15 @@ export function onListFilters(listener) {
   };
 }
 
-function createUnreadStore() {
-  let count = 0;
+function createStore(initial) {
+  let current = initial;
   const listeners = new Set();
   return {
-    get: () => count,
+    get: () => current,
     set(next) {
-      const value = typeof next === "function" ? next(count) : next;
-      if (value === count) return;
-      count = value;
+      const value = typeof next === "function" ? next(current) : next;
+      if (value === current) return;
+      current = value;
       for (const listener of listeners) listener();
     },
     subscribe(listener) {
@@ -63,4 +62,6 @@ function createUnreadStore() {
   };
 }
 
-export const unreadAlerts = createUnreadStore();
+export const unreadAlerts = createStore(0);
+
+export const pageSections = createStore({ items: [], active: "" });

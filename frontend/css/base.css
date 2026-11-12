@@ -193,11 +193,6 @@ details > summary::-webkit-details-marker {
   --tone-soft: var(--color-bad-soft);
 }
 
-.tone-info {
-  --tone: var(--color-info);
-  --tone-soft: var(--color-info-soft);
-}
-
 .tone-purple {
   --tone: var(--color-purple);
   --tone-soft: var(--color-purple-soft);

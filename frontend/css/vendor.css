@@ -1,7 +1,12 @@
 .map {
+  isolation: isolate;
   height: var(--map-height);
   border-radius: var(--radius-lg);
   background: var(--color-line-soft);
+}
+
+.map.map--threat {
+  height: 21rem;
 }
 
 .leaflet-container {
@@ -9,7 +14,11 @@
 }
 
 .leaflet-tile-pane {
-  filter: saturate(0.45) brightness(1.04);
+  filter: saturate(0.15) brightness(1.05);
+}
+
+.leaflet-container .leaflet-control-attribution a {
+  color: var(--color-muted);
 }
 
 .map-popup {

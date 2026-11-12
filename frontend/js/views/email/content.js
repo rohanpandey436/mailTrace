@@ -33,7 +33,7 @@ function PressureTactics({ nlp }) {
           <div class="terms__label">${title}</div>
           <div class="terms__list">
             ${terms.length > 0
-              ? terms.slice(0, MAX_TERMS).map((term, index) => chip(term, "purple", { key: index }))
+              ? terms.slice(0, MAX_TERMS).map((term, index) => chip(term, "neutral", { key: index }))
               : html`<span class="hint">nothing</span>`}
           </div>
         </div>`,
@@ -128,7 +128,7 @@ function ModelView({ result }) {
         </div>`
       : html`<p class="hint subsection">
           Words that pushed the decision: ${nlp.ml_top_terms.length > 0
-            ? nlp.ml_top_terms.slice(0, MAX_TOP_TERMS).map((term, index) => chip(term, "info", { key: index }))
+            ? nlp.ml_top_terms.slice(0, MAX_TOP_TERMS).map((term, index) => chip(term, "neutral", { key: index }))
             : "none stood out"}
         </p>`}
     <div class="subsection subsection--divided">

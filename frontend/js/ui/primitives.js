@@ -1,7 +1,7 @@
 import { clampPercent } from "../format.js";
 import { useCountUp } from "../hooks.js";
 import { categoryOf, severityOf } from "../labels.js";
-import { Fragment, html, useState } from "../react.js";
+import { Fragment, createContext, html, useContext, useState } from "../react.js";
 
 const GAUGE_ARC = "M 20 100 A 80 80 0 0 1 180 100";
 const GAUGE_ARC_LENGTH = Math.PI * 80;
@@ -13,6 +13,13 @@ const GAUGE_LEVEL = {
   low: "Low risk",
   info: "Minimal risk",
 };
+
+export const HeadingLevel = createContext(2);
+
+export function Heading({ className, children }) {
+  const Tag = `h${useContext(HeadingLevel)}`;
+  return html`<${Tag} class=${className}>${children}</${Tag}>`;
+}
 
 export function Count({ value, duration }) {
   return useCountUp(value, duration);
@@ -84,9 +91,9 @@ export function InfoButton({ open, onToggle }) {
 export function Explained({ title, note, titleClass = "section__title" }) {
   const [open, setOpen] = useState(false);
   return html`<${Fragment}>
-    <h2 class=${`${titleClass} section__title--info`}>
+    <${Heading} class=${`${titleClass} section__title--info`}>
       ${title}<${InfoButton} open=${open} onToggle=${() => setOpen(!open)} />
-    </h2>
+    </${Heading}>
     ${open ? html`<p class="hint section__note reveal">${note}</p>` : html`<div class="section__spacer"></div>`}
   </>`;
 }
@@ -95,9 +102,9 @@ function Section({ title, aside, note, children }) {
   const [open, setOpen] = useState(false);
   return html`<section class="card card--pad section">
     <div class="section__head">
-      <h2 class="section__title section__title--info">
+      <${Heading} class="section__title section__title--info">
         ${title}${note && html`<${InfoButton} open=${open} onToggle=${() => setOpen(!open)} />`}
-      </h2>
+      </${Heading}>
       ${aside}
     </div>
     ${note && open ? html`<p class="hint section__note reveal">${note}</p>` : html`<div class="section__spacer"></div>`}

@@ -85,7 +85,19 @@ export const ORIGIN = {
     title: "Sent from Gmail",
     detail: "This email was sent here from the MailTrace add-on in Gmail because its owner pressed Investigate.",
   },
+  sample: {
+    title: "Sample email",
+    detail: "This is one of MailTrace's built-in example emails, checked in exactly the same way as a real one.",
+  },
 };
+
+export const SAMPLES = [
+  ["phishing_sbi_kyc", "Bank KYC phishing"],
+  ["impersonation_ceo_gift_cards", "Boss asks for gift cards"],
+  ["bec_payment_diversion", "Changed bank details"],
+  ["fraud_lottery_advance_fee", "Lottery prize fee"],
+  ["legit_transactional", "A genuine email"],
+];
 
 export const DECISION = {
   open: { label: "No decision recorded", tone: "neutral" },
@@ -100,8 +112,6 @@ export const DOMAIN_ROLE = {
   url: "linked site",
   message_id: "message id",
 };
-
-export const ADDON_GUIDE_URL = "https://github.com/rohanpandey436/mailTrace/blob/main/docs/gmail-addon.md#installing-it";
 
 export const LOOKALIKE = {
   typosquat: "one or two letters changed",

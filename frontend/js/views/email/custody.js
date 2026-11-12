@@ -14,7 +14,7 @@ function EventRow({ event }) {
     <td class="mono">${event.seq}</td>
     <td class="small nowrap">${formatDate(event.timestamp)}</td>
     <td>${event.actor}</td>
-    <td>${chip(CUSTODY_ACTION[event.action] ?? event.action, "teal")}</td>
+    <td>${chip(CUSTODY_ACTION[event.action] ?? event.action)}</td>
     <td class="mono small">${event.hash.slice(0, HASH_PREVIEW_CHARS)}…</td>
   </tr>`;
 }

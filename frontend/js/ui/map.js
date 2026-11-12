@@ -5,9 +5,9 @@ import { loadLeaflet } from "../libs.js";
 import { html, useEffect, useRef } from "../react.js";
 import { color } from "../theme.js";
 
-const TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
-const ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
-const TILE_MAX_ZOOM = 18;
+export const TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+export const ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+export const TILE_MAX_ZOOM = 18;
 const WORLD_CENTRE = ([22, 20]);
 const WORLD_ZOOM = 2;
 const SINGLE_POINT_ZOOM = 5;
@@ -59,7 +59,7 @@ export function RouteMap({ hops, originIndex, selected, onSelect }) {
           radius: origin ? ORIGIN_RADIUS : HOP_RADIUS,
           color: color("card"),
           weight: 2,
-          fillColor: origin ? color("brand") : color("info"),
+          fillColor: origin ? color("brand") : color("neutral"),
           fillOpacity: 0.95,
         }).addTo(instance);
         pin.bindPopup(popup(hop, origin));
